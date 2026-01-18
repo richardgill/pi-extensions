@@ -41,5 +41,6 @@ pi
 
 ### Updating later
 
+```bash
 (cd ~/.pi/agent/extensions/files && pnpm update files)
-
+```
