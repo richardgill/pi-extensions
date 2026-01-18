@@ -1,5 +1,5 @@
 import os from "node:os";
-import { extension, mergeRanges, resolveEditorCommand } from "./extension.js";
+import { extension, mergeRanges, resolveEditorCommand } from "files";
 
 const PLATFORM = {
 	isDarwin: process.platform === "darwin",
@@ -19,17 +19,20 @@ export default extension({
 			{ regex: /(?:^|[\s"'`([{<])(\.\/[^\s"'`<>)}\]]+)/g, captureIndex: 1 },
 			// file.txt or dir/file.txt
 			{
-				regex: /(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.[A-Za-z0-9._-]+)/g,
+				regex:
+					/(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.[A-Za-z0-9._-]+)/g,
 				captureIndex: 1,
 			},
 			{
 				// extensionless paths with at least one slash (e.g., scripts/build, docs/guide)
-				regex: /(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\/[A-Za-z0-9_-]+)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
+				regex:
+					/(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\/[A-Za-z0-9_-]+)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
 				captureIndex: 1,
 			},
 			{
 				// dotfiles and dotfile paths without extensions (e.g., .env, .config/nvim/init)
-				regex: /(?:^|[\s"'`([{<])(\.[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
+				regex:
+					/(?:^|[\s"'`([{<])(\.[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
 				captureIndex: 1,
 			},
 		],

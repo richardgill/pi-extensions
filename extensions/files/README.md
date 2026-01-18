@@ -15,14 +15,17 @@ mkdir -p .pi/extensions/files
 ```bash
 cat > .pi/extensions/files/package.json <<'EOF'
 {
-  "name": "pi-project-files-extension",
+  "name": "extension-files",
   "private": true,
   "type": "module",
-  "pi": { "extensions": ["./index.ts"] },
   "dependencies": {
     "files": "github:richardgill/pi-extensions#path:/extensions/files"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1"
   }
 }
+
 EOF
 ```
 
