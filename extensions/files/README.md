@@ -13,7 +13,7 @@ mkdir -p .pi/extensions/files
 ### 1) Create `package.json` (single command)
 
 ```bash
-mkdir -p ~.pi/extensions/files && cat > .pi/extensions/files/package.json <<'EOF'
+cat > .pi/extensions/files/package.json <<'EOF'
 {
   "name": "pi-project-files-extension",
   "private": true,
