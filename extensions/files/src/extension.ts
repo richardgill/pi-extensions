@@ -1,9 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	readFileSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	SessionEntry,
+} from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import {
 	Container,
@@ -130,7 +140,9 @@ const parseCommandArgs = (argsString: string): string[] => {
 	return args;
 };
 
-export const resolveEditorCommand = (env: NodeJS.ProcessEnv): CommandSpec | undefined => {
+export const resolveEditorCommand = (
+	env: NodeJS.ProcessEnv,
+): CommandSpec | undefined => {
 	const value = env.VISUAL ?? env.EDITOR;
 	if (!value) {
 		return undefined;
@@ -141,10 +153,16 @@ export const resolveEditorCommand = (env: NodeJS.ProcessEnv): CommandSpec | unde
 };
 
 // <file name="src/index.ts">
-export const fileTagExtractPattern: ExtractPattern = { regex: /<file\s+name=["']([^"']+)["']>/g, captureIndex: 1 };
+export const fileTagExtractPattern: ExtractPattern = {
+	regex: /<file\s+name=["']([^"']+)["']>/g,
+	captureIndex: 1,
+};
 
 // file:///tmp/project/file.txt
-export const fileUrlExtractPattern: ExtractPattern = { regex: /file:\/\/[^\s"'<>]+/g, captureIndex: 0 };
+export const fileUrlExtractPattern: ExtractPattern = {
+	regex: /file:\/\/[^\s"'<>]+/g,
+	captureIndex: 0,
+};
 
 // /var/log/syslog or ~/code/project
 export const tildeOrAbsolutePathExtractPattern: ExtractPattern = {
@@ -160,19 +178,22 @@ export const dotSlashPathExtractPattern: ExtractPattern = {
 
 // file.txt or dir/file.txt
 export const relativePathWithExtensionExtractPattern: ExtractPattern = {
-	regex: /(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.[A-Za-z0-9._-]+)/g,
+	regex:
+		/(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.[A-Za-z0-9._-]+)/g,
 	captureIndex: 1,
 };
 
 // scripts/build or docs/guide
 export const relativePathWithoutExtensionExtractPattern: ExtractPattern = {
-	regex: /(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\/[A-Za-z0-9_-]+)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
+	regex:
+		/(?:^|[\s"'`([{<])((?![./~])[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\/[A-Za-z0-9_-]+)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
 	captureIndex: 1,
 };
 
 // .env or .config/nvim/init
 export const dotPathExtractPattern: ExtractPattern = {
-	regex: /(?:^|[\s"'`([{<])(\.[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
+	regex:
+		/(?:^|[\s"'`([{<])(\.[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)(?=$|[\s"'`<>)}\],;:#]|\.(?=$|[\s"'`<>)}\],;:#]))/g,
 	captureIndex: 1,
 };
 
@@ -236,36 +257,56 @@ const resolveOptions = (input: RevealOptionsInput = {}): RevealOptions => {
 			runTests: extract?.runTests ?? DEFAULT_OPTIONS.extract.runTests,
 		},
 		directories: {
-			includeInSelector: directories?.includeInSelector ?? DEFAULT_OPTIONS.directories.includeInSelector,
-			allowReveal: directories?.allowReveal ?? DEFAULT_OPTIONS.directories.allowReveal,
-			allowOpen: directories?.allowOpen ?? DEFAULT_OPTIONS.directories.allowOpen,
-			allowAddToPrompt: directories?.allowAddToPrompt ?? DEFAULT_OPTIONS.directories.allowAddToPrompt,
-			directorySuffix: directories?.directorySuffix ?? DEFAULT_OPTIONS.directories.directorySuffix,
+			includeInSelector:
+				directories?.includeInSelector ??
+				DEFAULT_OPTIONS.directories.includeInSelector,
+			allowReveal:
+				directories?.allowReveal ?? DEFAULT_OPTIONS.directories.allowReveal,
+			allowOpen:
+				directories?.allowOpen ?? DEFAULT_OPTIONS.directories.allowOpen,
+			allowAddToPrompt:
+				directories?.allowAddToPrompt ??
+				DEFAULT_OPTIONS.directories.allowAddToPrompt,
+			directorySuffix:
+				directories?.directorySuffix ??
+				DEFAULT_OPTIONS.directories.directorySuffix,
 		},
 		showRanges: input.showRanges ?? DEFAULT_OPTIONS.showRanges,
 		actionOrder: input.actionOrder ?? DEFAULT_OPTIONS.actionOrder,
 		commandName: input.commandName ?? DEFAULT_OPTIONS.commandName,
 		shortcuts: {
 			browse: shortcuts?.browse ?? DEFAULT_OPTIONS.shortcuts.browse,
-			revealLatest: shortcuts?.revealLatest ?? DEFAULT_OPTIONS.shortcuts.revealLatest,
-			quickLookLatest: shortcuts?.quickLookLatest ?? DEFAULT_OPTIONS.shortcuts.quickLookLatest,
+			revealLatest:
+				shortcuts?.revealLatest ?? DEFAULT_OPTIONS.shortcuts.revealLatest,
+			quickLookLatest:
+				shortcuts?.quickLookLatest ?? DEFAULT_OPTIONS.shortcuts.quickLookLatest,
 		},
 		openCommand: input.openCommand ?? DEFAULT_OPTIONS.openCommand,
 		revealCommand: input.revealCommand ?? DEFAULT_OPTIONS.revealCommand,
 		quickLookCommand:
-			input.quickLookCommand !== undefined ? input.quickLookCommand : DEFAULT_OPTIONS.quickLookCommand,
-		resolveEditorCommand: input.resolveEditorCommand ?? DEFAULT_OPTIONS.resolveEditorCommand,
+			input.quickLookCommand !== undefined
+				? input.quickLookCommand
+				: DEFAULT_OPTIONS.quickLookCommand,
+		resolveEditorCommand:
+			input.resolveEditorCommand ?? DEFAULT_OPTIONS.resolveEditorCommand,
 		maxEditBytes: input.maxEditBytes ?? DEFAULT_OPTIONS.maxEditBytes,
 		sanitize: {
-			leadingTrim: sanitize?.leadingTrim ?? DEFAULT_OPTIONS.sanitize.leadingTrim,
-			trailingTrim: sanitize?.trailingTrim ?? DEFAULT_OPTIONS.sanitize.trailingTrim,
-			trailingPunctuation: sanitize?.trailingPunctuation ?? DEFAULT_OPTIONS.sanitize.trailingPunctuation,
-			stripLineSuffix: sanitize?.stripLineSuffix ?? DEFAULT_OPTIONS.sanitize.stripLineSuffix,
+			leadingTrim:
+				sanitize?.leadingTrim ?? DEFAULT_OPTIONS.sanitize.leadingTrim,
+			trailingTrim:
+				sanitize?.trailingTrim ?? DEFAULT_OPTIONS.sanitize.trailingTrim,
+			trailingPunctuation:
+				sanitize?.trailingPunctuation ??
+				DEFAULT_OPTIONS.sanitize.trailingPunctuation,
+			stripLineSuffix:
+				sanitize?.stripLineSuffix ?? DEFAULT_OPTIONS.sanitize.stripLineSuffix,
 		},
 	};
 };
 
-const parseRangePart = (part: string): { start: number; end: number } | null => {
+const parseRangePart = (
+	part: string,
+): { start: number; end: number } | null => {
 	if (!part) {
 		return null;
 	}
@@ -274,7 +315,12 @@ const parseRangePart = (part: string): { start: number; end: number } | null => 
 	if (dashIndex >= 0) {
 		const start = Number.parseInt(cleaned.slice(0, dashIndex), 10);
 		const end = Number.parseInt(cleaned.slice(dashIndex + 1), 10);
-		if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end >= start) {
+		if (
+			Number.isFinite(start) &&
+			Number.isFinite(end) &&
+			start > 0 &&
+			end >= start
+		) {
 			return { start, end };
 		}
 		return null;
@@ -288,8 +334,14 @@ const parseRangePart = (part: string): { start: number; end: number } | null => 
 	return null;
 };
 
-export const mergeRanges = (existing?: string, incoming?: string): string | undefined => {
-	const parts = [...(existing ?? "").split(","), ...(incoming ?? "").split(",")].filter(Boolean);
+export const mergeRanges = (
+	existing?: string,
+	incoming?: string,
+): string | undefined => {
+	const parts = [
+		...(existing ?? "").split(","),
+		...(incoming ?? "").split(","),
+	].filter(Boolean);
 	if (parts.length === 0) {
 		return undefined;
 	}
@@ -314,10 +366,15 @@ export const mergeRanges = (existing?: string, incoming?: string): string | unde
 		}
 	}
 
-	return merged.map((r) => (r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`)).join(",");
+	return merged
+		.map((r) => (r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`))
+		.join(",");
 };
 
-const extractFileReferencesFromText = (text: string, options: RevealOptions): string[] => {
+const extractFileReferencesFromText = (
+	text: string,
+	options: RevealOptions,
+): string[] => {
 	const refs: string[] = [];
 	const seen = new Set<string>();
 
@@ -328,7 +385,8 @@ const extractFileReferencesFromText = (text: string, options: RevealOptions): st
 			if (typeof value === "string" && matchIndex >= 0) {
 				const full = match[0];
 				const captureOffset = full.indexOf(value);
-				const captureStart = captureOffset >= 0 ? matchIndex + captureOffset : matchIndex;
+				const captureStart =
+					captureOffset >= 0 ? matchIndex + captureOffset : matchIndex;
 				const captureEnd = captureStart + value.length;
 				const suffix = captureLineSuffix(text, captureEnd);
 				const candidate = `${value}${suffix}`;
@@ -351,7 +409,14 @@ const extractPathsFromToolArgs = (args: unknown): string[] => {
 
 	const refs: string[] = [];
 	const record = args as Record<string, unknown>;
-	const directKeys = ["path", "file", "filePath", "filepath", "fileName", "filename"] as const;
+	const directKeys = [
+		"path",
+		"file",
+		"filePath",
+		"filepath",
+		"fileName",
+		"filename",
+	] as const;
 	const listKeys = ["paths", "files", "filePaths"] as const;
 
 	for (const key of directKeys) {
@@ -375,7 +440,10 @@ const extractPathsFromToolArgs = (args: unknown): string[] => {
 	return refs;
 };
 
-const extractFileReferencesFromContent = (content: unknown, options: RevealOptions): string[] => {
+const extractFileReferencesFromContent = (
+	content: unknown,
+	options: RevealOptions,
+): string[] => {
 	if (typeof content === "string") {
 		return extractFileReferencesFromText(content, options);
 	}
@@ -409,9 +477,15 @@ const captureLineSuffix = (text: string, start: number): string => {
 	return match?.[0] ?? "";
 };
 
-const extractFileReferencesFromMessage = (message: MessageEntry["message"], options: RevealOptions): string[] => {
+const extractFileReferencesFromMessage = (
+	message: MessageEntry["message"],
+	options: RevealOptions,
+): string[] => {
 	if ("content" in message) {
-		return extractFileReferencesFromContent((message as { content: unknown }).content, options);
+		return extractFileReferencesFromContent(
+			(message as { content: unknown }).content,
+			options,
+		);
 	}
 
 	if ("output" in message && typeof message.output === "string") {
@@ -425,7 +499,10 @@ const extractFileReferencesFromMessage = (message: MessageEntry["message"], opti
 	return [];
 };
 
-const extractFileReferencesFromEntry = (entry: SessionEntry, options: RevealOptions): string[] => {
+const extractFileReferencesFromEntry = (
+	entry: SessionEntry,
+	options: RevealOptions,
+): string[] => {
 	if (entry.type === "message") {
 		return extractFileReferencesFromMessage(entry.message, options);
 	}
@@ -445,7 +522,8 @@ const sanitizeReference = (raw: string, options: RevealOptions): string => {
 	return value;
 };
 
-const isCommentLikeReference = (value: string): boolean => value.startsWith("//");
+const isCommentLikeReference = (value: string): boolean =>
+	value.startsWith("//");
 
 const stripLineSuffix = (value: string): NormalizedReference => {
 	let pathOnly = value;
@@ -461,7 +539,10 @@ const stripLineSuffix = (value: string): NormalizedReference => {
 		}
 	}
 
-	const lastSeparator = Math.max(pathOnly.lastIndexOf("/"), pathOnly.lastIndexOf("\\"));
+	const lastSeparator = Math.max(
+		pathOnly.lastIndexOf("/"),
+		pathOnly.lastIndexOf("\\"),
+	);
 	const segmentStart = lastSeparator >= 0 ? lastSeparator + 1 : 0;
 	const segment = pathOnly.slice(segmentStart);
 	const colonIndex = segment.indexOf(":");
@@ -492,7 +573,10 @@ const stripLineSuffix = (value: string): NormalizedReference => {
 	return { path: pathOnly, ranges };
 };
 
-const toTestReference = (value: string, options: RevealOptions): ExtractedReference => {
+const toTestReference = (
+	value: string,
+	options: RevealOptions,
+): ExtractedReference => {
 	const sanitized = sanitizeReference(value, options);
 	if (!options.sanitize.stripLineSuffix) {
 		return { path: sanitized };
@@ -501,8 +585,13 @@ const toTestReference = (value: string, options: RevealOptions): ExtractedRefere
 	return stripLineSuffix(sanitized);
 };
 
-const extractTestReferences = (text: string, options: RevealOptions): ExtractedReference[] =>
-	extractFileReferencesFromText(text, options).map((value) => toTestReference(value, options));
+const extractTestReferences = (
+	text: string,
+	options: RevealOptions,
+): ExtractedReference[] =>
+	extractFileReferencesFromText(text, options).map((value) =>
+		toTestReference(value, options),
+	);
 
 const runExtractPatternTests = (options: RevealOptions): void => {
 	const testCases = options.extract.testCases ?? [];
@@ -512,12 +601,18 @@ const runExtractPatternTests = (options: RevealOptions): void => {
 		const actual = JSON.stringify(results);
 
 		if (actual !== expected) {
-			throw new Error(`Extract pattern test failed for "${testCase.text}": expected ${expected}, got ${actual}`);
+			throw new Error(
+				`Extract pattern test failed for "${testCase.text}": expected ${expected}, got ${actual}`,
+			);
 		}
 	}
 };
 
-const normalizeReferencePath = (raw: string, cwd: string, options: RevealOptions): NormalizedReference | null => {
+const normalizeReferencePath = (
+	raw: string,
+	cwd: string,
+	options: RevealOptions,
+): NormalizedReference | null => {
 	let candidate = sanitizeReference(raw, options);
 	if (!candidate || isCommentLikeReference(candidate)) {
 		return null;
@@ -567,7 +662,10 @@ const formatDisplayPath = (absolutePath: string, cwd: string): string => {
 	return absolutePath;
 };
 
-const applyDirectorySuffix = (value: string, options: RevealOptions): string => {
+const applyDirectorySuffix = (
+	value: string,
+	options: RevealOptions,
+): string => {
 	const suffix = options.directories.directorySuffix;
 	if (!suffix) {
 		return value;
@@ -628,7 +726,10 @@ const collectRecentFileReferences = (
 			if (normalized) {
 				const existingIndex = indexByPath.get(normalized.path);
 				if (existingIndex !== undefined) {
-					const merged = mergeRanges(results[existingIndex].ranges, normalized.ranges);
+					const merged = mergeRanges(
+						results[existingIndex].ranges,
+						normalized.ranges,
+					);
 					results[existingIndex].ranges = merged;
 				} else {
 					const reference = buildFileReference(normalized, cwd, options);
@@ -670,9 +771,14 @@ const showFileSelector = async (
 	const orderedItems = uniqueItems.filter((item) => item.exists);
 
 	const selectItems: SelectItem[] = orderedItems.map((item) => {
-		const baseDisplay = item.isDirectory ? applyDirectorySuffix(item.display, options) : item.display;
+		const baseDisplay = item.isDirectory
+			? applyDirectorySuffix(item.display, options)
+			: item.display;
 		const showRanges = options.showRanges;
-		const display = !item.isDirectory && showRanges && item.ranges ? `${baseDisplay}:${item.ranges}` : baseDisplay;
+		const display =
+			!item.isDirectory && showRanges && item.ranges
+				? `${baseDisplay}:${item.ranges}`
+				: baseDisplay;
 		const status = item.isDirectory ? " [directory]" : "";
 		return {
 			value: item.path,
@@ -684,7 +790,9 @@ const showFileSelector = async (
 	return ctx.ui.custom<FileReference | null>((tui, theme, _kb, done) => {
 		const container = new Container();
 		container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-		container.addChild(new Text(theme.fg("accent", theme.bold("Select a file"))));
+		container.addChild(
+			new Text(theme.fg("accent", theme.bold("Select a file"))),
+		);
 
 		const searchInput = new Input();
 		container.addChild(searchInput);
@@ -692,7 +800,11 @@ const showFileSelector = async (
 
 		const listContainer = new Container();
 		container.addChild(listContainer);
-		container.addChild(new Text(theme.fg("dim", "Type to filter • enter to select • esc to cancel")));
+		container.addChild(
+			new Text(
+				theme.fg("dim", "Type to filter • enter to select • esc to cancel"),
+			),
+		);
 		container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
 		let filteredItems = selectItems;
@@ -702,28 +814,38 @@ const showFileSelector = async (
 			listContainer.clear();
 
 			if (filteredItems.length === 0) {
-				listContainer.addChild(new Text(theme.fg("warning", "  No matching files"), 0, 0));
+				listContainer.addChild(
+					new Text(theme.fg("warning", "  No matching files"), 0, 0),
+				);
 				selectList = null;
 				return;
 			}
 
-			selectList = new SelectList(filteredItems, Math.min(filteredItems.length, 12), {
-				selectedPrefix: (text) => theme.fg("accent", text),
-				selectedText: (text) => theme.fg("accent", text),
-				description: (text) => theme.fg("muted", text),
-				scrollInfo: (text) => theme.fg("dim", text),
-				noMatch: (text) => theme.fg("warning", text),
-			});
+			selectList = new SelectList(
+				filteredItems,
+				Math.min(filteredItems.length, 12),
+				{
+					selectedPrefix: (text) => theme.fg("accent", text),
+					selectedText: (text) => theme.fg("accent", text),
+					description: (text) => theme.fg("muted", text),
+					scrollInfo: (text) => theme.fg("dim", text),
+					noMatch: (text) => theme.fg("warning", text),
+				},
+			);
 
 			if (selectedPath) {
-				const index = filteredItems.findIndex((item) => item.value === selectedPath);
+				const index = filteredItems.findIndex(
+					(item) => item.value === selectedPath,
+				);
 				if (index >= 0) {
 					selectList.setSelectedIndex(index);
 				}
 			}
 
 			selectList.onSelect = (item) => {
-				const selected = orderedItems.find((entry) => entry.path === item.value);
+				const selected = orderedItems.find(
+					(entry) => entry.path === item.value,
+				);
 				done(selected ?? null);
 			};
 			selectList.onCancel = () => done(null);
@@ -734,7 +856,11 @@ const showFileSelector = async (
 		const applyFilter = () => {
 			const query = searchInput.getValue();
 			filteredItems = query
-				? fuzzyFilter(selectItems, query, (item) => `${item.label} ${item.value} ${item.description ?? ""}`)
+				? fuzzyFilter(
+						selectItems,
+						query,
+						(item) => `${item.label} ${item.value} ${item.description ?? ""}`,
+					)
 				: selectItems;
 			updateList();
 		};
@@ -795,10 +921,20 @@ const ACTION_LABELS: Record<FileAction, string> = {
 	edit: "Edit",
 };
 
-const buildActionItems = (actionOptions: FileActionOptions, options: RevealOptions): SelectItem[] => {
+const buildActionItems = (
+	actionOptions: FileActionOptions,
+	options: RevealOptions,
+): SelectItem[] => {
 	const configuredOrder: FileAction[] = [...options.actionOrder];
-	const defaultOrder: FileAction[] = ["reveal", "open", "addToPrompt", "quicklook", "edit"];
-	const actionOrder = configuredOrder.length > 0 ? configuredOrder : defaultOrder;
+	const defaultOrder: FileAction[] = [
+		"reveal",
+		"open",
+		"addToPrompt",
+		"quicklook",
+		"edit",
+	];
+	const actionOrder =
+		configuredOrder.length > 0 ? configuredOrder : defaultOrder;
 	const availability: Record<FileAction, boolean> = {
 		reveal: actionOptions.canReveal,
 		open: actionOptions.canOpen,
@@ -815,7 +951,10 @@ const buildActionItems = (actionOptions: FileActionOptions, options: RevealOptio
 		}));
 };
 
-const getEditableContent = (target: FileReference, options: RevealOptions): EditCheckResult => {
+const getEditableContent = (
+	target: FileReference,
+	options: RevealOptions,
+): EditCheckResult => {
 	if (!existsSync(target.path)) {
 		return { allowed: false, reason: "File not found" };
 	}
@@ -847,7 +986,9 @@ const showActionSelector = async (
 	return ctx.ui.custom<FileAction | null>((tui, theme, _kb, done) => {
 		const container = new Container();
 		container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-		container.addChild(new Text(theme.fg("accent", theme.bold("Choose action"))));
+		container.addChild(
+			new Text(theme.fg("accent", theme.bold("Choose action"))),
+		);
 
 		const selectList = new SelectList(actions, actions.length, {
 			selectedPrefix: (text) => theme.fg("accent", text),
@@ -861,7 +1002,9 @@ const showActionSelector = async (
 		selectList.onCancel = () => done(null);
 
 		container.addChild(selectList);
-		container.addChild(new Text(theme.fg("dim", "Press enter to confirm or esc to cancel")));
+		container.addChild(
+			new Text(theme.fg("dim", "Press enter to confirm or esc to cancel")),
+		);
 		container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
 		return {
@@ -903,12 +1046,17 @@ const openPath = async (
 	const [command, ...args] = options.openCommand(target);
 	const result = await pi.exec(command, args);
 	if (result.code !== 0 && ctx.hasUI) {
-		const errorMessage = result.stderr?.trim() || `Failed to open ${target.path}`;
+		const errorMessage =
+			result.stderr?.trim() || `Failed to open ${target.path}`;
 		ctx.ui.notify(errorMessage, "error");
 	}
 };
 
-const openExternalEditor = (tui: TUI, editorCmd: CommandSpec, content: string): string | null => {
+const openExternalEditor = (
+	tui: TUI,
+	editorCmd: CommandSpec,
+	content: string,
+): string | null => {
 	const tmpFile = path.join(os.tmpdir(), `pi-reveal-edit-${Date.now()}.txt`);
 
 	try {
@@ -916,7 +1064,9 @@ const openExternalEditor = (tui: TUI, editorCmd: CommandSpec, content: string): 
 		tui.stop();
 
 		const [editor, ...editorArgs] = editorCmd;
-		const result = spawnSync(editor, [...editorArgs, tmpFile], { stdio: "inherit" });
+		const result = spawnSync(editor, [...editorArgs, tmpFile], {
+			stdio: "inherit",
+		});
 
 		if (result.status === 0) {
 			return readFileSync(tmpFile, "utf8").replace(/\n$/, "");
@@ -944,16 +1094,20 @@ const editPath = async (
 		return;
 	}
 
-	const updated = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-		const status = new Text(theme.fg("dim", `Opening ${editorCmd.join(" ")}...`));
+	const updated = await ctx.ui.custom<string | null>(
+		(tui, theme, _kb, done) => {
+			const status = new Text(
+				theme.fg("dim", `Opening ${editorCmd.join(" ")}...`),
+			);
 
-		queueMicrotask(() => {
-			const result = openExternalEditor(tui, editorCmd, content);
-			done(result);
-		});
+			queueMicrotask(() => {
+				const result = openExternalEditor(tui, editorCmd, content);
+				done(result);
+			});
 
-		return status;
-	});
+			return status;
+		},
+	);
 
 	if (updated === null) {
 		ctx.ui.notify("Edit cancelled", "info");
@@ -1000,7 +1154,8 @@ const revealPath = async (
 
 	const result = await pi.exec(command, [...baseArgs, ...args]);
 	if (result.code !== 0 && ctx.hasUI) {
-		const errorMessage = result.stderr?.trim() || `Failed to reveal ${target.path}`;
+		const errorMessage =
+			result.stderr?.trim() || `Failed to reveal ${target.path}`;
 		ctx.ui.notify(errorMessage, "error");
 	}
 };
@@ -1038,19 +1193,26 @@ const quickLookPath = async (
 	const [command, ...args] = quickLookCommand;
 	const result = await pi.exec(command, [...args, target.path]);
 	if (result.code !== 0 && ctx.hasUI) {
-		const errorMessage = result.stderr?.trim() || `Failed to Quick Look ${target.path}`;
+		const errorMessage =
+			result.stderr?.trim() || `Failed to Quick Look ${target.path}`;
 		ctx.ui.notify(errorMessage, "error");
 	}
 };
 
-const addFileToPrompt = (ctx: ExtensionContext, target: FileReference, options: RevealOptions): void => {
+const addFileToPrompt = (
+	ctx: ExtensionContext,
+	target: FileReference,
+	options: RevealOptions,
+): void => {
 	if (target.isDirectory && !options.directories.allowAddToPrompt) {
 		ctx.ui.notify("Adding directories to the prompt is disabled", "warning");
 		return;
 	}
 
 	const mentionBase = target.display || target.path;
-	const mentionTarget = target.isDirectory ? applyDirectorySuffix(mentionBase, options) : mentionBase;
+	const mentionTarget = target.isDirectory
+		? applyDirectorySuffix(mentionBase, options)
+		: mentionBase;
 	const mention = `@${mentionTarget}`;
 	const current = ctx.ui.getEditorText();
 	const separator = current && !current.endsWith(" ") ? " " : "";
@@ -1067,11 +1229,18 @@ const getActionOptions = (
 	canEdit: editCheck.allowed,
 	canReveal: !selection.isDirectory || options.directories.allowReveal,
 	canOpen: !selection.isDirectory || options.directories.allowOpen,
-	canAddToPrompt: !selection.isDirectory || options.directories.allowAddToPrompt,
+	canAddToPrompt:
+		!selection.isDirectory || options.directories.allowAddToPrompt,
 });
 
 const hasAnyAction = (options: FileActionOptions): boolean =>
-	[options.canQuickLook, options.canEdit, options.canReveal, options.canOpen, options.canAddToPrompt].some(Boolean);
+	[
+		options.canQuickLook,
+		options.canEdit,
+		options.canReveal,
+		options.canOpen,
+		options.canAddToPrompt,
+	].some(Boolean);
 
 const handleFileAction = async (
 	pi: ExtensionAPI,
@@ -1115,7 +1284,12 @@ const runFileBrowserLoop = async (
 	options: RevealOptions,
 	lastSelectedPath: string | null,
 ): Promise<void> => {
-	const selection = await showFileSelector(ctx, references, options, lastSelectedPath);
+	const selection = await showFileSelector(
+		ctx,
+		references,
+		options,
+		lastSelectedPath,
+	);
 	if (!selection) {
 		ctx.ui.notify("Reveal cancelled", "info");
 		return;
@@ -1142,13 +1316,22 @@ const runFileBrowserLoop = async (
 	await handleFileAction(pi, ctx, selection, editCheck, action, options);
 };
 
-const runFileBrowser = async (pi: ExtensionAPI, ctx: ExtensionContext, options: RevealOptions): Promise<void> => {
+const runFileBrowser = async (
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	options: RevealOptions,
+): Promise<void> => {
 	if (!ctx.hasUI) {
 		ctx.ui.notify("Reveal requires interactive mode", "error");
 		return;
 	}
 
-	const references = collectRecentFileReferences(ctx.sessionManager.getBranch(), ctx.cwd, 100, options);
+	const references = collectRecentFileReferences(
+		ctx.sessionManager.getBranch(),
+		ctx.cwd,
+		100,
+		options,
+	);
 	if (references.length === 0) {
 		ctx.ui.notify("No file reference found in the session", "warning");
 		return;
@@ -1157,7 +1340,7 @@ const runFileBrowser = async (pi: ExtensionAPI, ctx: ExtensionContext, options: 
 	await runFileBrowserLoop(pi, ctx, references, options, null);
 };
 
-export const revealExtension = (input: RevealOptionsInput = {}) => {
+export const extension = (input: RevealOptionsInput = {}) => {
 	const options = resolveOptions(input);
 	if (options.extract.runTests) {
 		runExtractPatternTests(options);
@@ -1214,5 +1397,3 @@ export const revealExtension = (input: RevealOptionsInput = {}) => {
 		});
 	};
 };
-
-export const extension = revealExtension;
