@@ -7,12 +7,12 @@ Reusable pi extension for browsing/opening files mentioned in the conversation.
 Create a project-local extension wrapper:
 
 ```bash
-mkdir -p .pi/extensions/files
+mkdir -p ~/.pi/extensions/files
 ```
 
-### 1) Create `package.json`
+Install the plugin
 ```bash
-cat > .pi/extensions/files/package.json <<'EOF'
+cat > ~/.pi/extensions/files/package.json <<'EOF'
 {
   "name": "extension-files",
   "private": true,
@@ -26,22 +26,12 @@ cat > .pi/extensions/files/package.json <<'EOF'
 }
 
 EOF
-```
-
-### 2) Create `index.ts` (from scaffold)
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/files/src/scaffold.ts \
-  -o .pi/extensions/files/index.ts
+  -o ~/.pi/extensions/files/index.ts
+(cd ~/.pi/extensions/files && npx pnpm install)
 ```
 
-### 3) Install
-
-Run pnpm in the wrapper directory:
-
-```bash
-(cd .pi/extensions/files && pnpm install)
-```
+You can now modify `~/.pi/extensions`
 
 ### 4) Run
 
@@ -51,6 +41,5 @@ pi
 
 ### Updating later
 
-cd .pi/extensions/files
-pnpm update files
+(cd ~/.pi/extensions/files && pnpm update files)
 
