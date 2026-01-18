@@ -6,9 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./extension": "./src/extension.ts",
-    "./scaffold": "./src/scaffold.ts"
+    "./extension": "./src/extension.ts"
   },
   "files": [
     "src"

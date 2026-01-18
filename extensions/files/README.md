@@ -39,7 +39,7 @@ Run pnpm in the wrapper directory:
 
 ```bash
 cd .pi/extensions/files
-pnpm add "files@github:richardgill/pi-extensions#path:/extensions/files"
+pnpm install
 ```
 
 ### 4) Run
