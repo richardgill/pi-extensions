@@ -50,3 +50,9 @@ pnpm install
 ```bash
 pi
 ```
+
+### Updating later
+
+cd .pi/extensions/files
+pnpm update files
+
