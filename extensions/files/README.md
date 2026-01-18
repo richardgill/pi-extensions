@@ -10,8 +10,7 @@ Create a project-local extension wrapper:
 mkdir -p .pi/extensions/files
 ```
 
-### 1) Create `package.json` (single command)
-
+### 1) Create `package.json`
 ```bash
 cat > .pi/extensions/files/package.json <<'EOF'
 {
@@ -41,8 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/richardgill/pi-extensions/main/exte
 Run pnpm in the wrapper directory:
 
 ```bash
-cd .pi/extensions/files
-pnpm install
+(cd .pi/extensions/files && pnpm install)
 ```
 
 ### 4) Run
