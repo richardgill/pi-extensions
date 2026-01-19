@@ -1,6 +1,6 @@
 # files pi extension
 
-Reusable pi extension for browsing/opening files mentioned in the conversation.
+pi extension for browsing/opening files mentioned in the conversation.
 
 ## Install into a project via `.pi/extensions/`
 
