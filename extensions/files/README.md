@@ -38,5 +38,5 @@ Start a fresh `pi`.
 ### Updating later
 
 ```bash
-(cd ~/.pi/agent/extensions/files && pnpm update files)
+(cd ~/.pi/agent/extensions/files && npx pnpm update files)
 ```
