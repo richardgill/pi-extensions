@@ -23,7 +23,7 @@ const buildSubprocessArgs = (options: {
 	thinkingLevel: ThinkingLevel;
 	builtInTools: BuiltInToolName[];
 }): string[] => {
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
+	const args: string[] = ["--mode", "json", "-p", "--no-session", "--no-extensions"];
 
 	if (options.model) {
 		args.push("--provider", options.model.provider);
