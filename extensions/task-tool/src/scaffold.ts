@@ -1,15 +1,19 @@
-/**
- * Task Tool
- *
- * Runs isolated `pi` subprocesses for single or parallel work.
- *
- * If a skill is provided, the prompt is wrapped to match the interactive
- * `/skill:<name> <args>` behavior.
- */
+import { taskTool } from "task-tool";
 
-import { taskTool } from "./task-tool.js";
+type PromptPatch = { match: RegExp; replace: string };
 
-const taskExtension = taskTool({
+type TaskToolOptions = {
+	name: string;
+	label: string;
+	description: string;
+	maxParallelTasks: number;
+	maxConcurrency: number;
+	collapsedItemCount: number;
+	skillListLimit: number;
+	systemPromptPatches: PromptPatch[];
+};
+
+const extension = taskTool({
 	name: "task",
 	label: "Task",
 	description: [
@@ -31,6 +35,6 @@ const taskExtension = taskTool({
 				"Use skill directly: Use the read tool to load a skill's file when the task matches its description. Use skill in task: Pass the skill to the task tool and the task context will load it.",
 		},
 	],
-});
+} satisfies TaskToolOptions);
 
-export default taskExtension;
+export default extension;

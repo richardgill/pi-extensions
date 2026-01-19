@@ -1,4 +1,4 @@
-# Task Tool Example
+# task-tool pi extension
 
 Run isolated `pi` subprocesses for **single**, **chain**, or **parallel** work.
 
@@ -12,22 +12,48 @@ This is similar in spirit to the `subagent/` example, but focuses on running pla
 - **Streaming updates**: see partial progress while subprocesses run
 - **Abort support**: Ctrl+C propagates to kill subprocesses
 
-## Installation
+## Install into a project via `~/.pi/agent/extensions/`
 
-From the repository root:
+Create a project-local extension wrapper:
 
 ```bash
-mkdir -p ~/.pi/agent/extensions/task
-ln -sf "$(pwd)/packages/coding-agent/examples/extensions/task/index.ts" ~/.pi/agent/extensions/task/index.ts
+mkdir -p ~/.pi/agent/extensions/task-tool
+```
+
+Install the plugin:
+
+```bash
+cat > ~/.pi/agent/extensions/task-tool/package.json <<'EOF'
+{
+  "name": "extension-task-tool",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "task-tool": "github:richardgill/pi-extensions#path:/extensions/task-tool"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1"
+  }
+}
+EOF
+
+curl -fsSL https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/task-tool/src/scaffold.ts \
+  -o ~/.pi/agent/extensions/task-tool/index.ts
+
+(cd ~/.pi/agent/extensions/task-tool && npx pnpm install)
+```
+
+Start a fresh `pi`.
+
+### Updating later
+
+```bash
+(cd ~/.pi/agent/extensions/task-tool && npx pnpm update task-tool)
 ```
 
 ## Usage
 
 ### Single
-
-```text
-Run a single task to summarize the auth flow
-```
 
 Tool call shape:
 
