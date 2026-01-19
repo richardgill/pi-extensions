@@ -1,4 +1,4 @@
-# files (pi extension)
+# files pi extension
 
 Reusable pi extension for browsing/opening files mentioned in the conversation.
 
@@ -33,11 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/richardgill/pi-extensions/main/exte
 
 You can now modify `~/.pi/agent/extensions/files/index.ts` to configure the extension
 
-### 4) Run
-
-```bash
-pi
-```
+Start a fresh `pi`.
 
 ### Updating later
 
