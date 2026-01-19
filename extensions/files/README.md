@@ -26,7 +26,7 @@ cat > ~/.pi/agent/extensions/files/package.json <<'EOF'
 }
 
 EOF
-curl -fsSL https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/files/src/scaffold.ts \
+curl -fsSL "https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/files/src/scaffold.ts?cache-bust=1" \
   -o ~/.pi/agent/extensions/files/index.ts
 (cd ~/.pi/agent/extensions/files && npx pnpm install)
 ```

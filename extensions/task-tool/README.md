@@ -37,7 +37,7 @@ cat > ~/.pi/agent/extensions/task-tool/package.json <<'EOF'
 }
 EOF
 
-curl -fsSL https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/task-tool/src/scaffold.ts \
+curl -fsSL "https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/task-tool/src/scaffold.ts?cache-bust=1" \
   -o ~/.pi/agent/extensions/task-tool/index.ts
 
 (cd ~/.pi/agent/extensions/task-tool && npx pnpm install)
