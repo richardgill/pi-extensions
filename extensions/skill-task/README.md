@@ -5,6 +5,7 @@ Route `/skill:` commands and skill file reads to the task tool when the skill fr
 ## Behavior
 
 - Reads skill frontmatter and checks `metadata.pi.forkContext`.
+- Requires the task-tool extension to be loaded (tool name: task).
 - If `forkContext: true`, blocks in-session skill expansion and invokes the task tool.
 - Optional overrides: `metadata.pi.model`, `metadata.pi.thinkingLevel`.
 

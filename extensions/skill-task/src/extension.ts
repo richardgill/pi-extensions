@@ -5,6 +5,7 @@ import type {
 	ExtensionContext,
 	InputEvent,
 	InputEventResult,
+	SessionStartEvent,
 	ToolCallEvent,
 } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
@@ -52,6 +53,10 @@ const skillCommandPrefix = "/skill:";
 let extensionApi: ExtensionAPI | null = null;
 let lastPrompt: string | null = null;
 let pendingSkill: SkillInvocation | null = null;
+let handlersRegistered = false;
+
+const taskToolRequiredMessage =
+	"skill-task requires task-tool extension to be loaded (tool name: task).";
 
 const notify = (ctx: ExtensionContext, message: string): void => {
 	if (!ctx.hasUI) {
@@ -205,6 +210,47 @@ const formatTaskMessage = (params: TaskToolParams): string => {
 	return `Spawning skill: ${params.tasks[0]?.skill ?? "unknown"} in a task`;
 };
 
+const isTaskToolRegistered = (pi: ExtensionAPI): boolean =>
+	pi.getAllTools().some((tool) => tool.name === "task");
+
+const assertTaskToolRegistered = (
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+): void => {
+	if (isTaskToolRegistered(pi)) {
+		return;
+	}
+
+	if (ctx.hasUI) {
+		ctx.ui.notify(taskToolRequiredMessage, "error");
+	}
+
+	process.stderr.write(`${taskToolRequiredMessage}\n`);
+	throw new Error(taskToolRequiredMessage);
+};
+
+const registerSkillTaskHandlers = (pi: ExtensionAPI): void => {
+	if (handlersRegistered) {
+		return;
+	}
+
+	handlersRegistered = true;
+	pi.on("input", handleInput);
+	pi.on("tool_call", handleToolCall);
+};
+
+const handleSessionStart = async (
+	_event: SessionStartEvent,
+	ctx: ExtensionContext,
+): Promise<void> => {
+	if (!extensionApi) {
+		return;
+	}
+
+	assertTaskToolRegistered(extensionApi, ctx);
+	registerSkillTaskHandlers(extensionApi);
+};
+
 const hasTaskTool = (): boolean => {
 	if (!extensionApi) {
 		return false;
@@ -307,7 +353,6 @@ const handleToolCall = async (
 export const skillTask = () => {
 	return (pi: ExtensionAPI): void => {
 		extensionApi = pi;
-		pi.on("input", handleInput);
-		pi.on("tool_call", handleToolCall);
+		pi.on("session_start", handleSessionStart);
 	};
 };
