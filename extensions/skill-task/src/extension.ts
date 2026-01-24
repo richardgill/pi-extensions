@@ -82,9 +82,11 @@ export const parseSkillCommand = (text: string): SkillInvocation | null => {
 	return { name, prompt };
 };
 
-const isSkillFile = (filePath: string): boolean => path.basename(filePath) === "SKILL.md";
+const isSkillFile = (filePath: string): boolean =>
+	path.basename(filePath) === "SKILL.md";
 
-const getSkillNameFromPath = (filePath: string): string => path.basename(path.dirname(filePath));
+const getSkillNameFromPath = (filePath: string): string =>
+	path.basename(path.dirname(filePath));
 
 const normalizePrompt = (prompt: string): string => prompt.trim();
 
@@ -125,7 +127,10 @@ const getSkillRootDirs = (ctx: ExtensionContext): string[] => {
 	];
 };
 
-const getSkillPathCandidates = (ctx: ExtensionContext, skillName: string): string[] => {
+const getSkillPathCandidates = (
+	ctx: ExtensionContext,
+	skillName: string,
+): string[] => {
 	const candidates: string[] = [];
 	for (const root of getSkillRootDirs(ctx)) {
 		candidates.push(path.join(root, `${skillName}.md`));
@@ -134,7 +139,10 @@ const getSkillPathCandidates = (ctx: ExtensionContext, skillName: string): strin
 	return candidates;
 };
 
-const resolveSkillPath = (ctx: ExtensionContext, skillName: string): string | null => {
+const resolveSkillPath = (
+	ctx: ExtensionContext,
+	skillName: string,
+): string | null => {
 	for (const candidate of getSkillPathCandidates(ctx, skillName)) {
 		if (existsSync(candidate)) {
 			return candidate;
@@ -143,7 +151,10 @@ const resolveSkillPath = (ctx: ExtensionContext, skillName: string): string | nu
 	return null;
 };
 
-const loadSkillMetadataByName = (ctx: ExtensionContext, skillName: string): SkillPiMetadata | null => {
+const loadSkillMetadataByName = (
+	ctx: ExtensionContext,
+	skillName: string,
+): SkillPiMetadata | null => {
 	const skillPath = resolveSkillPath(ctx, skillName);
 	if (!skillPath) {
 		return null;
@@ -162,7 +173,11 @@ const consumePendingSkillPrompt = (skillName: string): string | null => {
 	return prompt;
 };
 
-const buildTaskParams = (skillName: string, prompt: string, metadata: SkillPiMetadata): TaskToolParams => {
+const buildTaskParams = (
+	skillName: string,
+	prompt: string,
+	metadata: SkillPiMetadata,
+): TaskToolParams => {
 	const params: TaskToolParams = {
 		type: "single",
 		tasks: [
@@ -187,7 +202,7 @@ const buildTaskParams = (skillName: string, prompt: string, metadata: SkillPiMet
 };
 
 const formatTaskMessage = (params: TaskToolParams): string => {
-	return `Call the task tool with the following JSON. Respond only with the tool call.\n${JSON.stringify(params)}`;
+	return `Spawning skill: ${params.tasks[0]?.skill ?? "unknown"} in a task`;
 };
 
 const hasTaskTool = (): boolean => {
@@ -198,7 +213,12 @@ const hasTaskTool = (): boolean => {
 	return extensionApi.getActiveTools().includes("task");
 };
 
-const sendTaskTool = (ctx: ExtensionContext, skillName: string, prompt: string, metadata: SkillPiMetadata): void => {
+const sendTaskTool = (
+	ctx: ExtensionContext,
+	skillName: string,
+	prompt: string,
+	metadata: SkillPiMetadata,
+): void => {
 	if (!extensionApi) {
 		return;
 	}
@@ -221,7 +241,10 @@ const sendTaskTool = (ctx: ExtensionContext, skillName: string, prompt: string, 
 	extensionApi.sendUserMessage(message);
 };
 
-const handleInput = async (event: InputEvent, ctx: ExtensionContext): Promise<InputEventResult | undefined> => {
+const handleInput = async (
+	event: InputEvent,
+	ctx: ExtensionContext,
+): Promise<InputEventResult | undefined> => {
 	if (event.source === "extension") {
 		return;
 	}
@@ -251,7 +274,10 @@ const handleInput = async (event: InputEvent, ctx: ExtensionContext): Promise<In
 	return { action: "handled" };
 };
 
-const handleToolCall = async (event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallResult | undefined> => {
+const handleToolCall = async (
+	event: ToolCallEvent,
+	ctx: ExtensionContext,
+): Promise<ToolCallResult | undefined> => {
 	if (event.toolName !== "read") {
 		return;
 	}
