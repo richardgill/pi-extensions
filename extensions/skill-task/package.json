@@ -1,0 +1,26 @@
+{
+  "name": "skill-task",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "types": "./src/extension.ts",
+  "exports": {
+    ".": "./src/extension.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "tsc": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
