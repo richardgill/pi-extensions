@@ -90,8 +90,10 @@ const parseTaskItems = (rawTasks: unknown[]): { ok: true; items: TaskWorkItem[] 
 	for (const [index, taskEntry] of rawTasks.entries()) {
 		if (!isRecord(taskEntry)) return { ok: false, error: "Invalid task item: expected an object." };
 		const prompt = typeof taskEntry.prompt === "string" ? taskEntry.prompt.trim() : "";
-		if (!prompt) return { ok: false, error: 'Invalid task item: "prompt" must be a non-empty string.' };
 		const skill = typeof taskEntry.skill === "string" ? taskEntry.skill.trim() : undefined;
+		if (!prompt && !skill) {
+			return { ok: false, error: 'Invalid task item: provide a non-empty "prompt" or "skill".' };
+		}
 
 		const modelResult = normalizeModelInput(taskEntry.model, `"tasks[${index}].model"`);
 		if (!modelResult.ok) return modelResult;
