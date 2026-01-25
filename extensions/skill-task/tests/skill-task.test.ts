@@ -44,4 +44,20 @@ body`;
 		const content = "---\nname: code-review\n---\nbody";
 		expect(parseSkillMetadata(content)).toEqual({ forkContext: false });
 	});
+
+	it("keeps model/thinking when forkContext missing", () => {
+		const content = `---
+name: code-review
+metadata:
+  pi:
+    model: openai-codex/gpt-5.2
+    thinkingLevel: xhigh
+---
+body`;
+		expect(parseSkillMetadata(content)).toEqual({
+			forkContext: false,
+			model: "openai-codex/gpt-5.2",
+			thinkingLevel: "xhigh",
+		});
+	});
 });

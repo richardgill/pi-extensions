@@ -7,6 +7,7 @@ import type {
 	InputEventResult,
 	SessionStartEvent,
 	ToolCallEvent,
+	TurnEndEvent,
 } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
 
@@ -48,11 +49,20 @@ type SkillPiMetadata = {
 	thinkingLevel?: string;
 };
 
+type ThinkingLevel = Parameters<ExtensionAPI["setThinkingLevel"]>[0];
+
+type ModelOverrideParse =
+	| { ok: true; provider: string; modelId: string }
+	| { ok: false; error: string };
+
+const VALID_THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
 const skillCommandPrefix = "/skill:";
 
 let extensionApi: ExtensionAPI | null = null;
 let lastPrompt: string | null = null;
 let pendingSkill: SkillInvocation | null = null;
+let appliedOverrideSkills = new Set<string>();
 let handlersRegistered = false;
 
 const taskToolRequiredMessage =
@@ -64,6 +74,73 @@ const notify = (ctx: ExtensionContext, message: string): void => {
 	}
 
 	ctx.ui.notify(message, "info");
+};
+
+const parseModelOverride = (value: string): ModelOverrideParse => {
+	const trimmed = value.trim();
+	const slashIndex = trimmed.indexOf("/");
+	if (slashIndex <= 0 || slashIndex === trimmed.length - 1) {
+		return { ok: false, error: `Invalid model format: "${value}". Expected provider/modelId.` };
+	}
+	const provider = trimmed.slice(0, slashIndex).trim();
+	const modelId = trimmed.slice(slashIndex + 1).trim();
+	if (!provider || !modelId) {
+		return { ok: false, error: `Invalid model format: "${value}". Expected provider/modelId.` };
+	}
+	return { ok: true, provider, modelId };
+};
+
+const isThinkingLevel = (value: string): value is ThinkingLevel =>
+	(VALID_THINKING_LEVELS as readonly string[]).includes(value);
+
+const applyModelOverride = async (
+	ctx: ExtensionContext,
+	modelOverride: string | undefined,
+): Promise<void> => {
+	if (!extensionApi || !modelOverride) {
+		return;
+	}
+
+	const parsed = parseModelOverride(modelOverride);
+	if (!parsed.ok) {
+		notify(ctx, parsed.error);
+		return;
+	}
+
+	const model = ctx.modelRegistry.find(parsed.provider, parsed.modelId);
+	if (!model) {
+		notify(ctx, `Model ${parsed.provider}/${parsed.modelId} not found`);
+		return;
+	}
+
+	const success = await extensionApi.setModel(model);
+	if (!success) {
+		notify(ctx, `No API key for ${parsed.provider}/${parsed.modelId}`);
+	}
+};
+
+const applyThinkingOverride = (
+	ctx: ExtensionContext,
+	thinkingLevel: string | undefined,
+): void => {
+	if (!extensionApi || !thinkingLevel) {
+		return;
+	}
+
+	if (isThinkingLevel(thinkingLevel)) {
+		extensionApi.setThinkingLevel(thinkingLevel);
+		return;
+	}
+
+	notify(ctx, `Invalid thinkingLevel: ${thinkingLevel}`);
+};
+
+const applySkillOverrides = async (
+	ctx: ExtensionContext,
+	metadata: SkillPiMetadata,
+): Promise<void> => {
+	await applyModelOverride(ctx, metadata.model);
+	applyThinkingOverride(ctx, metadata.thinkingLevel);
 };
 
 export const parseSkillCommand = (text: string): SkillInvocation | null => {
@@ -237,6 +314,11 @@ const registerSkillTaskHandlers = (pi: ExtensionAPI): void => {
 	handlersRegistered = true;
 	pi.on("input", handleInput);
 	pi.on("tool_call", handleToolCall);
+	pi.on("turn_end", handleTurnEnd);
+};
+
+const handleTurnEnd = (_event: TurnEndEvent): void => {
+	appliedOverrideSkills.clear();
 };
 
 const handleSessionStart = async (
@@ -312,6 +394,8 @@ const handleInput = async (
 
 	if (!metadata.forkContext) {
 		pendingSkill = null;
+		await applySkillOverrides(ctx, metadata);
+		appliedOverrideSkills.add(skillCommand.name);
 		return;
 	}
 
@@ -342,6 +426,11 @@ const handleToolCall = async (
 	const metadata = loadSkillMetadata(inputPath);
 
 	if (!metadata.forkContext) {
+		if (appliedOverrideSkills.has(skillName)) {
+			return;
+		}
+		await applySkillOverrides(ctx, metadata);
+		appliedOverrideSkills.add(skillName);
 		return;
 	}
 
