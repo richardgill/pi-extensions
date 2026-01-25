@@ -145,6 +145,13 @@ const formatUsageStats = (
 	return parts.join(" ");
 };
 
+const formatTaskConfig = (result: SingleResult): string | undefined => {
+	const parts: string[] = [];
+	if (result.model) parts.push(result.model);
+	if (result.thinking) parts.push(`thinking:${result.thinking}`);
+	return parts.length > 0 ? parts.join(" ") : undefined;
+};
+
 const stripYamlFrontmatter = (content: string): string => {
 	const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 	return normalized.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
@@ -311,6 +318,8 @@ const buildTaskBlockLines = (options: { label: string; result: SingleResult; the
 	const status = getTaskStatus(result);
 	const lines = [indentLine(`${theme.fg("toolTitle", label)} ${getStatusIcon(status, theme)}`, indent)];
 	lines.push(formatStatusLine(status, indent + 2));
+	const configLine = formatTaskConfig(result);
+	if (configLine) lines.push(formatLabeledLine("Model", configLine, indent + 2));
 	lines.push(formatLabeledLine("Prompt", result.prompt.trim(), indent + 2));
 	const logLines = status === "Pending" ? [] : getToolCallLines(result.messages, theme);
 	if (status !== "Pending") {
