@@ -362,7 +362,6 @@ const sendTaskTool = (
 	const message = formatTaskMessage(params);
 	const options = ctx.isIdle() ? undefined : { deliverAs: "steer" as const };
 	if (options) {
-		extensionApi.sendMessage({cus)
 		extensionApi.sendUserMessage(message, options);
 		return;
 	}
