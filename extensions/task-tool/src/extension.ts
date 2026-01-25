@@ -6,13 +6,12 @@ import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import {
 	discoverSkills,
 	type ExtensionAPI,
-	getMarkdownTheme,
 	loadSettings,
 	type Skill,
 	type Theme,
 	type ThemeColor,
 } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { type BuiltInToolName, getBuiltInToolsFromActiveTools, resolveTaskConfig } from "./task-config.js";
 import {
@@ -95,7 +94,10 @@ type TaskToolDetails = {
 	results: SingleResult[];
 };
 
-type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, unknown> };
+type TaskStatus = "Running" | "Done" | "Failed" | "Pending";
+type OverallStatus = "Running" | "Done" | "Failed";
+
+type ToolCallItem = { name: string; args: Record<string, unknown> };
 
 type PreparedTask = {
 	item: TaskWorkItem;
@@ -136,8 +138,6 @@ const formatUsageStats = (
 	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
 	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
 	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
-	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
 	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
 	if (model) parts.push(model);
@@ -227,42 +227,118 @@ const getFinalOutput = (messages: Message[]): string => {
 	return "";
 };
 
-const getDisplayItems = (messages: Message[]): DisplayItem[] => {
-	const items: DisplayItem[] = [];
+const indentLine = (text: string, indent: number): string => `${" ".repeat(indent)}${text}`;
+
+const indentText = (text: string, indent: number): string => {
+	return text.split("\n").map((line) => indentLine(line, indent)).join("\n");
+};
+
+const formatLabeledLine = (label: string, value: string, indent: number): string => {
+	const lines = value.split("\n");
+	const header = indentLine(`${label}: ${lines[0] ?? ""}`, indent);
+	if (lines.length === 1) return header;
+	const rest = lines.slice(1).map((line) => indentLine(line, indent + 2));
+	return [header, ...rest].join("\n");
+};
+
+const formatSection = (label: string, body: string, indent: number): string => {
+	return `${indentLine(`${label}:`, indent)}\n${indentText(body, indent + 2)}`;
+};
+
+const isTaskRunning = (result: SingleResult): boolean => result.exitCode === -1;
+const isTaskPending = (result: SingleResult): boolean => result.exitCode === -2;
+
+const getTaskStatus = (result: SingleResult): TaskStatus => {
+	if (isTaskPending(result)) return "Pending";
+	if (isTaskRunning(result)) return "Running";
+	return isTaskError(result) ? "Failed" : "Done";
+};
+
+const getParallelStatus = (results: SingleResult[]): OverallStatus => {
+	const hasRunning = results.some((result) => isTaskRunning(result));
+	if (hasRunning) return "Running";
+	return results.some(isTaskError) ? "Failed" : "Done";
+};
+
+const getChainStatus = (results: SingleResult[]): OverallStatus => {
+	const hasError = results.some(isTaskError);
+	if (hasError) return "Failed";
+	const hasInProgress = results.some((result) => isTaskRunning(result) || isTaskPending(result));
+	return hasInProgress ? "Running" : "Done";
+};
+
+const getStatusIcon = (status: TaskStatus | OverallStatus, theme: Theme): string => {
+	if (status === "Done") return theme.fg("success", "✓");
+	if (status === "Failed") return theme.fg("error", "✗");
+	return theme.fg("warning", "⏳");
+};
+
+const getToolCallItems = (messages: Message[]): ToolCallItem[] => {
+	const items: ToolCallItem[] = [];
 	for (const message of messages) {
 		if (message.role === "assistant") {
 			for (const part of message.content) {
-				if (part.type === "text") items.push({ type: "text", text: part.text });
-				if (part.type === "toolCall") items.push({ type: "toolCall", name: part.name, args: part.arguments });
+				if (part.type === "toolCall") items.push({ name: part.name, args: part.arguments });
 			}
 		}
 	}
 	return items;
 };
 
-const renderDisplayItemsText = (options: {
-	items: DisplayItem[];
-	expanded: boolean;
-	themeFg: (color: ThemeColor, text: string) => string;
-	limit?: number;
-}): string => {
-	const { items, expanded, themeFg, limit } = options;
-	const toShow = limit ? items.slice(-limit) : items;
-	const skipped = limit && items.length > limit ? items.length - limit : 0;
+const getToolCallLines = (messages: Message[], theme: Theme): string[] => {
+	const items = getToolCallItems(messages);
+	const themeFg = theme.fg.bind(theme);
+	return items.map((item) => `${themeFg("muted", "→ ")}${formatToolCall(item.name, item.args, themeFg)}`);
+};
 
-	let text = "";
-	if (skipped > 0) text += themeFg("muted", `... ${skipped} earlier items\n`);
+const getTaskOutputText = (result: SingleResult): string => {
+	if (isTaskError(result)) return getTaskErrorText(result);
+	return getFinalOutput(result.messages);
+};
 
-	for (const item of toShow) {
-		if (item.type === "text") {
-			const preview = expanded ? item.text : item.text.split("\n").slice(0, 3).join("\n");
-			text += `${themeFg("toolOutput", preview)}\n`;
-		} else {
-			text += `${themeFg("muted", "→ ") + formatToolCall(item.name, item.args, themeFg)}\n`;
-		}
+const formatFinalOutputText = (result: SingleResult): string => {
+	const output = getTaskOutputText(result).trim();
+	return output ? output : "(no output)";
+};
+
+const formatStatusLine = (status: TaskStatus | OverallStatus, indent: number, detail?: string): string => {
+	const base = `Status: ${status}`;
+	return indentLine(detail ? `${base} — ${detail}` : base, indent);
+};
+
+const buildTaskBlockLines = (options: { label: string; result: SingleResult; theme: Theme; indent: number }): string[] => {
+	const { label, result, theme, indent } = options;
+	const status = getTaskStatus(result);
+	const lines = [indentLine(`${theme.fg("toolTitle", label)} ${getStatusIcon(status, theme)}`, indent)];
+	lines.push(formatStatusLine(status, indent + 2));
+	lines.push(formatLabeledLine("Prompt", result.prompt.trim(), indent + 2));
+	const logLines = status === "Pending" ? [] : getToolCallLines(result.messages, theme);
+	if (status !== "Pending") {
+		if (logLines.length > 0) lines.push(formatSection("Logs", logLines.join("\n"), indent + 2));
+		else lines.push(indentLine("Logs:", indent + 2));
 	}
+	if (status === "Done" || status === "Failed") {
+		lines.push(formatSection("Final output", formatFinalOutputText(result), indent + 2));
+		const usageStr = formatUsageStats(result.usage, result.model, result.thinking);
+		if (usageStr) lines.push(indentLine(`Usage: ${usageStr}`, indent + 2));
+	}
+	return lines;
+};
 
-	return text.trimEnd();
+const buildChainPrompt = (prompt: string, previousOutput: string): string => {
+	return prompt.replace(/\{previous\}/g, previousOutput);
+};
+
+const buildPendingPrompt = (prompt: string): string => {
+	return buildChainPrompt(prompt, "…");
+};
+
+const countCompletedTasks = (results: SingleResult[]): number => {
+	let count = 0;
+	for (const result of results) {
+		if (!isTaskRunning(result) && !isTaskPending(result)) count += 1;
+	}
+	return count;
 };
 
 const aggregateUsage = (results: SingleResult[]): UsageStats => {
@@ -343,14 +419,15 @@ const buildSubprocessPrompt = (
 const createPlaceholderResult = (
 	item: TaskWorkItem,
 	index: number | undefined,
-	thinking: ThinkingLevel,
-	model: string | undefined,
+	thinking?: ThinkingLevel,
+	model?: string,
+	exitCode = -1,
 ): SingleResult => {
 	return {
 		prompt: item.prompt,
 		skill: item.skill,
 		index,
-		exitCode: -1,
+		exitCode,
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
@@ -511,7 +588,7 @@ const runSingleTask = async (options: {
 		prompt: options.item.prompt,
 		skill: options.item.skill,
 		index: options.index,
-		exitCode: 0,
+		exitCode: -1,
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
@@ -606,266 +683,59 @@ const TaskParams = Type.Object({
 	thinking: ThinkingOverrideSchema,
 });
 
-const renderSingleResult = (
-	result: SingleResult,
-	expanded: boolean,
-	theme: Theme,
-	collapsedItemCount: number,
-): Container | Text => {
-	const mdTheme = getMarkdownTheme();
-	const running = result.exitCode === -1;
-	const error = isTaskError(result);
-	const icon = running ? theme.fg("warning", "⏳") : error ? theme.fg("error", "✗") : theme.fg("success", "✓");
-	const skillLabel = getTaskSkillLabel(result);
-	const displayItems = getDisplayItems(result.messages);
-	const finalOutput = getFinalOutput(result.messages);
-
-	if (expanded) {
-		const container = new Container();
-		let header = `${icon} ${theme.fg("toolTitle", theme.bold("task"))}`;
-		if (skillLabel) header += ` ${theme.fg("accent", skillLabel)}`;
-		if (error && result.stopReason) header += ` ${theme.fg("error", `[${result.stopReason}]`)}`;
-		container.addChild(new Text(header, 0, 0));
-		if (error && result.errorMessage)
-			container.addChild(new Text(theme.fg("error", `Error: ${result.errorMessage}`), 0, 0));
-
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("muted", "─── Prompt ───"), 0, 0));
-		if (result.skill)
-			container.addChild(new Text(theme.fg("muted", "Skill: ") + theme.fg("accent", result.skill), 0, 0));
-		container.addChild(new Text(theme.fg("dim", result.prompt), 0, 0));
-
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
-		if (displayItems.length === 0 && !finalOutput) {
-			container.addChild(new Text(theme.fg("muted", "(no output)"), 0, 0));
-		} else {
-			for (const item of displayItems) {
-				if (item.type === "toolCall") {
-					container.addChild(
-						new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0),
-					);
-				}
-			}
-			if (finalOutput) {
-				container.addChild(new Spacer(1));
-				container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-			}
-		}
-
-		const usageStr = formatUsageStats(result.usage, result.model, result.thinking);
-		if (usageStr) {
-			container.addChild(new Spacer(1));
-			container.addChild(new Text(theme.fg("dim", usageStr), 0, 0));
-		}
-		return container;
-	}
-
-	let text = `${icon} ${theme.fg("toolTitle", theme.bold("task"))}`;
-	if (skillLabel) text += ` ${theme.fg("accent", skillLabel)}`;
-	if (error && result.stopReason) text += ` ${theme.fg("error", `[${result.stopReason}]`)}`;
-	if (error && result.errorMessage) text += `\n${theme.fg("error", `Error: ${result.errorMessage}`)}`;
-	else if (displayItems.length === 0)
-		text += `\n${theme.fg("muted", result.exitCode === -1 ? "(running...)" : "(no output)")}`;
-	else {
-		text += `\n${renderDisplayItemsText({ items: displayItems, expanded, themeFg: theme.fg.bind(theme), limit: collapsedItemCount })}`;
-		if (displayItems.length > collapsedItemCount) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
-	}
-
-	const usageStr = formatUsageStats(result.usage, result.model, result.thinking);
-	if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
-	return new Text(text, 0, 0);
+const renderSingleResult = (result: SingleResult, _expanded: boolean, theme: Theme): Text => {
+	const lines = buildTaskBlockLines({ label: "task", result, theme, indent: 0 });
+	return new Text(lines.join("\n"), 0, 0);
 };
 
-const renderParallelResult = (results: SingleResult[], expanded: boolean, theme: Theme): Container | Text => {
-	const mdTheme = getMarkdownTheme();
-	const running = results.filter((result) => result.exitCode === -1).length;
-	const successCount = results.filter((result) => result.exitCode === 0 && !isTaskError(result)).length;
-	const failCount = results.filter((result) => isTaskError(result)).length;
-	const isRunning = running > 0;
+const renderParallelResult = (results: SingleResult[], _expanded: boolean, theme: Theme): Text => {
+	const status = getParallelStatus(results);
+	const doneCount = countCompletedTasks(results);
+	const lines = [
+		indentLine(`${theme.fg("toolTitle", "parallel")} ${getStatusIcon(status, theme)}`, 0),
+		formatStatusLine(status, 2, status === "Running" ? `${doneCount}/${results.length} done` : undefined),
+		indentLine("Tasks:", 2),
+	];
 
-	const icon = isRunning
-		? theme.fg("warning", "⏳")
-		: failCount > 0
-			? theme.fg("warning", "◐")
-			: theme.fg("success", "✓");
-
-	const status = isRunning
-		? `${successCount + failCount}/${results.length} done, ${running} running`
-		: `${successCount}/${results.length} tasks`;
-
-	if (expanded && !isRunning) {
-		const container = new Container();
-		container.addChild(
-			new Text(`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`, 0, 0),
-		);
-
-		for (const result of results) {
-			const taskIcon = isTaskError(result) ? theme.fg("error", "✗") : theme.fg("success", "✓");
-			const skillLabel = getTaskSkillLabel(result);
-			const label = skillLabel ? `task ${skillLabel}` : "task";
-			const displayItems = getDisplayItems(result.messages);
-			const finalOutput = getFinalOutput(result.messages);
-
-			container.addChild(new Spacer(1));
-			container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", label)} ${taskIcon}`, 0, 0));
-			if (result.skill)
-				container.addChild(new Text(theme.fg("muted", "Skill: ") + theme.fg("accent", result.skill), 0, 0));
-			container.addChild(new Text(theme.fg("muted", "Prompt: ") + theme.fg("dim", result.prompt), 0, 0));
-
-			for (const item of displayItems) {
-				if (item.type === "toolCall") {
-					container.addChild(
-						new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0),
-					);
-				}
-			}
-
-			if (finalOutput) {
-				container.addChild(new Spacer(1));
-				container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-			}
-
-			const taskUsage = formatUsageStats(result.usage, result.model, result.thinking);
-			if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
-		}
-
-		const usageStr = formatUsageStats(aggregateUsage(results));
-		if (usageStr) {
-			container.addChild(new Spacer(1));
-			container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
-		}
-		return container;
-	}
-
-	let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
-	for (const result of results) {
-		const taskIcon =
-			result.exitCode === -1
-				? theme.fg("warning", "⏳")
-				: isTaskError(result)
-					? theme.fg("error", "✗")
-					: theme.fg("success", "✓");
-		const skillLabel = getTaskSkillLabel(result);
-		const label = skillLabel ? `task ${skillLabel}` : "task";
-		const displayItems = getDisplayItems(result.messages);
-		text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", label)} ${taskIcon}`;
-		if (displayItems.length === 0) {
-			text += `\n${theme.fg("muted", result.exitCode === -1 ? "(running...)" : "(no output)")}`;
-		} else {
-			text += `\n${renderDisplayItemsText({ items: displayItems, expanded: false, themeFg: theme.fg.bind(theme), limit: 5 })}`;
-		}
-	}
-
-	if (!isRunning) {
-		const usageStr = formatUsageStats(aggregateUsage(results));
-		if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
-	}
-	if (!expanded) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
-
-	return new Text(text, 0, 0);
-};
-
-const renderChainResult = (results: SingleResult[], expanded: boolean, theme: Theme): Container | Text => {
-	const mdTheme = getMarkdownTheme();
-	const running = results.filter((result) => result.exitCode === -1).length;
-	const successCount = results.filter((result) => result.exitCode === 0 && !isTaskError(result)).length;
-	const failCount = results.filter((result) => isTaskError(result)).length;
-	const isRunning = running > 0;
-
-	const icon = isRunning
-		? theme.fg("warning", "⏳")
-		: failCount > 0
-			? theme.fg("error", "✗")
-			: theme.fg("success", "✓");
-
-	const status = isRunning
-		? `${successCount + failCount}/${results.length} done, ${running} running`
-		: `${successCount}/${results.length} steps`;
-
-	if (expanded) {
-		const container = new Container();
-		container.addChild(
-			new Text(`${icon} ${theme.fg("toolTitle", theme.bold("chain "))}${theme.fg("accent", status)}`, 0, 0),
-		);
-
-		for (let index = 0; index < results.length; index++) {
-			const result = results[index];
-			const stepNumber = result.index ?? index + 1;
-			const taskIcon =
-				result.exitCode === -1
-					? theme.fg("warning", "⏳")
-					: isTaskError(result)
-						? theme.fg("error", "✗")
-						: theme.fg("success", "✓");
-			const skillLabel = getTaskSkillLabel(result) ?? "task";
-			const displayItems = getDisplayItems(result.messages);
-			const finalOutput = getFinalOutput(result.messages);
-
-			container.addChild(new Spacer(1));
-			container.addChild(
-				new Text(
-					`${theme.fg("muted", `─── Step ${stepNumber}: `)}${theme.fg("accent", skillLabel)} ${taskIcon}`,
-					0,
-					0,
-				),
-			);
-			if (result.skill)
-				container.addChild(new Text(theme.fg("muted", "Skill: ") + theme.fg("accent", result.skill), 0, 0));
-			container.addChild(new Text(theme.fg("muted", "Prompt: ") + theme.fg("dim", result.prompt), 0, 0));
-			if (isTaskError(result) && result.errorMessage)
-				container.addChild(new Text(theme.fg("error", `Error: ${result.errorMessage}`), 0, 0));
-
-			for (const item of displayItems) {
-				if (item.type === "toolCall") {
-					container.addChild(
-						new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0),
-					);
-				}
-			}
-
-			if (finalOutput) {
-				container.addChild(new Spacer(1));
-				container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-			}
-
-			const taskUsage = formatUsageStats(result.usage, result.model, result.thinking);
-			if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
-		}
-
-		const usageStr = formatUsageStats(aggregateUsage(results));
-		if (usageStr) {
-			container.addChild(new Spacer(1));
-			container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
-		}
-		return container;
-	}
-
-	let text = `${icon} ${theme.fg("toolTitle", theme.bold("chain "))}${theme.fg("accent", status)}`;
 	for (let index = 0; index < results.length; index++) {
-		const result = results[index];
-		const stepNumber = result.index ?? index + 1;
-		const taskIcon =
-			result.exitCode === -1
-				? theme.fg("warning", "⏳")
-				: isTaskError(result)
-					? theme.fg("error", "✗")
-					: theme.fg("success", "✓");
-		const skillLabel = getTaskSkillLabel(result) ?? "task";
-		const displayItems = getDisplayItems(result.messages);
-		text += `\n\n${theme.fg("muted", `─── Step ${stepNumber}: `)}${theme.fg("accent", skillLabel)} ${taskIcon}`;
-		if (displayItems.length === 0) {
-			text += `\n${theme.fg("muted", result.exitCode === -1 ? "(running...)" : "(no output)")}`;
-		} else {
-			text += `\n${renderDisplayItemsText({ items: displayItems, expanded: false, themeFg: theme.fg.bind(theme), limit: 5 })}`;
-		}
+		if (index > 0) lines.push("");
+		lines.push(...buildTaskBlockLines({ label: "task", result: results[index], theme, indent: 4 }));
 	}
 
 	const usageStr = formatUsageStats(aggregateUsage(results));
-	if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
-	if (!expanded) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+	if (usageStr) {
+		lines.push("");
+		const totalLabel = status === "Running" ? "Total usage so far" : "Total usage";
+		lines.push(indentLine(`${totalLabel}: ${usageStr}`, 2));
+	}
 
-	return new Text(text, 0, 0);
+	return new Text(lines.join("\n"), 0, 0);
+};
+
+const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: Theme): Text => {
+	const status = getChainStatus(results);
+	const doneCount = countCompletedTasks(results);
+	const lines = [
+		indentLine(`${theme.fg("toolTitle", "chain")} ${getStatusIcon(status, theme)}`, 0),
+		formatStatusLine(status, 2, status === "Running" ? `${doneCount}/${results.length} done` : undefined),
+		indentLine("Steps:", 2),
+	];
+
+	for (let index = 0; index < results.length; index++) {
+		if (index > 0) lines.push("");
+		const result = results[index];
+		const stepNumber = result.index ?? index + 1;
+		lines.push(...buildTaskBlockLines({ label: `Step ${stepNumber} (task)`, result, theme, indent: 4 }));
+	}
+
+	const usageStr = formatUsageStats(aggregateUsage(results));
+	if (usageStr) {
+		lines.push("");
+		const totalLabel = status === "Running" ? "Total usage so far" : "Total usage";
+		lines.push(indentLine(`${totalLabel}: ${usageStr}`, 2));
+	}
+
+	return new Text(lines.join("\n"), 0, 0);
 };
 
 export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
@@ -963,12 +833,20 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 			}
 
 			if (normalized.value.mode === "chain") {
-				const results: SingleResult[] = [];
+				const results = normalized.value.items.map((item, index) =>
+					createPlaceholderResult(
+						{ ...item, prompt: buildPendingPrompt(item.prompt) },
+						index + 1,
+						undefined,
+						undefined,
+						-2,
+					),
+				);
 				let previousOutput = "";
 
 				for (let index = 0; index < normalized.value.items.length; index++) {
 					const item = normalized.value.items[index];
-					const prompt = item.prompt.replace(/\{previous\}/g, previousOutput);
+					const prompt = buildChainPrompt(item.prompt, previousOutput);
 					const stepItem = { ...item, prompt };
 
 					const config = resolveTaskConfig({
@@ -982,7 +860,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 					if (!config.ok) {
 						return {
 							content: [{ type: "text", text: config.error }],
-							details: makeDetails(results),
+							details: makeDetails([...results]),
 						};
 					}
 
@@ -990,11 +868,11 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 					if (!preparedPrompt.ok) {
 						return {
 							content: [{ type: "text", text: preparedPrompt.error }],
-							details: makeDetails(results),
+							details: makeDetails([...results]),
 						};
 					}
 
-					const placeholder = createPlaceholderResult(
+					results[index] = createPlaceholderResult(
 						stepItem,
 						index + 1,
 						config.thinkingLevel,
@@ -1003,15 +881,16 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 					if (onUpdate) {
 						onUpdate({
 							content: [{ type: "text", text: "(running...)" }],
-							details: makeDetails([...results, placeholder]),
+							details: makeDetails([...results]),
 						});
 					}
 
 					const chainUpdate = onUpdate
 						? (partial: SingleResult) => {
+								results[index] = partial;
 								onUpdate({
 									content: [{ type: "text", text: getFinalOutput(partial.messages) || "(running...)" }],
-									details: makeDetails([...results, partial]),
+									details: makeDetails([...results]),
 								});
 							}
 						: undefined;
@@ -1027,14 +906,20 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 						signal,
 						onResultUpdate: chainUpdate,
 					});
-					results.push(result);
+					results[index] = result;
+					if (onUpdate) {
+						onUpdate({
+							content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+							details: makeDetails([...results]),
+						});
+					}
 
 					if (isTaskError(result)) {
 						return {
 							content: [
 								{ type: "text", text: `Chain stopped at step ${index + 1}: ${getTaskErrorText(result)}` },
 							],
-							details: makeDetails(results),
+							details: makeDetails([...results]),
 							isError: true,
 						};
 					}
@@ -1045,7 +930,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 				const last = results[results.length - 1];
 				return {
 					content: [{ type: "text", text: getFinalOutput(last.messages) || "(no output)" }],
-					details: makeDetails(results),
+					details: makeDetails([...results]),
 				};
 			}
 
@@ -1129,54 +1014,8 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 			};
 		},
 
-		renderCall(args, theme) {
-			const tasks = Array.isArray(args.tasks) ? args.tasks : [];
-
-			if (args.type === "chain") {
-				let text = theme.fg("toolTitle", theme.bold("task ")) + theme.fg("accent", `chain (${tasks.length} steps)`);
-				if (typeof args.model === "string" && args.model.trim())
-					text += theme.fg("muted", ` [${args.model.trim()}]`);
-				for (let index = 0; index < Math.min(tasks.length, 3); index++) {
-					const task = tasks[index];
-					const skillLabel = typeof task.skill === "string" && task.skill.trim() ? task.skill.trim() : undefined;
-					const prompt = typeof task.prompt === "string" ? task.prompt : "";
-					const preview = prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt;
-					const line = skillLabel
-						? `${theme.fg("accent", skillLabel)}${theme.fg("dim", ` ${preview || "..."}`)}`
-						: theme.fg("dim", preview || "...");
-					text += `\n  ${theme.fg("muted", `${index + 1}.`)} ${line}`;
-				}
-				if (tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${tasks.length - 3} more`)}`;
-				return new Text(text, 0, 0);
-			}
-
-			if (args.type === "parallel") {
-				let text =
-					theme.fg("toolTitle", theme.bold("task ")) + theme.fg("accent", `parallel (${tasks.length} tasks)`);
-				if (typeof args.model === "string" && args.model.trim())
-					text += theme.fg("muted", ` [${args.model.trim()}]`);
-				for (const task of tasks.slice(0, 3)) {
-					const skillLabel = typeof task.skill === "string" && task.skill.trim() ? task.skill.trim() : undefined;
-					const prompt = typeof task.prompt === "string" ? task.prompt : "";
-					const preview = prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt;
-					const line = skillLabel
-						? `${theme.fg("accent", skillLabel)}${theme.fg("dim", ` ${preview || "..."}`)}`
-						: theme.fg("dim", preview || "...");
-					text += `\n  ${line}`;
-				}
-				if (tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${tasks.length - 3} more`)}`;
-				return new Text(text, 0, 0);
-			}
-
-			const task = tasks[0] ?? {};
-			const skillLabel = typeof task.skill === "string" && task.skill.trim() ? task.skill.trim() : undefined;
-			const prompt = typeof task.prompt === "string" ? task.prompt : "";
-			const preview = prompt.length > 60 ? `${prompt.slice(0, 60)}...` : prompt;
-			let text = theme.fg("toolTitle", theme.bold("task"));
-			if (skillLabel) text += ` ${theme.fg("accent", skillLabel)}`;
-			if (typeof args.model === "string" && args.model.trim()) text += theme.fg("muted", ` [${args.model.trim()}]`);
-			text += `\n  ${theme.fg("dim", preview || "...")}`;
-			return new Text(text, 0, 0);
+		renderCall(_args, _theme) {
+			return new Text("", 0, 0);
 		},
 
 		renderResult(result, { expanded }, theme) {
@@ -1187,7 +1026,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 			}
 
 			if (details.mode === "single" && details.results.length === 1) {
-				return renderSingleResult(details.results[0], expanded, theme, merged.collapsedItemCount);
+				return renderSingleResult(details.results[0], expanded, theme);
 			}
 
 			if (details.mode === "chain") {
