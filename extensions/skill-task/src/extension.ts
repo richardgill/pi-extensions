@@ -284,7 +284,7 @@ const buildTaskParams = (
 };
 
 const formatTaskMessage = (params: TaskToolParams): string => {
-	return `Spawning skill: ${params.tasks[0]?.skill ?? "unknown"} in a task`;
+	return `Call the task tool with the following JSON. Respond only with the tool call.\n${JSON.stringify(params)}`;
 };
 
 const isTaskToolRegistered = (pi: ExtensionAPI): boolean =>
@@ -362,6 +362,7 @@ const sendTaskTool = (
 	const message = formatTaskMessage(params);
 	const options = ctx.isIdle() ? undefined : { deliverAs: "steer" as const };
 	if (options) {
+		extensionApi.sendMessage({cus)
 		extensionApi.sendUserMessage(message, options);
 		return;
 	}
