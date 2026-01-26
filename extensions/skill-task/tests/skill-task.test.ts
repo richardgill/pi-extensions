@@ -28,24 +28,29 @@ describe("parseSkillMetadata", () => {
 name: code-review
 metadata:
   pi:
-    forkContext: true
+    subProcess: true
+    subProcessContext: fresh
     model: openai-codex/gpt-5.2
     thinkingLevel: xhigh
 ---
 body`;
 		expect(parseSkillMetadata(content)).toEqual({
-			forkContext: true,
+			subProcess: true,
+			subProcessContext: "fresh",
 			model: "openai-codex/gpt-5.2",
 			thinkingLevel: "xhigh",
 		});
 	});
 
-	it("defaults to forkContext false", () => {
+	it("defaults to subProcess false", () => {
 		const content = "---\nname: code-review\n---\nbody";
-		expect(parseSkillMetadata(content)).toEqual({ forkContext: false });
+		expect(parseSkillMetadata(content)).toEqual({
+			subProcess: false,
+			subProcessContext: "fork",
+		});
 	});
 
-	it("keeps model/thinking when forkContext missing", () => {
+	it("keeps model/thinking when subProcess missing", () => {
 		const content = `---
 name: code-review
 metadata:
@@ -55,7 +60,8 @@ metadata:
 ---
 body`;
 		expect(parseSkillMetadata(content)).toEqual({
-			forkContext: false,
+			subProcess: false,
+			subProcessContext: "fork",
 			model: "openai-codex/gpt-5.2",
 			thinkingLevel: "xhigh",
 		});

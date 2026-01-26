@@ -4,10 +4,11 @@ Route `/skill:` commands and skill file reads to the task tool when the skill fr
 
 ## Behavior
 
-- Reads skill frontmatter and checks `metadata.pi.forkContext`.
+- Reads skill frontmatter and checks `metadata.pi.subProcess`.
 - Requires the task-tool extension to be loaded (tool name: task).
-- If `forkContext: true`, blocks in-session skill expansion and invokes the task tool.
-- If `forkContext` is false or omitted, keeps the skill in-session and applies `model`/`thinkingLevel` overrides to the current session.
+- If `subProcess: true`, blocks in-session skill expansion and invokes the task tool using `subProcessContext`.
+- `subProcessContext` accepts `fork` (default) or `fresh` (mapped to task-tool `fork: false` / stateless).
+- If `subProcess` is false or omitted, keeps the skill in-session and applies `model`/`thinkingLevel` overrides to the current session.
 - Optional overrides: `metadata.pi.model`, `metadata.pi.thinkingLevel`.
 
 Example frontmatter:
@@ -18,7 +19,8 @@ name: code-review
 description: ...
 metadata:
   pi:
-    forkContext: true
+    subProcess: true
+    subProcessContext: fresh
     model: openai-codex/gpt-5.2
     thinkingLevel: xhigh
 ---

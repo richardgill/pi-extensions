@@ -21,9 +21,12 @@ type ToolCallResult = {
 	reason?: string;
 };
 
+type SubProcessContext = "fork" | "fresh";
+
 type TaskToolTask = {
 	skill: string;
 	prompt: string;
+	fork?: boolean;
 };
 
 type TaskToolParams = {
@@ -36,7 +39,8 @@ type TaskToolParams = {
 type SkillFrontmatter = {
 	metadata?: {
 		pi?: {
-			forkContext?: boolean;
+			subProcess?: boolean;
+			subProcessContext?: string;
 			model?: string;
 			thinkingLevel?: string;
 		};
@@ -44,7 +48,8 @@ type SkillFrontmatter = {
 };
 
 type SkillPiMetadata = {
-	forkContext: boolean;
+	subProcess: boolean;
+	subProcessContext: SubProcessContext;
 	model?: string;
 	thinkingLevel?: string;
 };
@@ -56,6 +61,7 @@ type ModelOverrideParse =
 	| { ok: false; error: string };
 
 const VALID_THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const VALID_SUBPROCESS_CONTEXTS: SubProcessContext[] = ["fork", "fresh"];
 
 const skillCommandPrefix = "/skill:";
 
@@ -92,6 +98,9 @@ const parseModelOverride = (value: string): ModelOverrideParse => {
 
 const isThinkingLevel = (value: string): value is ThinkingLevel =>
 	(VALID_THINKING_LEVELS as readonly string[]).includes(value);
+
+const isSubProcessContext = (value: string): value is SubProcessContext =>
+	(VALID_SUBPROCESS_CONTEXTS as readonly string[]).includes(value);
 
 const applyModelOverride = async (
 	ctx: ExtensionContext,
@@ -181,12 +190,28 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
 	return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const normalizeSubProcess = (value: unknown): boolean => value === true;
+
+const normalizeSubProcessContext = (value: unknown): SubProcessContext => {
+	if (typeof value !== "string") {
+		return "fork";
+	}
+
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return "fork";
+	}
+
+	return isSubProcessContext(trimmed) ? trimmed : "fork";
+};
+
 export const parseSkillMetadata = (content: string): SkillPiMetadata => {
 	const { frontmatter } = parseFrontmatter<SkillFrontmatter>(content);
 	const piMetadata = frontmatter.metadata?.pi;
 
 	return {
-		forkContext: piMetadata?.forkContext === true,
+		subProcess: normalizeSubProcess(piMetadata?.subProcess),
+		subProcessContext: normalizeSubProcessContext(piMetadata?.subProcessContext),
 		model: normalizeOptionalString(piMetadata?.model),
 		thinkingLevel: normalizeOptionalString(piMetadata?.thinkingLevel),
 	};
@@ -197,7 +222,7 @@ const loadSkillMetadata = (filePath: string): SkillPiMetadata => {
 		const content = readFileSync(filePath, "utf-8");
 		return parseSkillMetadata(content);
 	} catch {
-		return { forkContext: false };
+		return { subProcess: false, subProcessContext: "fork" };
 	}
 };
 
@@ -266,6 +291,7 @@ const buildTaskParams = (
 			{
 				skill: skillName,
 				prompt: normalizePrompt(prompt),
+				fork: metadata.subProcessContext === "fork",
 			},
 		],
 	};
@@ -392,7 +418,7 @@ const handleInput = async (
 		return;
 	}
 
-	if (!metadata.forkContext) {
+	if (!metadata.subProcess) {
 		pendingSkill = null;
 		await applySkillOverrides(ctx, metadata);
 		appliedOverrideSkills.add(skillCommand.name);
@@ -425,7 +451,7 @@ const handleToolCall = async (
 	const pendingPrompt = consumePendingSkillPrompt(skillName);
 	const metadata = loadSkillMetadata(inputPath);
 
-	if (!metadata.forkContext) {
+	if (!metadata.subProcess) {
 		if (appliedOverrideSkills.has(skillName)) {
 			return;
 		}
