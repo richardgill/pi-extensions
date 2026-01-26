@@ -9,6 +9,7 @@ export type TaskWorkItem = {
 	skill?: string;
 	model?: string;
 	thinking?: TaskThinking;
+	fork: boolean;
 };
 
 export type ProviderModel = {
@@ -85,6 +86,15 @@ const normalizeThinkingInput = (
 	return { ok: true, value: trimmed };
 };
 
+const normalizeForkInput = (
+	value: unknown,
+	label: string,
+): { ok: true; value: boolean } | { ok: false; error: string } => {
+	if (value === undefined) return { ok: true, value: true };
+	if (typeof value !== "boolean") return { ok: false, error: `Invalid parameters: ${label} must be a boolean.` };
+	return { ok: true, value };
+};
+
 const parseTaskItems = (rawTasks: unknown[]): { ok: true; items: TaskWorkItem[] } | { ok: false; error: string } => {
 	const items: TaskWorkItem[] = [];
 	for (const [index, taskEntry] of rawTasks.entries()) {
@@ -101,11 +111,15 @@ const parseTaskItems = (rawTasks: unknown[]): { ok: true; items: TaskWorkItem[] 
 		const thinkingResult = normalizeThinkingInput(taskEntry.thinking, `"tasks[${index}].thinking"`);
 		if (!thinkingResult.ok) return thinkingResult;
 
+		const forkResult = normalizeForkInput(taskEntry.fork, `"tasks[${index}].fork"`);
+		if (!forkResult.ok) return forkResult;
+
 		items.push({
 			prompt,
 			skill,
 			model: modelResult.value,
 			thinking: thinkingResult.value,
+			fork: forkResult.value,
 		});
 	}
 	return { ok: true, items };

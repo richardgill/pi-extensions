@@ -132,3 +132,16 @@ task({
 ```
 
 If omitted, `thinking` defaults to `inherit`.
+
+### Fork context
+
+Each task supports a per-item `fork` boolean (default: `true`). When `fork: true`, the subprocess runs with a temporary session seeded from your current session so session features like `/fork` work.
+
+To keep the old stateless behavior, set `fork: false`:
+
+```ts
+task({
+  type: "single",
+  tasks: [{ prompt: "Summarize auth flow", fork: false }],
+});
+```

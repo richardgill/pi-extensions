@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
+import * as path from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import {
@@ -107,6 +108,35 @@ type PreparedTask = {
 type PreparedExecution = {
 	task: PreparedTask;
 	config: { thinkingLevel: ThinkingLevel; subprocessArgs: string[]; modelLabel: string | undefined };
+};
+
+type ForkSession = { dir: string; seedPath: string };
+
+const createForkSession = async (sessionFile: string): Promise<ForkSession> => {
+	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-task-tool-"));
+	const seedPath = path.join(tmpDir, "seed.jsonl");
+	try {
+		await fs.promises.copyFile(sessionFile, seedPath);
+		return { dir: tmpDir, seedPath };
+	} catch (error) {
+		try {
+			await fs.promises.rm(tmpDir, { recursive: true, force: true });
+		} catch {}
+		throw error;
+	}
+};
+
+const cleanupForkSession = async (session?: ForkSession): Promise<void> => {
+	if (!session) return;
+	try {
+		await fs.promises.rm(session.dir, { recursive: true, force: true });
+	} catch {}
+};
+
+const applyForkSessionArgs = (baseArgs: string[], session?: ForkSession): string[] => {
+	if (!session) return baseArgs;
+	const filtered = baseArgs.filter((arg) => arg !== "--no-session");
+	return [...filtered, "--session", session.seedPath, "--session-dir", session.dir];
 };
 
 const shortenPath = (filePath: string): string => {
@@ -590,6 +620,8 @@ const runSingleTask = async (options: {
 	subprocessArgs: string[];
 	modelLabel: string | undefined;
 	thinking: ThinkingLevel;
+	fork: boolean;
+	sessionFile: string | undefined;
 	signal: AbortSignal | undefined;
 	onResultUpdate: ((result: SingleResult) => void) | undefined;
 }): Promise<SingleResult> => {
@@ -609,58 +641,78 @@ const runSingleTask = async (options: {
 		options.onResultUpdate?.(currentResult);
 	};
 
-	const args = [...options.subprocessArgs, options.subprocessPrompt];
-
-	const exitCode = await new Promise<number>((resolve) => {
-		const proc = spawn("pi", args, {
-			cwd: options.defaultCwd,
-			shell: false,
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-
-		proc.stdin.end();
-
-		const abortState = attachAbortSignal(proc, options.signal);
-
-		let buffer = "";
-		const processLine = (line: string) => {
-			const event = parseJsonLine(line);
-			if (!event) return;
-			const typeValue = event.type;
-			const typeText = typeof typeValue === "string" ? typeValue : "";
-			const messageValue = event.message;
-			if ((typeText === "message_end" || typeText === "tool_result_end") && isMessage(messageValue)) {
-				handleEventMessage(currentResult, messageValue);
-				emitUpdate();
-			}
-		};
-
-		proc.stdout.on("data", (data) => {
-			buffer += data.toString();
-			const lines = buffer.split("\n");
-			buffer = lines.pop() ?? "";
-			for (const line of lines) processLine(line);
-		});
-
-		proc.stderr.on("data", (data) => {
-			currentResult.stderr += data.toString();
-		});
-
-		proc.on("close", (code) => {
-			if (buffer.trim()) processLine(buffer);
-			currentResult.exitCode = code ?? 0;
-			if (abortState.isAborted()) currentResult.stopReason = "aborted";
-			resolve(code ?? 0);
-		});
-
-		proc.on("error", () => {
+	let forkSession: ForkSession | undefined;
+	if (options.fork) {
+		if (!options.sessionFile) {
 			currentResult.exitCode = 1;
-			resolve(1);
-		});
-	});
+			currentResult.errorMessage = "Forked tasks require a persisted session file.";
+			return currentResult;
+		}
+		try {
+			forkSession = await createForkSession(options.sessionFile);
+		} catch (error) {
+			currentResult.exitCode = 1;
+			currentResult.errorMessage = error instanceof Error ? error.message : String(error);
+			return currentResult;
+		}
+	}
 
-	currentResult.exitCode = exitCode;
-	return currentResult;
+	try {
+		const args = [...applyForkSessionArgs(options.subprocessArgs, forkSession), options.subprocessPrompt];
+
+		const exitCode = await new Promise<number>((resolve) => {
+			const proc = spawn("pi", args, {
+				cwd: options.defaultCwd,
+				shell: false,
+				stdio: ["pipe", "pipe", "pipe"],
+			});
+
+			proc.stdin.end();
+
+			const abortState = attachAbortSignal(proc, options.signal);
+
+			let buffer = "";
+			const processLine = (line: string) => {
+				const event = parseJsonLine(line);
+				if (!event) return;
+				const typeValue = event.type;
+				const typeText = typeof typeValue === "string" ? typeValue : "";
+				const messageValue = event.message;
+				if ((typeText === "message_end" || typeText === "tool_result_end") && isMessage(messageValue)) {
+					handleEventMessage(currentResult, messageValue);
+					emitUpdate();
+				}
+			};
+
+			proc.stdout.on("data", (data) => {
+				buffer += data.toString();
+				const lines = buffer.split("\n");
+				buffer = lines.pop() ?? "";
+				for (const line of lines) processLine(line);
+			});
+
+			proc.stderr.on("data", (data) => {
+				currentResult.stderr += data.toString();
+			});
+
+			proc.on("close", (code) => {
+				if (buffer.trim()) processLine(buffer);
+				currentResult.exitCode = code ?? 0;
+				if (abortState.isAborted()) currentResult.stopReason = "aborted";
+				resolve(code ?? 0);
+			});
+
+			proc.on("error", () => {
+				currentResult.exitCode = 1;
+				resolve(1);
+			});
+		});
+
+		currentResult.exitCode = exitCode;
+		return currentResult;
+	} finally {
+		await cleanupForkSession(forkSession);
+	}
 };
 
 const ModelOverrideSchema = Type.Optional(Type.String({ description: "Optional model override: provider/modelId" }));
@@ -677,6 +729,7 @@ const TaskItemSchema = Type.Object({
 	skill: Type.Optional(Type.String({ description: "Optional skill name" })),
 	model: ModelOverrideSchema,
 	thinking: ThinkingOverrideSchema,
+	fork: Type.Optional(Type.Boolean({ description: "Fork context from current session (default: true)" })),
 });
 
 const TaskParams = Type.Object({
@@ -781,6 +834,20 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 				return { mode: normalized.value.mode, modelOverride: normalized.value.model, results };
 			};
 
+			const requiresFork = normalized.value.items.some((item) => item.fork);
+			const sessionFile = requiresFork ? ctx.sessionManager.getSessionFile() : undefined;
+			if (requiresFork && !sessionFile) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "Forked tasks require a persisted session file. Set fork: false or start pi with sessions enabled.",
+						},
+					],
+					details: makeDetails([]),
+				};
+			}
+
 			if (normalized.value.mode === "single") {
 				const prepared = prepareTaskExecutions({
 					items: normalized.value.items,
@@ -823,6 +890,8 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 					subprocessArgs: execution.config.subprocessArgs,
 					modelLabel: execution.config.modelLabel,
 					thinking: execution.config.thinkingLevel,
+					fork: execution.task.item.fork,
+					sessionFile,
 					signal,
 					onResultUpdate: emitSingleUpdate,
 				});
@@ -912,6 +981,8 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 						subprocessArgs: config.subprocessArgs,
 						modelLabel: config.modelLabel,
 						thinking: config.thinkingLevel,
+						fork: stepItem.fork,
+						sessionFile,
 						signal,
 						onResultUpdate: chainUpdate,
 					});
@@ -993,6 +1064,8 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 						subprocessArgs: execution.config.subprocessArgs,
 						modelLabel: execution.config.modelLabel,
 						thinking: execution.config.thinkingLevel,
+						fork: execution.task.item.fork,
+						sessionFile,
 						signal,
 						onResultUpdate: (partial) => {
 							allResults[index] = partial;
