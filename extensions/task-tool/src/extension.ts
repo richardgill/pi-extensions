@@ -5,9 +5,9 @@ import * as path from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import {
-	discoverSkills,
 	type ExtensionAPI,
-	loadSettings,
+	loadSkills,
+	SettingsManager,
 	type Skill,
 	type Theme,
 	type ThemeColor,
@@ -59,6 +59,12 @@ const DEFAULT_OPTIONS: TaskToolOptions = {
 				"Use skill directly: Use the read tool to load a skill's file when the task matches its description. Use skill in task: Pass the skill to the task tool and the task context will load it.",
 		},
 	],
+};
+
+const loadSkillDiscovery = (cwd: string) => {
+	const settingsManager = SettingsManager.create(cwd);
+	const skillPaths = settingsManager.getSkillPaths();
+	return loadSkills({ cwd, skillPaths });
 };
 
 const applyPromptPatches = (prompt: string, patches: PromptPatch[]): string => {
@@ -822,8 +828,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
 			const normalized = normalizeTaskParams(params as unknown, { maxParallelTasks: merged.maxParallelTasks });
 			if (!normalized.ok) {
-				const settings = loadSettings(ctx.cwd);
-				const discovery = discoverSkills(ctx.cwd, undefined, settings.skills);
+				const discovery = loadSkillDiscovery(ctx.cwd);
 				const available = formatAvailableSkills(discovery.skills, merged.skillListLimit);
 				const suffix = available.remaining > 0 ? `, ... +${available.remaining} more` : "";
 				return {
@@ -832,8 +837,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 				};
 			}
 
-			const settings = loadSettings(ctx.cwd);
-			const discovery = discoverSkills(ctx.cwd, undefined, settings.skills);
+			const discovery = loadSkillDiscovery(ctx.cwd);
 			const skillState = createSkillPromptState(discovery.skills);
 
 			const inheritedThinking = pi.getThinkingLevel();

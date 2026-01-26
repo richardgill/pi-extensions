@@ -1,6 +1,9 @@
 {
   "name": "pi-extensions",
   "private": true,
+  "scripts": {
+    "update:pi-agent": "npm install @mariozechner/pi-coding-agent@latest -w extensions/skill-task -w extensions/files -w extensions/task-tool && npm run tsc --workspaces"
+  },
   "workspaces": [
     "packages/*",
     "extensions/*"
