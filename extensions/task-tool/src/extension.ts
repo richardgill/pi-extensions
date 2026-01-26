@@ -84,6 +84,7 @@ type SingleResult = {
 	usage: UsageStats;
 	model?: string;
 	thinking?: ThinkingLevel;
+	fork?: boolean;
 	stopReason?: string;
 	errorMessage?: string;
 	index?: number;
@@ -179,6 +180,8 @@ const formatTaskConfig = (result: SingleResult): string | undefined => {
 	const parts: string[] = [];
 	if (result.model) parts.push(result.model);
 	if (result.thinking) parts.push(`thinking:${result.thinking}`);
+	const contextLabel = getTaskContextLabel(result);
+	if (contextLabel) parts.push(`context:${contextLabel}`);
 	return parts.length > 0 ? parts.join(" ") : undefined;
 };
 
@@ -349,7 +352,7 @@ const buildTaskBlockLines = (options: { label: string; result: SingleResult; the
 	const lines = [indentLine(`${theme.fg("toolTitle", label)} ${getStatusIcon(status, theme)}`, indent)];
 	lines.push(formatStatusLine(status, indent + 2));
 	const configLine = formatTaskConfig(result);
-	if (configLine) lines.push(formatLabeledLine("Model", configLine, indent + 2));
+	if (configLine) lines.push(formatLabeledLine("Subprocess", configLine, indent + 2));
 	lines.push(formatLabeledLine("Prompt", result.prompt.trim(), indent + 2));
 	const logLines = status === "Pending" ? [] : getToolCallLines(result.messages, theme);
 	if (status !== "Pending") {
@@ -472,6 +475,7 @@ const createPlaceholderResult = (
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 		model,
 		thinking,
+		fork: item.fork,
 	};
 };
 
@@ -485,6 +489,11 @@ const getTaskSummaryLabel = (result: SingleResult): string => {
 	if (skillLabel) return skillLabel;
 	if (result.index) return `task ${result.index}`;
 	return "task";
+};
+
+const getTaskContextLabel = (result: SingleResult): string | undefined => {
+	if (result.fork === undefined) return undefined;
+	return result.fork ? "fork" : "fresh";
 };
 
 const isTaskError = (result: SingleResult): boolean => {
@@ -635,6 +644,7 @@ const runSingleTask = async (options: {
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 		model: options.modelLabel,
 		thinking: options.thinking,
+		fork: options.fork,
 	};
 
 	const emitUpdate = () => {
@@ -754,7 +764,7 @@ const renderParallelResult = (results: SingleResult[], _expanded: boolean, theme
 	const status = getParallelStatus(results);
 	const doneCount = countCompletedTasks(results);
 	const lines = [
-		indentLine(`${theme.fg("toolTitle", "parallel")} ${getStatusIcon(status, theme)}`, 0),
+		indentLine(`${theme.fg("toolTitle", "task (parallel)")} ${getStatusIcon(status, theme)}`, 0),
 		formatStatusLine(status, 2, status === "Running" ? `${doneCount}/${results.length} done` : undefined),
 		indentLine("Tasks:", 2),
 	];
@@ -778,7 +788,7 @@ const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: T
 	const status = getChainStatus(results);
 	const doneCount = countCompletedTasks(results);
 	const lines = [
-		indentLine(`${theme.fg("toolTitle", "chain")} ${getStatusIcon(status, theme)}`, 0),
+		indentLine(`${theme.fg("toolTitle", "task (chain)")} ${getStatusIcon(status, theme)}`, 0),
 		formatStatusLine(status, 2, status === "Running" ? `${doneCount}/${results.length} done` : undefined),
 		indentLine("Steps:", 2),
 	];
