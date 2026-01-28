@@ -357,6 +357,8 @@ const buildTaskBlockLines = (options: { label: string; result: SingleResult; the
 	const status = getTaskStatus(result);
 	const lines = [indentLine(`${theme.fg("toolTitle", label)} ${getStatusIcon(status, theme)}`, indent)];
 	lines.push(formatStatusLine(status, indent + 2));
+	const skillLabel = getTaskSkillLabel(result);
+	if (skillLabel) lines.push(formatLabeledLine("Skill", skillLabel, indent + 2));
 	const configLine = formatTaskConfig(result);
 	if (configLine) lines.push(formatLabeledLine("Subprocess", configLine, indent + 2));
 	lines.push(formatLabeledLine("Prompt", result.prompt.trim(), indent + 2));
