@@ -827,7 +827,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 		description: merged.description,
 		parameters: TaskParams,
 
-		async execute(_toolCallId, params, onUpdate, ctx, signal) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const normalized = normalizeTaskParams(params as unknown, { maxParallelTasks: merged.maxParallelTasks });
 			if (!normalized.ok) {
 				const discovery = loadSkillDiscovery(ctx.cwd);

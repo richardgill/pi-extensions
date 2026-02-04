@@ -25,7 +25,6 @@ import {
 	SelectList,
 	Spacer,
 	Text,
-	type TUI,
 } from "@mariozechner/pi-tui";
 
 type ContentBlock = {
@@ -47,6 +46,12 @@ type NormalizedReference = { path: string; ranges?: string };
 type ExtractedReference = { path: string; ranges?: string };
 
 type CommandSpec = readonly string[];
+
+type TuiLifecycle = {
+	stop: () => void;
+	start: () => void;
+	requestRender: (force?: boolean) => void;
+};
 
 type ExtractPattern = { regex: RegExp; captureIndex: number };
 
@@ -1053,7 +1058,7 @@ const openPath = async (
 };
 
 const openExternalEditor = (
-	tui: TUI,
+	tui: TuiLifecycle,
 	editorCmd: CommandSpec,
 	content: string,
 ): string | null => {
@@ -1397,3 +1402,5 @@ export const extension = (input: RevealOptionsInput = {}) => {
 		});
 	};
 };
+
+export const revealExtension = extension;
