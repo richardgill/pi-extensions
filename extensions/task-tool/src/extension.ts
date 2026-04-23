@@ -6,6 +6,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
 import {
 	type ExtensionAPI,
+	getAgentDir,
 	loadSkills,
 	SettingsManager,
 	type Skill,
@@ -63,8 +64,9 @@ const DEFAULT_OPTIONS: TaskToolOptions = {
 
 const loadSkillDiscovery = (cwd: string) => {
 	const settingsManager = SettingsManager.create(cwd);
+	const agentDir = getAgentDir();
 	const skillPaths = settingsManager.getSkillPaths();
-	return loadSkills({ cwd, skillPaths });
+	return loadSkills({ cwd, agentDir, skillPaths, includeDefaults: true });
 };
 
 const applyPromptPatches = (prompt: string, patches: PromptPatch[]): string => {
