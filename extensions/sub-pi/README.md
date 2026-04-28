@@ -22,12 +22,8 @@ Install `pi-pack` globally:
 npm install -g pi-pack
 ```
 
-<!-- Delete install options that do not apply before publishing. -->
-
 ```bash
-pi-pack install "npm:sub-pi"
-pi-pack install "git:github.com/<user>/pi-extensions" --extension "sub-pi"
-pi-pack install "~/code/pi-extensions" --extension "sub-pi"
+pi-pack install "git:github.com/richardgill/pi-extensions" --extension "sub-pi"
 ```
 
 ## Configure

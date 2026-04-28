@@ -18,12 +18,8 @@ Install `pi-pack` globally:
 npm install -g pi-pack
 ```
 
-<!-- Delete install options that do not apply before publishing. -->
-
 ```bash
-pi-pack install "npm:files"
-pi-pack install "git:github.com/<user>/pi-extensions" --extension "files"
-pi-pack install "~/code/pi-extensions" --extension "files"
+pi-pack install "git:github.com/richardgill/pi-extensions" --extension "files"
 ```
 
 

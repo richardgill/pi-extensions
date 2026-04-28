@@ -37,9 +37,7 @@ npm install -g pi-pack
 ```
 
 ```bash
-pi-pack install "npm:sub-pi-skill"
-pi-pack install "git:github.com/<user>/pi-extensions" --extension "sub-pi-skill"
-pi-pack install "~/code/pi-extensions" --extension "sub-pi-skill"
+pi-pack install "git:github.com/richardgill/pi-extensions" --extension "sub-pi-skill"
 ```
 
 ## Configure
