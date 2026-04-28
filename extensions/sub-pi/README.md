@@ -1,4 +1,4 @@
-# files
+# sub-pi
 
 <Describe what this pi extension does.>
 
@@ -15,18 +15,18 @@ npm install -g pi-pack
 <!-- Delete install options that do not apply before publishing. -->
 
 ```bash
-pi-pack install "npm:files"
-pi-pack install "git:github.com/<user>/pi-extensions" --extension "files"
-pi-pack install "~/code/pi-extensions" --extension "files"
+pi-pack install "npm:sub-pi"
+pi-pack install "git:github.com/<user>/pi-extensions" --extension "sub-pi"
+pi-pack install "~/code/pi-extensions" --extension "sub-pi"
 ```
 
 
 ## Configure
 
 ```ts
-import { extension } from "files";
+import { extension } from "sub-pi";
 
 export default extension({
-  commandName: "files",
+  commandName: "sub-pi",
 });
 ```

@@ -1,5 +1,5 @@
 {
-  "name": "files",
+  "name": "sub-pi",
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
