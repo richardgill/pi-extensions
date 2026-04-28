@@ -1,5 +1,3 @@
-import { extension } from "sub-pi-skill";
+import { subPiSkill } from "sub-pi-skill";
 
-export default extension({
-  commandName: "sub-pi-skill",
-});
+export default subPiSkill();
