@@ -50,7 +50,13 @@ importers:
 
   extensions/files:
     dependencies:
-      pi-config:
+      '@mariozechner/pi-coding-agent':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-tui':
+        specifier: '*'
+        version: 0.70.6
+      '@richardgill/pi-config':
         specifier: workspace:*
         version: link:../../packages/pi-config
       zod:
@@ -65,7 +71,10 @@ importers:
       '@mariozechner/pi-coding-agent':
         specifier: '*'
         version: 0.70.6(ws@8.20.0)(zod@4.3.6)
-      pi-config:
+      '@mariozechner/pi-tui':
+        specifier: '*'
+        version: 0.70.6
+      '@richardgill/pi-config':
         specifier: workspace:*
         version: link:../../packages/pi-config
       zod:
@@ -74,16 +83,34 @@ importers:
 
   extensions/sub-pi:
     dependencies:
-      pi-config:
+      '@mariozechner/pi-agent-core':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-ai':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-coding-agent':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-tui':
+        specifier: '*'
+        version: 0.70.6
+      '@richardgill/pi-config':
         specifier: workspace:*
         version: link:../../packages/pi-config
+      '@sinclair/typebox':
+        specifier: '*'
+        version: 0.34.49
       zod:
         specifier: 4.3.6
         version: 4.3.6
 
   extensions/sub-pi-skill:
     dependencies:
-      pi-config:
+      '@mariozechner/pi-coding-agent':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@richardgill/pi-config':
         specifier: workspace:*
         version: link:../../packages/pi-config
       zod:

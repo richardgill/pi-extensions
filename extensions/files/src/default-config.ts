@@ -1,6 +1,6 @@
 import os from "node:os";
 import { extension, mergeRanges, resolveEditorCommand, type RevealOptionsInput } from "files";
-import { loadConfigOrDefault } from "pi-config";
+import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { z } from "zod";
 
 const PLATFORM = {

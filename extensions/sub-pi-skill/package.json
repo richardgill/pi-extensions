@@ -1,8 +1,12 @@
 {
-  "name": "sub-pi-skill",
+  "name": "@richardgill/pi-sub-pi-skill",
   "version": "0.0.0",
   "keywords": [
     "pi-package"
+  ],
+  "files": [
+    "index.ts",
+    "src"
   ],
   "type": "module",
   "exports": {
@@ -14,8 +18,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "pi-config": "workspace:*",
+    "@richardgill/pi-config": "workspace:*",
     "zod": "4.3.6"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
   },
   "pi": {
     "extensions": [

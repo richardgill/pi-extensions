@@ -1,5 +1,5 @@
-import { loadConfigOrDefault } from "pi-config";
-import { type PresetOptions, preset } from "preset";
+import { loadConfigOrDefault } from "@richardgill/pi-config";
+import { type PresetOptions, preset } from "@richardgill/pi-preset";
 import { z } from "zod";
 
 const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);

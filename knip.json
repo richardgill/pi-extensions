@@ -24,6 +24,13 @@
   "ignoreExportsUsedInFile": {
     "type": true
   },
+  "ignoreDependencies": [
+    "@mariozechner/pi-agent-core",
+    "@mariozechner/pi-ai",
+    "@mariozechner/pi-coding-agent",
+    "@mariozechner/pi-tui",
+    "@sinclair/typebox"
+  ],
   "ignoreIssues": {
     "extensions/files/src/extension.ts": ["duplicates"],
     "extensions/preset/src/extension.ts": ["duplicates"]

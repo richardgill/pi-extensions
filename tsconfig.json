@@ -13,10 +13,10 @@
     "noEmit": true,
     "paths": {
       "files": ["./extensions/files/src/extension.ts"],
-      "preset": ["./extensions/preset/src/extension.ts"],
-      "sub-pi": ["./extensions/sub-pi/src/extension.ts"],
-      "sub-pi-skill": ["./extensions/sub-pi-skill/src/extension.ts"],
-      "pi-config": ["./packages/pi-config/src/index.ts"]
+      "@richardgill/pi-preset": ["./extensions/preset/src/extension.ts"],
+      "@richardgill/pi-sub-pi": ["./extensions/sub-pi/src/extension.ts"],
+      "@richardgill/pi-sub-pi-skill": ["./extensions/sub-pi-skill/src/extension.ts"],
+      "@richardgill/pi-config": ["./packages/pi-config/src/index.ts"]
     }
   },
   "include": [
