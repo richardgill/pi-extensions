@@ -31,7 +31,7 @@ metadata:
 ## Install with pi
 
 ```bash
-pi install git:github.com/richardgill/pi-extensions --extensions +extensions/sub-pi-skill/index.ts
+pi install git:github.com/richardgill/pi-extensions
 ```
 
 ## Configure

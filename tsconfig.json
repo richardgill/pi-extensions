@@ -19,5 +19,11 @@
       "pi-config": ["./packages/pi-config/src/index.ts"]
     }
   },
-  "include": ["extensions/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "vite.config.ts"]
+  "include": [
+    "index.ts",
+    "extensions/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "vite.config.ts"
+  ]
 }

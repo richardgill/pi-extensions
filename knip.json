@@ -3,19 +3,19 @@
   "workspaces": {
     "extensions/files": {
       "entry": ["index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
-      "project": ["index.ts", "src/**/*.ts", "tests/**/*.ts"]
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "extensions/preset": {
       "entry": ["index.ts"],
-      "project": ["index.ts", "src/**/*.ts"]
+      "project": ["src/**/*.ts"]
     },
     "extensions/sub-pi": {
       "entry": ["index.ts"],
-      "project": ["index.ts", "src/**/*.ts"]
+      "project": ["src/**/*.ts"]
     },
     "extensions/sub-pi-skill": {
       "entry": ["index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
-      "project": ["index.ts", "src/**/*.ts", "tests/**/*.ts"]
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "packages/pi-config": {
       "project": ["src/**/*.ts"]

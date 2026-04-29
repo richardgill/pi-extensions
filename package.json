@@ -38,13 +38,5 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@10.27.0",
-  "pi": {
-    "extensions": [
-      "./extensions/files/index.ts",
-      "./extensions/preset/index.ts",
-      "./extensions/sub-pi/index.ts",
-      "./extensions/sub-pi-skill/index.ts"
-    ]
-  }
+  "packageManager": "pnpm@10.27.0"
 }
