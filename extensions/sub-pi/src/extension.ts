@@ -15,7 +15,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { type BuiltInToolName, getBuiltInToolsFromActiveTools, resolveTaskConfig } from "./task-config.js";
+import { type BuiltInToolName, getBuiltInToolsFromActiveTools, resolveTaskConfig } from "./sub-pi-config.js";
 import {
 	isRecord,
 	MAX_PARALLEL_TASKS,
@@ -23,11 +23,11 @@ import {
 	type TaskThinking,
 	type TaskWorkItem,
 	VALID_THINKING_OPTIONS,
-} from "./task-params.js";
+} from "./sub-pi-params.js";
 
 export type PromptPatch = { match: RegExp; replace: string };
 
-export type TaskToolOptions = {
+export type SubPiOptions = {
 	name: string;
 	label: string;
 	description: string;
@@ -38,9 +38,9 @@ export type TaskToolOptions = {
 	systemPromptPatches: PromptPatch[];
 };
 
-const DEFAULT_OPTIONS: TaskToolOptions = {
-	name: "task",
-	label: "Task",
+const DEFAULT_OPTIONS: SubPiOptions = {
+	name: "sub-pi",
+	label: "Sub Pi",
 	description: [
 		"Run isolated pi subprocess tasks (single, chain, or parallel).",
 		"Supports optional skill wrapper (matches /skill: behavior) and optional model override (provider/modelId).",
@@ -52,12 +52,12 @@ const DEFAULT_OPTIONS: TaskToolOptions = {
 	systemPromptPatches: [
 		{
 			match: /\n\s*\n\s*in addition to the tools above, you may have access to other custom tools depending on the project\./i,
-			replace: "\n- task: Run isolated pi subprocess tasks (single, chain, or parallel).",
+			replace: "\n- sub-pi: Run isolated pi subprocess tasks (single, chain, or parallel).",
 		},
 		{
 			match: /Use the read tool to load a skill's file when the task matches its description\./i,
 			replace:
-				"Use skill directly: Use the read tool to load a skill's file when the task matches its description. Use skill in task: Pass the skill to the task tool and the task context will load it.",
+				"Use skill directly: Use the read tool to load a skill's file when the task matches its description. Use skill in sub-pi: Pass the skill to the sub-pi tool and the sub-pi context will load it.",
 		},
 	],
 };
@@ -98,7 +98,7 @@ type SingleResult = {
 	index?: number;
 };
 
-type TaskToolDetails = {
+type SubPiDetails = {
 	mode: "single" | "parallel" | "chain";
 	modelOverride?: string;
 	results: SingleResult[];
@@ -122,7 +122,7 @@ type PreparedExecution = {
 type ForkSession = { dir: string; seedPath: string };
 
 const createForkSession = async (sessionFile: string): Promise<ForkSession> => {
-	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-task-tool-"));
+	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-sub-pi-"));
 	const seedPath = path.join(tmpDir, "seed.jsonl");
 	try {
 		await fs.promises.copyFile(sessionFile, seedPath);
@@ -497,8 +497,8 @@ const getTaskSkillLabel = (result: { skill?: string } | undefined): string | und
 const getTaskSummaryLabel = (result: SingleResult): string => {
 	const skillLabel = getTaskSkillLabel(result);
 	if (skillLabel) return skillLabel;
-	if (result.index) return `task ${result.index}`;
-	return "task";
+	if (result.index) return `sub-pi ${result.index}`;
+	return "sub-pi";
 };
 
 const getTaskContextLabel = (result: SingleResult): string | undefined => {
@@ -766,7 +766,7 @@ const TaskParams = Type.Object({
 });
 
 const renderSingleResult = (result: SingleResult, _expanded: boolean, theme: Theme): Text => {
-	const lines = buildTaskBlockLines({ label: "task", result, theme, indent: 0 });
+	const lines = buildTaskBlockLines({ label: "sub-pi", result, theme, indent: 0 });
 	return new Text(lines.join("\n"), 0, 0);
 };
 
@@ -774,14 +774,14 @@ const renderParallelResult = (results: SingleResult[], _expanded: boolean, theme
 	const status = getParallelStatus(results);
 	const doneCount = countCompletedTasks(results);
 	const lines = [
-		indentLine(`${theme.fg("toolTitle", "task (parallel)")} ${getStatusIcon(status, theme)}`, 0),
+		indentLine(`${theme.fg("toolTitle", "sub-pi (parallel)")} ${getStatusIcon(status, theme)}`, 0),
 		formatStatusLine(status, 2, status === "Running" ? `${doneCount}/${results.length} done` : undefined),
 		indentLine("Tasks:", 2),
 	];
 
 	for (let index = 0; index < results.length; index++) {
 		if (index > 0) lines.push("");
-		lines.push(...buildTaskBlockLines({ label: "task", result: results[index], theme, indent: 4 }));
+		lines.push(...buildTaskBlockLines({ label: "sub-pi", result: results[index], theme, indent: 4 }));
 	}
 
 	const usageStr = formatUsageStats(aggregateUsage(results));
@@ -798,7 +798,7 @@ const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: T
 	const status = getChainStatus(results);
 	const doneCount = countCompletedTasks(results);
 	const lines = [
-		indentLine(`${theme.fg("toolTitle", "task (chain)")} ${getStatusIcon(status, theme)}`, 0),
+		indentLine(`${theme.fg("toolTitle", "sub-pi (chain)")} ${getStatusIcon(status, theme)}`, 0),
 		formatStatusLine(status, 2, status === "Running" ? `${doneCount}/${results.length} done` : undefined),
 		indentLine("Steps:", 2),
 	];
@@ -807,7 +807,7 @@ const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: T
 		if (index > 0) lines.push("");
 		const result = results[index];
 		const stepNumber = result.index ?? index + 1;
-		lines.push(...buildTaskBlockLines({ label: `Step ${stepNumber} (task)`, result, theme, indent: 4 }));
+		lines.push(...buildTaskBlockLines({ label: `Step ${stepNumber} (sub-pi)`, result, theme, indent: 4 }));
 	}
 
 	const usageStr = formatUsageStats(aggregateUsage(results));
@@ -820,7 +820,7 @@ const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: T
 	return new Text(lines.join("\n"), 0, 0);
 };
 
-export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
+export const subPi = (options: SubPiOptions) => (pi: ExtensionAPI) => {
 	const merged = { ...DEFAULT_OPTIONS, ...options };
 
 	pi.registerTool({
@@ -837,7 +837,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 				const suffix = available.remaining > 0 ? `, ... +${available.remaining} more` : "";
 				return {
 					content: [{ type: "text", text: `${normalized.error}\nAvailable skills: ${available.text}${suffix}` }],
-					details: { mode: "single", results: [] } as TaskToolDetails,
+					details: { mode: "single", results: [] } as SubPiDetails,
 				};
 			}
 
@@ -848,7 +848,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 			const builtInTools = getBuiltInToolsFromActiveTools(pi.getActiveTools());
 			const ctxModel = ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined;
 
-			const makeDetails = (results: SingleResult[]): TaskToolDetails => {
+			const makeDetails = (results: SingleResult[]): SubPiDetails => {
 				return { mode: normalized.value.mode, modelOverride: normalized.value.model, results };
 			};
 
@@ -1119,7 +1119,7 @@ export const taskTool = (options: TaskToolOptions) => (pi: ExtensionAPI) => {
 		},
 
 		renderResult(result, { expanded }, theme) {
-			const details = result.details as TaskToolDetails | undefined;
+			const details = result.details as SubPiDetails | undefined;
 			if (!details || details.results.length === 0) {
 				const textBlock = result.content[0];
 				return new Text(textBlock?.type === "text" ? textBlock.text : "(no output)", 0, 0);

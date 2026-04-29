@@ -1,8 +1,10 @@
-# task-tool pi extension
+# sub-pi
 
 Run isolated `pi` subprocesses for **single**, **chain**, or **parallel** work.
 
 This is similar in spirit to the `subagent/` example, but focuses on running plain prompts (optionally wrapped in a **skill**) without managing agent definitions.
+
+Part of [`pi-extensions`](../../README.md).
 
 ## Features
 
@@ -12,53 +14,50 @@ This is similar in spirit to the `subagent/` example, but focuses on running pla
 - **Streaming updates**: see partial progress while subprocesses run
 - **Abort support**: Ctrl+C propagates to kill subprocesses
 
-## Install into a project via `~/.pi/agent/extensions/`
+## Install with pi-pack
 
-Create a project-local extension wrapper:
+Install `pi-pack` globally:
 
 ```bash
-mkdir -p ~/.pi/agent/extensions/task-tool
+npm install -g pi-pack
 ```
 
-Install the plugin:
-
 ```bash
-cat > ~/.pi/agent/extensions/task-tool/package.json <<'EOF'
-{
-  "name": "extension-task-tool",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "task-tool": "github:richardgill/pi-extensions#path:/extensions/task-tool"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.1"
-  }
-}
-EOF
-
-curl -fsSL "https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/task-tool/src/scaffold.ts?cache-bust=1" \
-  -o ~/.pi/agent/extensions/task-tool/index.ts
-
-(cd ~/.pi/agent/extensions/task-tool && npx pnpm install)
+pi-pack install "git:github.com/richardgill/pi-extensions" --extension "sub-pi"
 ```
 
-Start a fresh `pi`.
+## Configure
 
-### Updating later
+```ts
+import { type SubPiOptions, subPi } from "sub-pi";
 
-```bash
-(cd ~/.pi/agent/extensions/task-tool && npx pnpm update task-tool)
+export default subPi({
+  name: "sub-pi",
+  label: "Sub Pi",
+  description: [
+    "Run isolated pi subprocess tasks (single, chain, or parallel).",
+    "Optional model override (provider/modelId).",
+  ].join(" "),
+  maxParallelTasks: 8,
+  maxConcurrency: 4,
+  collapsedItemCount: 10,
+  skillListLimit: 30,
+  systemPromptPatches: [
+    {
+      match:
+        /\n\s*\n\s*in addition to the tools above, you may have access to other custom tools depending on the project\./i,
+      replace: "\n- sub-pi: never run this tool unless it's a skill run or I explictly ask you to",
+    },
+  ],
+} satisfies SubPiOptions);
 ```
 
 ## Usage
 
 ### Single
 
-Tool call shape:
-
 ```ts
-task({
+sub-pi({
   type: "single",
   tasks: [{ prompt: "Summarize auth flow" }],
   thinking: "inherit",
@@ -68,7 +67,7 @@ task({
 ### Single with skill
 
 ```ts
-task({
+sub-pi({
   type: "single",
   tasks: [{ skill: "scout", prompt: "Find where auth is handled" }],
 });
@@ -77,7 +76,7 @@ task({
 ### Parallel
 
 ```ts
-task({
+sub-pi({
   type: "parallel",
   thinking: "high",
   tasks: [
@@ -92,7 +91,7 @@ task({
 Use `{previous}` to reference the prior step output:
 
 ```ts
-task({
+sub-pi({
   type: "chain",
   tasks: [
     { prompt: "Find auth flow in the repo" },
@@ -110,7 +109,7 @@ Limits:
 `model` is in `provider/modelId` format:
 
 ```ts
-task({
+sub-pi({
   type: "single",
   model: "anthropic/claude-sonnet-4-5",
   tasks: [{ prompt: "Summarize auth flow" }],
@@ -124,7 +123,7 @@ If omitted, the subprocess inherits the parent session model (when available).
 `thinking` accepts `inherit`, `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`.
 
 ```ts
-task({
+sub-pi({
   type: "single",
   tasks: [{ prompt: "Summarize auth flow" }],
   thinking: "medium",
@@ -140,7 +139,7 @@ Each task supports a per-item `fork` boolean (default: `true`). When `fork: true
 To keep the old stateless behavior, set `fork: false`:
 
 ```ts
-task({
+sub-pi({
   type: "single",
   tasks: [{ prompt: "Summarize auth flow", fork: false }],
 });

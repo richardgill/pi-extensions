@@ -1,5 +1,5 @@
 {
-  "name": "files",
+  "name": "sub-pi",
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
@@ -10,10 +10,5 @@
   "pi-pack": {
     "default-config": "./src/default-config.ts",
     "requires-config-edit": true
-  },
-  "scripts": {
-    "tsc": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest --run",
-    "test:watch": "vitest"
   }
 }

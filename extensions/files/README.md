@@ -1,42 +1,34 @@
-# files pi extension
+# files
 
-pi extension for browsing/opening files mentioned in the conversation.
+pi extension for browsing, opening, revealing, and editing files mentioned in the conversation.
 
-## Install into a project via `.pi/extensions/`
+Adds a `files` slash command and three default shortcuts:
 
-Create a project-local extension wrapper:
+- `ctrl+f` — fuzzy-pick a file referenced in the session
+- `ctrl+r` — reveal the latest file reference in Finder / file manager
+- `ctrl+shift+r` — Quick Look the latest file reference (macOS)
+
+Part of [`pi-extensions`](../../README.md).
+
+## Install with pi-pack
+
+Install `pi-pack` globally:
 
 ```bash
-mkdir -p ~/.pi/agent/extensions/files
+npm install -g pi-pack
 ```
 
-Install the plugin
 ```bash
-cat > ~/.pi/agent/extensions/files/package.json <<'EOF'
-{
-  "name": "extension-files",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "files": "github:richardgill/pi-extensions#path:/extensions/files"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.1"
-  }
-}
-
-EOF
-curl -fsSL "https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/files/src/scaffold.ts?cache-bust=1" \
-  -o ~/.pi/agent/extensions/files/index.ts
-(cd ~/.pi/agent/extensions/files && npx pnpm install)
+pi-pack install "git:github.com/richardgill/pi-extensions" --extension "files"
 ```
 
-You can now modify `~/.pi/agent/extensions/files/index.ts` to configure the extension
 
-Start a fresh `pi`.
+## Configure
 
-### Updating later
+```ts
+import { extension } from "files";
 
-```bash
-(cd ~/.pi/agent/extensions/files && npx pnpm update files)
+export default extension({
+  commandName: "files",
+});
 ```

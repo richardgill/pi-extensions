@@ -1,8 +1,8 @@
-import { type TaskToolOptions, taskTool } from "task-tool";
+import { type SubPiOptions, subPi } from "sub-pi";
 
-const extension = taskTool({
-	name: "task",
-	label: "Task",
+export default subPi({
+	name: "sub-pi",
+	label: "Sub Pi",
 	description: [
 		"Run isolated pi subprocess tasks (single, chain, or parallel).",
 		"Optional model override (provider/modelId).",
@@ -15,10 +15,7 @@ const extension = taskTool({
 		{
 			match:
 				/\n\s*\n\s*in addition to the tools above, you may have access to other custom tools depending on the project\./i,
-			replace:
-				"\n- task: never run this tool unless it's a skill run or I explictly ask you to",
+			replace: "\n- sub-pi: never run this tool unless it's a skill run or I explictly ask you to",
 		},
 	],
-} satisfies TaskToolOptions);
-
-export default extension;
+} satisfies SubPiOptions);

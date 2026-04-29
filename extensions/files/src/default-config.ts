@@ -37,7 +37,6 @@ export default extension({
 			},
 		],
 
-		// run tests with: `timeout 2 pi -e path/to/reveal/index.s` an look for error logging
 		testCases: [
 			{
 				text: "See file:///tmp/project/file.txt for details",

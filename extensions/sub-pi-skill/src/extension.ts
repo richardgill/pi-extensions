@@ -23,15 +23,15 @@ type ToolCallResult = {
 
 type SubProcessContext = "fork" | "fresh";
 
-type TaskToolTask = {
+type SubPiTask = {
 	skill: string;
 	prompt: string;
 	fork?: boolean;
 };
 
-type TaskToolParams = {
+type SubPiParams = {
 	type: "single";
-	tasks: TaskToolTask[];
+	tasks: SubPiTask[];
 	model?: string;
 	thinking?: string;
 };
@@ -63,16 +63,22 @@ type ModelOverrideParse =
 const VALID_THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const VALID_SUBPROCESS_CONTEXTS: SubProcessContext[] = ["fork", "fresh"];
 
+const DEFAULT_TOOL_NAME = "sub-pi";
 const skillCommandPrefix = "/skill:";
+
+export type SubPiSkillOptions = {
+	toolName?: string;
+};
 
 let extensionApi: ExtensionAPI | null = null;
 let lastPrompt: string | null = null;
 let pendingSkill: SkillInvocation | null = null;
-let appliedOverrideSkills = new Set<string>();
+let toolName: string = DEFAULT_TOOL_NAME;
+const appliedOverrideSkills = new Set<string>();
 let handlersRegistered = false;
 
-const taskToolRequiredMessage =
-	"skill-task requires task-tool extension to be loaded (tool name: task).";
+const buildSubPiRequiredMessage = (): string =>
+	`sub-pi-skill requires sub-pi extension to be loaded (tool name: ${toolName}).`;
 
 const notify = (ctx: ExtensionContext, message: string): void => {
 	if (!ctx.hasUI) {
@@ -280,12 +286,12 @@ const consumePendingSkillPrompt = (skillName: string): string | null => {
 	return prompt;
 };
 
-const buildTaskParams = (
+const buildSubPiParams = (
 	skillName: string,
 	prompt: string,
 	metadata: SkillPiMetadata,
-): TaskToolParams => {
-	const params: TaskToolParams = {
+): SubPiParams => {
+	const params: SubPiParams = {
 		type: "single",
 		tasks: [
 			{
@@ -309,30 +315,31 @@ const buildTaskParams = (
 	return params;
 };
 
-const formatTaskMessage = (params: TaskToolParams): string => {
-	return `Call the task tool with the following JSON. Respond only with the tool call.\n${JSON.stringify(params)}`;
+const formatSubPiMessage = (params: SubPiParams): string => {
+	return `Call the ${toolName} tool with the following JSON. Respond only with the tool call.\n${JSON.stringify(params)}`;
 };
 
-const isTaskToolRegistered = (pi: ExtensionAPI): boolean =>
-	pi.getAllTools().some((tool) => tool.name === "task");
+const isSubPiToolRegistered = (pi: ExtensionAPI): boolean =>
+	pi.getAllTools().some((tool) => tool.name === toolName);
 
-const assertTaskToolRegistered = (
+const assertSubPiToolRegistered = (
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 ): void => {
-	if (isTaskToolRegistered(pi)) {
+	if (isSubPiToolRegistered(pi)) {
 		return;
 	}
 
+	const message = buildSubPiRequiredMessage();
 	if (ctx.hasUI) {
-		ctx.ui.notify(taskToolRequiredMessage, "error");
+		ctx.ui.notify(message, "error");
 	}
 
-	process.stderr.write(`${taskToolRequiredMessage}\n`);
-	throw new Error(taskToolRequiredMessage);
+	process.stderr.write(`${message}\n`);
+	throw new Error(message);
 };
 
-const registerSkillTaskHandlers = (pi: ExtensionAPI): void => {
+const registerSubPiSkillHandlers = (pi: ExtensionAPI): void => {
 	if (handlersRegistered) {
 		return;
 	}
@@ -355,19 +362,19 @@ const handleSessionStart = async (
 		return;
 	}
 
-	assertTaskToolRegistered(extensionApi, ctx);
-	registerSkillTaskHandlers(extensionApi);
+	assertSubPiToolRegistered(extensionApi, ctx);
+	registerSubPiSkillHandlers(extensionApi);
 };
 
-const hasTaskTool = (): boolean => {
+const hasSubPiTool = (): boolean => {
 	if (!extensionApi) {
 		return false;
 	}
 
-	return extensionApi.getActiveTools().includes("task");
+	return extensionApi.getActiveTools().includes(toolName);
 };
 
-const sendTaskTool = (
+const sendSubPiTool = (
 	ctx: ExtensionContext,
 	skillName: string,
 	prompt: string,
@@ -377,15 +384,15 @@ const sendTaskTool = (
 		return;
 	}
 
-	if (!hasTaskTool()) {
-		notify(ctx, `Task tool not active for skill: ${skillName}`);
+	if (!hasSubPiTool()) {
+		notify(ctx, `${toolName} tool not active for skill: ${skillName}`);
 		return;
 	}
 
-	const params = buildTaskParams(skillName, prompt, metadata);
-	notify(ctx, `Skill task: ${skillName}`);
+	const params = buildSubPiParams(skillName, prompt, metadata);
+	notify(ctx, `Skill sub-pi: ${skillName}`);
 
-	const message = formatTaskMessage(params);
+	const message = formatSubPiMessage(params);
 	const options = ctx.isIdle() ? undefined : { deliverAs: "steer" as const };
 	if (options) {
 		extensionApi.sendUserMessage(message, options);
@@ -426,7 +433,7 @@ const handleInput = async (
 	}
 
 	pendingSkill = null;
-	sendTaskTool(ctx, skillCommand.name, skillCommand.prompt, metadata);
+	sendSubPiTool(ctx, skillCommand.name, skillCommand.prompt, metadata);
 	return { action: "handled" };
 };
 
@@ -461,13 +468,16 @@ const handleToolCall = async (
 	}
 
 	const prompt = pendingPrompt ?? lastPrompt ?? "";
-	sendTaskTool(ctx, skillName, prompt, metadata);
-	return { block: true, reason: `Skill handled by task: ${skillName}` };
+	sendSubPiTool(ctx, skillName, prompt, metadata);
+	return { block: true, reason: `Skill handled by ${toolName}: ${skillName}` };
 };
 
-export const skillTask = () => {
+export const subPiSkill = (options: SubPiSkillOptions = {}) => {
+	const resolvedToolName = options.toolName?.trim() || DEFAULT_TOOL_NAME;
+
 	return (pi: ExtensionAPI): void => {
 		extensionApi = pi;
+		toolName = resolvedToolName;
 		pi.on("session_start", handleSessionStart);
 	};
 };
