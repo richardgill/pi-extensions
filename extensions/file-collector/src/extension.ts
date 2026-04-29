@@ -91,6 +91,7 @@ export type FileLineEvent = {
   absolutePath: string;
   startLine?: number;
   endLine?: number;
+  display: string;
   timestamp: string;
   toolCallId?: string;
   command?: string;
@@ -426,20 +427,57 @@ export const resolveAbsolutePath = (targetPath: string, cwd: string): string => 
   }
 };
 
+const formatRange = (pathValue: string, startLine?: number, endLine?: number): string => {
+  if (!startLine) return pathValue;
+  if (!endLine || endLine === startLine) return `${pathValue}:${startLine}`;
+  return `${pathValue}:${startLine}-${endLine}`;
+};
+
+const formatMatchedText = (matchedText: string): string => {
+  const normalized = matchedText.trim().replace(/\s+/g, " ");
+  const preview = normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized;
+  return JSON.stringify(preview);
+};
+
+export const formatFileLineEventDisplay = (
+  event: Pick<FileLineEvent, "source" | "path" | "startLine" | "endLine"> &
+    Partial<Pick<FileLineEvent, "command" | "matchedText">>,
+): string => {
+  const file = formatRange(event.path, event.startLine, event.endLine);
+  const matchedText = event.matchedText ? ` — ${formatMatchedText(event.matchedText)}` : "";
+
+  if (event.source === "read_tool") return `read ${file}`;
+  if (event.source === "write_tool") return `wrote ${file}`;
+  if (event.source === "assistant_output") return `assistant cited ${file}`;
+  if (event.source === "bash_output") return `bash output ${file}${matchedText}`;
+  if (event.source === "bash_command") {
+    const command = event.command ? ` ${event.command}` : "";
+    const showMatchedText = event.command === "rg" || event.command === "grep";
+    const commandFile = showMatchedText ? event.path : file;
+    return `bash${command} ${commandFile}${showMatchedText ? matchedText : ""}`;
+  }
+
+  return file;
+};
+
 const createFileLineEvent = (
   source: FileLineEventSource,
   reference: FileReference,
   ctx: ExtensionContext,
   metadata: EventMetadata = {},
-): FileLineEvent => ({
-  source,
-  path: reference.path,
-  absolutePath: resolveAbsolutePath(reference.path, ctx.cwd),
-  ...normalizeLineRange(reference.startLine, reference.endLine),
-  timestamp: new Date().toISOString(),
-  ...metadata,
-  ...(reference.matchedText ? { matchedText: reference.matchedText } : {}),
-});
+): FileLineEvent => {
+  const event = {
+    source,
+    path: reference.path,
+    absolutePath: resolveAbsolutePath(reference.path, ctx.cwd),
+    ...normalizeLineRange(reference.startLine, reference.endLine),
+    timestamp: new Date().toISOString(),
+    ...metadata,
+    ...(reference.matchedText ? { matchedText: reference.matchedText } : {}),
+  };
+
+  return { ...event, display: formatFileLineEventDisplay(event) };
+};
 
 export const createSessionSidecarPath = (sessionFile: string, sidecarFilename: string): string => {
   const parsed = path.parse(sessionFile);

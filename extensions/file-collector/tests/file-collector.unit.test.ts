@@ -6,6 +6,7 @@ import {
   extractBashOutputReferences,
   extractReadToolRange,
   extractWriteToolRange,
+  formatFileLineEventDisplay,
   resolveAbsolutePath,
   resolveOptions,
 } from "../src/extension.js";
@@ -177,6 +178,63 @@ describe("extractWriteToolRange", () => {
 
   it.each(testCases)("$name", ({ content, expected }) => {
     expect(extractWriteToolRange(content)).toEqual(expected);
+  });
+});
+
+describe("formatFileLineEventDisplay", () => {
+  const testCases = [
+    {
+      name: "formats read events",
+      event: { source: "read_tool" as const, path: "./sample.ts", startLine: 1, endLine: 5 },
+      expected: "read ./sample.ts:1-5",
+    },
+    {
+      name: "formats write events",
+      event: { source: "write_tool" as const, path: "./generated.txt", startLine: 1, endLine: 3 },
+      expected: "wrote ./generated.txt:1-3",
+    },
+    {
+      name: "formats bash command events",
+      event: {
+        source: "bash_command" as const,
+        path: "./sample.ts",
+        startLine: 2,
+        endLine: 3,
+        command: "sed",
+        matchedText: "2,3p",
+      },
+      expected: "bash sed ./sample.ts:2-3",
+    },
+    {
+      name: "formats bash command match events",
+      event: {
+        source: "bash_command" as const,
+        path: "./sample.ts",
+        command: "rg",
+        matchedText: "beta",
+      },
+      expected: 'bash rg ./sample.ts — "beta"',
+    },
+    {
+      name: "formats bash output events",
+      event: {
+        source: "bash_output" as const,
+        path: "./sample.ts",
+        startLine: 2,
+        endLine: 2,
+        matchedText: "beta",
+      },
+      expected: 'bash output ./sample.ts:2 — "beta"',
+    },
+    {
+      name: "formats assistant output events",
+      event: { source: "assistant_output" as const, path: "./notes.md", startLine: 1, endLine: 2 },
+      expected: "assistant cited ./notes.md:1-2",
+    },
+  ];
+
+  it.each(testCases)("$name", ({ event, expected }) => {
+    expect(formatFileLineEventDisplay(event)).toBe(expected);
   });
 });
 
