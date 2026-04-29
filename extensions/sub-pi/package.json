@@ -7,9 +7,5 @@
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
-  },
-  "pi-pack": {
-    "default-config": "./src/default-config.ts",
-    "requires-config-edit": true
   }
 }

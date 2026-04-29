@@ -12,9 +12,5 @@
     "tsc": "tsc -p tsconfig.json --noEmit",
     "test": "vitest --run",
     "test:watch": "vitest"
-  },
-  "pi-pack": {
-    "default-config": "./src/default-config.ts",
-    "requires-config-edit": true
   }
 }
