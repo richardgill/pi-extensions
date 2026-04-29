@@ -449,7 +449,7 @@ export const formatFileLineEventDisplay = (
   if (event.source === "read_tool") return `read ${file}`;
   if (event.source === "write_tool") return `wrote ${file}`;
   if (event.source === "assistant_output") return `assistant cited ${file}`;
-  if (event.source === "bash_output") return `bash output ${file}${matchedText}`;
+  if (event.source === "bash_output") return `bash output ${file}`;
   if (event.source === "bash_command") {
     const command = event.command ? ` ${event.command}` : "";
     const showMatchedText = event.command === "rg" || event.command === "grep";

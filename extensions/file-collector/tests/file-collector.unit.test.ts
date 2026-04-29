@@ -224,7 +224,7 @@ describe("formatFileLineEventDisplay", () => {
         endLine: 2,
         matchedText: "beta",
       },
-      expected: 'bash output ./sample.ts:2 — "beta"',
+      expected: "bash output ./sample.ts:2",
     },
     {
       name: "formats assistant output events",
