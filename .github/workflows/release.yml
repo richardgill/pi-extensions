@@ -45,7 +45,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish:
-    name: Publish extensions
+    name: Publish packages
     needs: create-release-pr
     if: needs.create-release-pr.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
