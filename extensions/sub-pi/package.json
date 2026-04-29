@@ -1,14 +1,20 @@
 {
   "name": "sub-pi",
+  "version": "0.0.0",
+  "keywords": [
+    "pi-package"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
   },
-  "keywords": [
-    "pi-package"
-  ],
-  "pi-pack": {
-    "default-config": "./src/default-config.ts",
-    "requires-config-edit": true
+  "dependencies": {
+    "pi-config": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

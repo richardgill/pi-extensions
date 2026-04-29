@@ -1,0 +1,111 @@
+name: Checks
+on:
+  push:
+
+permissions:
+  checks: write
+  contents: read
+
+jobs:
+  checks:
+    name: All Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup and install
+        id: setup
+        uses: ./.github/shared
+
+      - name: Prepare Check Runs
+        uses: dflydev/check-runs-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checks: |
+            [
+              { "id": "lint", "name": "Lint" },
+              { "id": "typecheck", "name": "Typecheck" },
+              { "id": "test", "name": "Test" },
+              { "id": "misc-checks", "name": "Misc checks" },
+              { "id": "knip", "name": "Dead code check" }
+            ]
+          status: in_progress
+
+      - name: Run checks in parallel
+        id: parallel
+        run: |
+          mkdir -p /tmp/results /tmp/logs
+
+          (pnpm check 2>&1 | tee /tmp/logs/lint; echo ${PIPESTATUS[0]} > /tmp/results/lint) &
+          (pnpm typecheck 2>&1 | tee /tmp/logs/typecheck; echo ${PIPESTATUS[0]} > /tmp/results/typecheck) &
+          (pnpm test 2>&1 | tee /tmp/logs/test; echo ${PIPESTATUS[0]} > /tmp/results/test) &
+          (pnpm run misc-checks 2>&1 | tee /tmp/logs/misc-checks; echo ${PIPESTATUS[0]} > /tmp/results/misc-checks) &
+          (pnpm knip 2>&1 | tee /tmp/logs/knip; echo ${PIPESTATUS[0]} > /tmp/results/knip) &
+
+          wait
+
+          echo "lint=$(cat /tmp/results/lint)" >> $GITHUB_OUTPUT
+          echo "typecheck=$(cat /tmp/results/typecheck)" >> $GITHUB_OUTPUT
+          echo "test=$(cat /tmp/results/test)" >> $GITHUB_OUTPUT
+          echo "misc-checks=$(cat /tmp/results/misc-checks)" >> $GITHUB_OUTPUT
+          echo "knip=$(cat /tmp/results/knip)" >> $GITHUB_OUTPUT
+
+      - name: Build Check Results JSON
+        id: build-json
+        if: always()
+        run: |
+          build_check() {
+            local id="$1" name="$2" log_file="$3" exit_code="$4"
+            local conclusion=$([[ "$exit_code" == "0" ]] && echo "success" || echo "failure")
+            local log_content=$(cat "$log_file" 2>/dev/null | tail -c 65000 || echo "No output captured")
+
+            jq -n \
+              --arg id "$id" \
+              --arg conclusion "$conclusion" \
+              --arg title "$name" \
+              --arg summary "$([[ "$exit_code" == "0" ]] && echo "Passed" || echo "Failed")" \
+              --arg text "$log_content" \
+              '{id: $id, conclusion: $conclusion, output: {title: $title, summary: $summary, text_description: ("```\n" + $text + "\n```")}}'
+          }
+
+          checks_json=$(jq -s '.' <(
+            build_check "lint" "Lint" "/tmp/logs/lint" "${{ steps.parallel.outputs.lint }}"
+            build_check "typecheck" "Typecheck" "/tmp/logs/typecheck" "${{ steps.parallel.outputs.typecheck }}"
+            build_check "test" "Test" "/tmp/logs/test" "${{ steps.parallel.outputs.test }}"
+            build_check "misc-checks" "Misc checks" "/tmp/logs/misc-checks" "${{ steps.parallel.outputs.misc-checks }}"
+            build_check "knip" "Dead code check" "/tmp/logs/knip" "${{ steps.parallel.outputs.knip }}"
+          ))
+
+          echo "checks<<EOF" >> $GITHUB_OUTPUT
+          echo "$checks_json" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Report Check Results
+        if: always()
+        uses: dflydev/check-runs-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checks: ${{ steps.build-json.outputs.checks }}
+
+      - name: Check for failures
+        if: always()
+        run: |
+          failed=0
+          [[ "${{ steps.parallel.outputs.lint }}" != "0" ]] && echo "Lint failed" && failed=1
+          [[ "${{ steps.parallel.outputs.typecheck }}" != "0" ]] && echo "Typecheck failed" && failed=1
+          [[ "${{ steps.parallel.outputs.test }}" != "0" ]] && echo "Test failed" && failed=1
+          [[ "${{ steps.parallel.outputs.misc-checks }}" != "0" ]] && echo "Misc checks failed" && failed=1
+          [[ "${{ steps.parallel.outputs.knip }}" != "0" ]] && echo "Dead code check failed" && failed=1
+          exit $failed
+
+      - name: Prune pnpm store
+        if: always() && steps.setup.outputs.cache-hit != 'true'
+        run: pnpm store prune || true
+
+      - name: Save pnpm cache
+        if: always() && steps.setup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.setup.outputs.store-path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}

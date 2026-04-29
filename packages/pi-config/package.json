@@ -1,0 +1,19 @@
+{
+  "name": "pi-config",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "0.70.6",
+    "zod": "4.3.6"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "zod": "*"
+  }
+}

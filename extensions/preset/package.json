@@ -1,18 +1,24 @@
 {
   "name": "preset",
+  "version": "0.0.0",
+  "keywords": [
+    "pi-package"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
   },
-  "keywords": [
-    "pi-package"
-  ],
+  "dependencies": {
+    "pi-config": "workspace:*",
+    "zod": "4.3.6"
+  },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*"
   },
-  "pi-pack": {
-    "default-config": "./src/default-config.ts",
-    "requires-config-edit": true
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

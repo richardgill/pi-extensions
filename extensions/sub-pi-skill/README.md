@@ -28,26 +28,22 @@ metadata:
 ---
 ```
 
-## Install with pi-pack
-
-Install `pi-pack` globally:
+## Install with pi
 
 ```bash
-npm install -g pi-pack
-```
-
-```bash
-pi-pack install "git:github.com/richardgill/pi-extensions" --extension "sub-pi-skill"
+pi install git:github.com/richardgill/pi-extensions
 ```
 
 ## Configure
 
-```ts
-import { subPiSkill } from "sub-pi-skill";
+Create `sub-pi-skill.jsonc` in your pi agent config folder:
 
-export default subPiSkill();
+```jsonc
+{
+  "toolName": "sub-pi"
+}
 ```
 
 ### Options
 
-- `toolName` (default `"sub-pi"`) — the registered tool name to invoke. Match this to `SubPiOptions.name` from the `sub-pi` extension if you've customised it there.
+- `toolName` (default `"sub-pi"`) — the registered tool name to invoke. Match this to `name` from the `sub-pi` extension if you've customised it there.
