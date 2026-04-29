@@ -6,6 +6,7 @@ import {
   isBashToolResult,
   isReadToolResult,
   isToolCallEventType,
+  isWriteToolResult,
   type ExtensionAPI,
   type ExtensionContext,
   type SessionEntry,
@@ -49,9 +50,11 @@ export type FileCollectorOptions = {
   sidecarEnabled?: boolean;
   sidecarFilename?: string;
   collectReadTool?: boolean;
+  collectWriteTool?: boolean;
   collectBashCommand?: boolean;
   collectBashOutput?: boolean;
   collectAssistantOutput?: boolean;
+  appendSystemPrompt?: string;
   assistantCitationPatterns?: RegexPatternConfig[];
   bashOutputPatterns?: RegexPatternConfig[];
   bashShimCommands?: BashShimCommand[];
@@ -64,16 +67,23 @@ type ResolvedOptions = Required<
     | "sidecarEnabled"
     | "sidecarFilename"
     | "collectReadTool"
+    | "collectWriteTool"
     | "collectBashCommand"
     | "collectBashOutput"
     | "collectAssistantOutput"
+    | "appendSystemPrompt"
     | "assistantCitationPatterns"
     | "bashOutputPatterns"
     | "bashShimCommands"
   >
 >;
 
-export type FileLineEventSource = "read_tool" | "bash_command" | "bash_output" | "assistant_output";
+export type FileLineEventSource =
+  | "read_tool"
+  | "write_tool"
+  | "bash_command"
+  | "bash_output"
+  | "assistant_output";
 
 export type FileLineEvent = {
   source: FileLineEventSource;
@@ -111,11 +121,11 @@ const CUSTOM_TYPE = "file-line-event";
 
 const DEFAULT_ASSISTANT_CITATION_PATTERNS: RegexPatternConfig[] = [
   {
-    regex: String.raw`(?:^|[\s\`"'(<\[])(?<path>[^\s\`"'<>)]*?)#L(?<start>\d+)(?:-L?(?<end>\d+))?(?=$|[\s\`"'<>),;\]])`,
+    regex: String.raw`(?:^|[\s\`"'(<\[])(?<path>[^\s\`"'<>)]*?)#L(?<start>\d+)(?:-L?(?<end>\d+))?(?=$|[\s\`"'<>),;.\]])`,
     flags: "g",
   },
   {
-    regex: String.raw`(?:^|[\s\`"'(<\[])(?<path>[^\s\`"'<>)]*?):(?<start>\d+)(?:-(?<end>\d+))?(?=$|[\s\`"'<>),;\]])`,
+    regex: String.raw`(?:^|[\s\`"'(<\[])(?<path>[^\s\`"'<>)]*?):(?<start>\d+)(?:-(?<end>\d+))?(?=$|[\s\`"'<>),;.\]])`,
     flags: "g",
   },
 ];
@@ -162,6 +172,20 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
       matchedText: { from: "arg", arg: "pattern" },
     },
   },
+  {
+    name: "head",
+    capture: {
+      paths: { from: "lastPositional" },
+      range: { from: "headLineCount", option: "-n" },
+    },
+  },
+  {
+    name: "tail",
+    capture: {
+      paths: { from: "lastPositional" },
+      range: { from: "tailLineCount", option: "-n" },
+    },
+  },
 ];
 
 const DEFAULT_OPTIONS: ResolvedOptions = {
@@ -169,9 +193,11 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   sidecarEnabled: true,
   sidecarFilename: "file-line-events.jsonl",
   collectReadTool: true,
+  collectWriteTool: true,
   collectBashCommand: true,
   collectBashOutput: true,
   collectAssistantOutput: true,
+  appendSystemPrompt: "",
   assistantCitationPatterns: DEFAULT_ASSISTANT_CITATION_PATTERNS,
   bashOutputPatterns: DEFAULT_BASH_OUTPUT_PATTERNS,
   bashShimCommands: DEFAULT_BASH_SHIM_COMMANDS,
@@ -198,16 +224,26 @@ const parseSedRange = (script) => {
   const endLine = toNumber(range[2]) || startLine;
   return startLine ? { startLine, endLine } : {};
 };
-const findLineCountRange = (option) => {
+const findLineCount = (option) => {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
     const direct = arg === option ? toNumber(next) : undefined;
     const joined = arg.startsWith(option) ? toNumber(arg.slice(option.length)) : undefined;
-    const endLine = direct || joined;
-    if (endLine) return { startLine: 1, endLine };
+    const count = direct || joined;
+    if (count) return count;
   }
-  return {};
+  return undefined;
+};
+const countFileLines = (target) => {
+  try {
+    const content = fs.readFileSync(target, "utf8");
+    if (!content) return 0;
+    const lines = content.split(/\r\n|\r|\n/);
+    return lines.at(-1) === "" ? lines.length - 1 : lines.length;
+  } catch {
+    return undefined;
+  }
 };
 const collectPositionals = () => {
   const valueOptions = new Set(spec.argv?.valueOptions || []);
@@ -261,17 +297,26 @@ const captureMatchedText = () => {
   const rule = spec.capture.matchedText;
   return rule?.from === "arg" ? ensureArg(rule.arg) : undefined;
 };
-const captureRange = () => {
+const captureRange = (target) => {
   const rule = spec.capture.range;
   if (!rule) return {};
   if (rule.from === "sedPrintScript") return parseSedRange(ensureArg(rule.arg));
-  if (rule.from === "headLineCount") return findLineCountRange(rule.option);
+  if (rule.from === "headLineCount") {
+    const endLine = findLineCount(rule.option);
+    return endLine ? { startLine: 1, endLine } : {};
+  }
+  if (rule.from === "tailLineCount") {
+    const count = findLineCount(rule.option);
+    const total = countFileLines(target);
+    if (!count || !total) return {};
+    return { startLine: Math.max(1, total - count + 1), endLine: total };
+  }
   return {};
 };
 const matchedText = captureMatchedText();
-const range = captureRange();
 for (const target of capturePaths()) {
   if (target && target !== "-") {
+    const range = captureRange(target);
     fs.appendFileSync(file, JSON.stringify({ command, path: target, matchedText, timestamp: new Date().toISOString(), ...range }) + "\n");
   }
 }
@@ -317,10 +362,12 @@ export const resolveOptions = (options: FileCollectorOptions = {}): ResolvedOpti
     sidecarEnabled: options.sidecarEnabled ?? DEFAULT_OPTIONS.sidecarEnabled,
     sidecarFilename: options.sidecarFilename ?? DEFAULT_OPTIONS.sidecarFilename,
     collectReadTool: options.collectReadTool ?? DEFAULT_OPTIONS.collectReadTool,
+    collectWriteTool: options.collectWriteTool ?? DEFAULT_OPTIONS.collectWriteTool,
     collectBashCommand: options.collectBashCommand ?? DEFAULT_OPTIONS.collectBashCommand,
     collectBashOutput: options.collectBashOutput ?? DEFAULT_OPTIONS.collectBashOutput,
     collectAssistantOutput:
       options.collectAssistantOutput ?? DEFAULT_OPTIONS.collectAssistantOutput,
+    appendSystemPrompt: options.appendSystemPrompt ?? DEFAULT_OPTIONS.appendSystemPrompt,
     assistantCitationPatterns: clonePatternConfigs(
       options.assistantCitationPatterns ?? DEFAULT_OPTIONS.assistantCitationPatterns,
     ),
@@ -394,19 +441,22 @@ const createFileLineEvent = (
   ...(reference.matchedText ? { matchedText: reference.matchedText } : {}),
 });
 
+export const createSessionSidecarPath = (sessionFile: string, sidecarFilename: string): string => {
+  const parsed = path.parse(sessionFile);
+  return path.join(parsed.dir, `${parsed.name}-${sidecarFilename}`);
+};
+
 const getSidecarPath = (ctx: ExtensionContext, options: ResolvedOptions): string | undefined => {
   const sessionFile = ctx.sessionManager.getSessionFile();
   return sessionFile && options.sidecarEnabled
-    ? path.join(path.dirname(sessionFile), options.sidecarFilename)
+    ? createSessionSidecarPath(sessionFile, options.sidecarFilename)
     : undefined;
 };
 
 const writeSidecarEvent = async (
-  ctx: ExtensionContext,
+  sidecarPath: string | undefined,
   record: FileLineEvent,
-  options: ResolvedOptions,
 ): Promise<void> => {
-  const sidecarPath = getSidecarPath(ctx, options);
   if (!sidecarPath) {
     return;
   }
@@ -417,14 +467,25 @@ const writeSidecarEvent = async (
   } catch {}
 };
 
+const appendRecordEvent = async (
+  pi: ExtensionAPI,
+  sidecarPath: string | undefined,
+  record: FileLineEvent,
+): Promise<void> => {
+  await writeSidecarEvent(sidecarPath, record);
+  try {
+    pi.appendEntry<FileLineEvent>(CUSTOM_TYPE, record);
+  } catch {}
+};
+
 const recordEvent = async (
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   record: FileLineEvent,
   options: ResolvedOptions,
 ): Promise<void> => {
-  pi.appendEntry<FileLineEvent>(CUSTOM_TYPE, record);
-  await writeSidecarEvent(ctx, record, options);
+  const sidecarPath = getSidecarPath(ctx, options);
+  await appendRecordEvent(pi, sidecarPath, record);
 };
 
 const recordEvents = async (
@@ -433,8 +494,9 @@ const recordEvents = async (
   records: FileLineEvent[],
   options: ResolvedOptions,
 ): Promise<void> => {
+  const sidecarPath = getSidecarPath(ctx, options);
   for (const record of records) {
-    await recordEvent(pi, ctx, record, options);
+    await appendRecordEvent(pi, sidecarPath, record);
   }
 };
 
@@ -477,13 +539,20 @@ const parseLineRange = (
   };
 };
 
+const hasInvalidPathCharacters = (value: string): boolean =>
+  value.includes("{") ||
+  value.includes("}") ||
+  value.includes('"') ||
+  Array.from(value).some((char) => char.charCodeAt(0) < 32);
+
 const isPathLike = (value: string): boolean =>
-  value.startsWith("./") ||
-  value.startsWith("../") ||
-  value.startsWith("/") ||
-  value.startsWith("~/") ||
-  value.includes("/") ||
-  /\.[A-Za-z0-9_-]+$/.test(value);
+  !hasInvalidPathCharacters(value) &&
+  (value.startsWith("./") ||
+    value.startsWith("../") ||
+    value.startsWith("/") ||
+    value.startsWith("~/") ||
+    value.includes("/") ||
+    /\.[A-Za-z0-9_-]+$/.test(value));
 
 const cleanPathCandidate = (value: string): string =>
   value.replace(/^[@`"'<([]+/, "").replace(/[`"'>)\],;.]+$/, "");
@@ -530,7 +599,17 @@ export const extractBashOutputReferences = (
   patterns: RegexPatternConfig[] = DEFAULT_BASH_OUTPUT_PATTERNS,
 ): FileReference[] => extractReferencesFromPatterns(text, patterns);
 
-const extractReadToolRange = (content: string, fallbackOffset: unknown, fallbackLimit: unknown) => {
+const countTextLines = (text: string): number => {
+  if (!text) return 0;
+  const lines = text.split(/\r\n|\r|\n/);
+  return lines.at(-1) === "" ? lines.length - 1 : lines.length;
+};
+
+export const extractReadToolRange = (
+  content: string,
+  fallbackOffset: unknown,
+  fallbackLimit: unknown,
+) => {
   const showingMatch = content.match(/Showing lines (\d+)-(\d+)/);
   if (showingMatch) {
     return parseLineRange(showingMatch[1], showingMatch[2]);
@@ -538,7 +617,14 @@ const extractReadToolRange = (content: string, fallbackOffset: unknown, fallback
 
   const startLine = toPositiveLine(fallbackOffset) ?? 1;
   const limit = toPositiveLine(fallbackLimit);
-  return { startLine, ...(limit ? { endLine: startLine + limit - 1 } : {}) };
+  const contentLineCount = countTextLines(content);
+  const endLine = limit ?? contentLineCount;
+  return { startLine, ...(endLine ? { endLine: startLine + endLine - 1 } : {}) };
+};
+
+export const extractWriteToolRange = (content: string) => {
+  const endLine = countTextLines(content);
+  return { startLine: 1, ...(endLine ? { endLine } : {}) };
 };
 
 const buildReadToolEvent = (
@@ -553,6 +639,20 @@ const buildReadToolEvent = (
   const text = extractTextContent(event.content);
   const range = extractReadToolRange(text, event.input.offset, event.input.limit);
   return createFileLineEvent("read_tool", { path: targetPath, ...range }, ctx);
+};
+
+const buildWriteToolEvent = (event: { input: Record<string, unknown> }, ctx: ExtensionContext) => {
+  const targetPath = event.input.path;
+  const content = event.input.content;
+  if (typeof targetPath !== "string" || typeof content !== "string") {
+    return undefined;
+  }
+
+  return createFileLineEvent(
+    "write_tool",
+    { path: targetPath, ...extractWriteToolRange(content) },
+    ctx,
+  );
 };
 
 const createReferenceEvents = (
@@ -655,6 +755,7 @@ const getBranchFileLineEvents = (entries: SessionEntry[]): FileLineEvent[] =>
 const summarizeEvents = (events: FileLineEvent[]): string => {
   const counts: SourceCounts = {
     read_tool: 0,
+    write_tool: 0,
     bash_command: 0,
     bash_output: 0,
     assistant_output: 0,
@@ -666,9 +767,10 @@ const summarizeEvents = (events: FileLineEvent[]): string => {
 
   return [
     `${events.length} file-line events`,
-    `seen: ${counts.read_tool + counts.bash_command + counts.bash_output}`,
+    `seen: ${counts.read_tool + counts.write_tool + counts.bash_command + counts.bash_output}`,
     `cited: ${counts.assistant_output}`,
     `read_tool: ${counts.read_tool}`,
+    `write_tool: ${counts.write_tool}`,
     `bash_command: ${counts.bash_command}`,
     `bash_output: ${counts.bash_output}`,
   ].join(" • ");
@@ -682,6 +784,17 @@ const registerCommand = (options: ResolvedOptions, pi: ExtensionAPI): void => {
       ctx.ui.notify(summarizeEvents(events), "info");
     },
   });
+};
+
+const registerSystemPromptAppender = (options: ResolvedOptions, pi: ExtensionAPI): void => {
+  const append = options.appendSystemPrompt.trim();
+  if (!append) {
+    return;
+  }
+
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: `${event.systemPrompt}\n\n${append}`,
+  }));
 };
 
 const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void => {
@@ -700,6 +813,14 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
   pi.on("tool_result", async (event, ctx) => {
     if (options.collectReadTool && isReadToolResult(event) && !event.isError) {
       const record = buildReadToolEvent(event, ctx);
+      if (record) {
+        await recordEvent(pi, ctx, record, options);
+      }
+      return;
+    }
+
+    if (options.collectWriteTool && isWriteToolResult(event) && !event.isError) {
+      const record = buildWriteToolEvent(event, ctx);
       if (record) {
         await recordEvent(pi, ctx, record, options);
       }
@@ -768,6 +889,7 @@ export const fileCollector = (input: FileCollectorOptions = {}) => {
 
   return (pi: ExtensionAPI): void => {
     registerCommand(options, pi);
+    registerSystemPromptAppender(options, pi);
     registerCollectors(options, pi);
   };
 };
