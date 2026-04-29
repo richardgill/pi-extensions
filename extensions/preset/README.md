@@ -7,7 +7,7 @@ Part of [`pi-extensions`](../../README.md).
 ## Install with pi-pack
 
 ```bash
-pi-pack install "~/code/pi-extensions/preset-extension" --extension "preset"
+pi-pack install "git:github.com/richardgill/pi-extensions" --extension "preset"
 ```
 
 ## Configure
