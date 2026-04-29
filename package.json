@@ -1,6 +1,42 @@
 {
   "name": "pi-extensions",
   "private": true,
+  "workspaces": [
+    "extensions/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "check": "vp check",
+    "check-fix": "vp check --fix",
+    "changeset": "changeset",
+    "changeset-version": "changeset version && npm install",
+    "knip": "knip",
+    "local-ci": "tsx scripts/local-ci.ts",
+    "misc-checks": "tsx scripts/misc-checks.ts",
+    "prepare": "[ \"$DEPENDABOT\" = true ] || [ -n \"$CI\" ] || git config core.hooksPath .vite-hooks || true",
+    "test": "vp test",
+    "test-watch": "vp test watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "=0.6.0",
+    "@changesets/cli": "=2.31.0",
+    "@mariozechner/pi-agent-core": "=0.70.6",
+    "@mariozechner/pi-ai": "=0.70.6",
+    "@mariozechner/pi-coding-agent": "=0.70.6",
+    "@mariozechner/pi-tui": "=0.70.6",
+    "@sinclair/typebox": "=0.34.49",
+    "@types/node": "=25.6.0",
+    "knip": "=6.6.3",
+    "tsx": "=4.21.0",
+    "typescript": "=6.0.3",
+    "vite-plus": "=0.1.19",
+    "vitest": "=4.1.5"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.13.0",
   "pi-pack": {
     "extensions-dir": "extensions"
   }

@@ -1,12 +1,13 @@
 {
   "name": "preset",
+  "version": "0.0.0",
+  "keywords": [
+    "pi-package"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
   },
-  "keywords": [
-    "pi-package"
-  ],
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*"

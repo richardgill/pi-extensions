@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "extensions/files": {
+      "entry": ["src/default-config.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "extensions/preset": {
+      "entry": ["src/default-config.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "extensions/sub-pi": {
+      "entry": ["src/default-config.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "extensions/sub-pi-skill": {
+      "entry": ["src/default-config.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    }
+  },
+  "ignoreExportsUsedInFile": {
+    "type": true
+  },
+  "ignoreIssues": {
+    "extensions/files/src/extension.ts": ["duplicates"],
+    "extensions/preset/src/extension.ts": ["duplicates"]
+  }
+}
