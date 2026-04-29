@@ -100,9 +100,12 @@ type BashShimRecord = {
   startLine?: unknown;
   endLine?: unknown;
   matchedText?: string;
+  timestamp?: string;
 };
 
 type SourceCounts = Record<FileLineEventSource, number>;
+
+type EventMetadata = Partial<Pick<FileLineEvent, "toolCallId" | "command" | "timestamp">>;
 
 const CUSTOM_TYPE = "file-line-event";
 
@@ -269,7 +272,7 @@ const matchedText = captureMatchedText();
 const range = captureRange();
 for (const target of capturePaths()) {
   if (target && target !== "-") {
-    fs.appendFileSync(file, JSON.stringify({ command, path: target, matchedText, ...range }) + "\n");
+    fs.appendFileSync(file, JSON.stringify({ command, path: target, matchedText, timestamp: new Date().toISOString(), ...range }) + "\n");
   }
 }
 __PI_FILE_LINE_TRACKER_NODE__
@@ -380,7 +383,7 @@ const createFileLineEvent = (
   source: FileLineEventSource,
   reference: FileReference,
   ctx: ExtensionContext,
-  metadata: Pick<FileLineEvent, "toolCallId" | "command"> = {},
+  metadata: EventMetadata = {},
 ): FileLineEvent => ({
   source,
   path: reference.path,
@@ -556,7 +559,7 @@ const createReferenceEvents = (
   source: FileLineEventSource,
   references: FileReference[],
   ctx: ExtensionContext,
-  metadata: Pick<FileLineEvent, "toolCallId" | "command"> = {},
+  metadata: EventMetadata = {},
 ): FileLineEvent[] =>
   references.map((reference) => createFileLineEvent(source, reference, ctx, metadata));
 
@@ -616,6 +619,7 @@ const buildBashCommandEvents = async (
       createFileLineEvent("bash_command", reference, ctx, {
         toolCallId,
         command: record.command ?? fallbackCommand,
+        timestamp: record.timestamp,
       }),
     ];
   });
