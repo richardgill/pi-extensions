@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   isBashToolResult,
+  isEditToolResult,
   isReadToolResult,
   isToolCallEventType,
   isWriteToolResult,
@@ -51,6 +52,7 @@ export type FileCollectorOptions = {
   sidecarFilename?: string;
   collectReadTool?: boolean;
   collectWriteTool?: boolean;
+  collectEditTool?: boolean;
   collectBashCommand?: boolean;
   collectBashOutput?: boolean;
   collectAssistantOutput?: boolean;
@@ -68,6 +70,7 @@ type ResolvedOptions = Required<
     | "sidecarFilename"
     | "collectReadTool"
     | "collectWriteTool"
+    | "collectEditTool"
     | "collectBashCommand"
     | "collectBashOutput"
     | "collectAssistantOutput"
@@ -81,20 +84,28 @@ type ResolvedOptions = Required<
 export type FileLineEventSource =
   | "read_tool"
   | "write_tool"
+  | "edit_tool"
   | "bash_command"
   | "bash_output"
   | "assistant_output";
 
+export type FileLineEventKind = "read" | "write" | "edit" | "bash" | "assistant_citation";
+
 export type FileLineEvent = {
   source: FileLineEventSource;
+  kind: FileLineEventKind;
+  action: string;
   path: string;
   absolutePath: string;
   startLine?: number;
   endLine?: number;
-  display: string;
   timestamp: string;
+  display: string;
+  detail?: string;
+  previewTitle: string;
   toolCallId?: string;
   command?: string;
+  rawCommand?: string;
   matchedText?: string;
 };
 
@@ -116,7 +127,9 @@ type BashShimRecord = {
 
 type SourceCounts = Record<FileLineEventSource, number>;
 
-type EventMetadata = Partial<Pick<FileLineEvent, "toolCallId" | "command" | "timestamp">>;
+type EventMetadata = Partial<
+  Pick<FileLineEvent, "toolCallId" | "command" | "rawCommand" | "timestamp">
+>;
 
 const CUSTOM_TYPE = "file-line-event";
 
@@ -195,6 +208,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   sidecarFilename: "file-line-events.jsonl",
   collectReadTool: true,
   collectWriteTool: true,
+  collectEditTool: true,
   collectBashCommand: true,
   collectBashOutput: true,
   collectAssistantOutput: true,
@@ -364,6 +378,7 @@ export const resolveOptions = (options: FileCollectorOptions = {}): ResolvedOpti
     sidecarFilename: options.sidecarFilename ?? DEFAULT_OPTIONS.sidecarFilename,
     collectReadTool: options.collectReadTool ?? DEFAULT_OPTIONS.collectReadTool,
     collectWriteTool: options.collectWriteTool ?? DEFAULT_OPTIONS.collectWriteTool,
+    collectEditTool: options.collectEditTool ?? DEFAULT_OPTIONS.collectEditTool,
     collectBashCommand: options.collectBashCommand ?? DEFAULT_OPTIONS.collectBashCommand,
     collectBashOutput: options.collectBashOutput ?? DEFAULT_OPTIONS.collectBashOutput,
     collectAssistantOutput:
@@ -439,25 +454,39 @@ const formatMatchedText = (matchedText: string): string => {
   return JSON.stringify(preview);
 };
 
+const getFileLineEventKind = (source: FileLineEventSource): FileLineEventKind => {
+  if (source === "read_tool") return "read";
+  if (source === "write_tool") return "write";
+  if (source === "edit_tool") return "edit";
+  if (source === "assistant_output") return "assistant_citation";
+  return "bash";
+};
+
+const getFileLineEventAction = (
+  event: Pick<FileLineEvent, "source"> & Partial<Pick<FileLineEvent, "command">>,
+): string => {
+  if (event.source === "read_tool") return "read";
+  if (event.source === "write_tool") return "wrote";
+  if (event.source === "edit_tool") return "edited";
+  if (event.source === "assistant_output") return "cited";
+  return event.command ? `bash ${event.command}` : "bash output";
+};
+
+const getFileLineEventDetail = (
+  event: Partial<Pick<FileLineEvent, "matchedText" | "detail">>,
+): string | undefined => event.detail ?? event.matchedText;
+
+const formatDisplayDetail = (detail?: string): string =>
+  detail ? ` — ${formatMatchedText(detail)}` : "";
+
 export const formatFileLineEventDisplay = (
   event: Pick<FileLineEvent, "source" | "path" | "startLine" | "endLine"> &
-    Partial<Pick<FileLineEvent, "command" | "matchedText">>,
+    Partial<Pick<FileLineEvent, "action" | "command" | "detail" | "matchedText">>,
 ): string => {
   const file = formatRange(event.path, event.startLine, event.endLine);
-  const matchedText = event.matchedText ? ` — ${formatMatchedText(event.matchedText)}` : "";
-
-  if (event.source === "read_tool") return `read ${file}`;
-  if (event.source === "write_tool") return `wrote ${file}`;
-  if (event.source === "assistant_output") return `assistant cited ${file}`;
-  if (event.source === "bash_output") return `bash output ${file}`;
-  if (event.source === "bash_command") {
-    const command = event.command ? ` ${event.command}` : "";
-    const showMatchedText = event.command === "rg" || event.command === "grep";
-    const commandFile = showMatchedText ? event.path : file;
-    return `bash${command} ${commandFile}${showMatchedText ? matchedText : ""}`;
-  }
-
-  return file;
+  const action = event.action ?? getFileLineEventAction(event);
+  const detail = getFileLineEventDetail(event);
+  return `${action} ${file}${formatDisplayDetail(detail)}`;
 };
 
 const createFileLineEvent = (
@@ -468,6 +497,7 @@ const createFileLineEvent = (
 ): FileLineEvent => {
   const event = {
     source,
+    kind: getFileLineEventKind(source),
     path: reference.path,
     absolutePath: resolveAbsolutePath(reference.path, ctx.cwd),
     ...normalizeLineRange(reference.startLine, reference.endLine),
@@ -475,8 +505,11 @@ const createFileLineEvent = (
     ...metadata,
     ...(reference.matchedText ? { matchedText: reference.matchedText } : {}),
   };
+  const action = getFileLineEventAction(event);
+  const detail = getFileLineEventDetail(event);
+  const display = formatFileLineEventDisplay({ ...event, action, detail });
 
-  return { ...event, display: formatFileLineEventDisplay(event) };
+  return { ...event, action, ...(detail ? { detail } : {}), display, previewTitle: display };
 };
 
 export const createSessionSidecarPath = (sessionFile: string, sidecarFilename: string): string => {
@@ -665,8 +698,15 @@ export const extractWriteToolRange = (content: string) => {
   return { startLine: 1, ...(endLine ? { endLine } : {}) };
 };
 
+export const extractEditToolRange = (details: unknown) => {
+  const firstChangedLine = (details as { firstChangedLine?: unknown } | undefined)
+    ?.firstChangedLine;
+  const startLine = toPositiveLine(firstChangedLine);
+  return startLine ? { startLine } : {};
+};
+
 const buildReadToolEvent = (
-  event: { input: Record<string, unknown>; content: unknown },
+  event: { input: Record<string, unknown>; content: unknown; toolCallId?: string },
   ctx: ExtensionContext,
 ) => {
   const targetPath = event.input.path;
@@ -676,10 +716,15 @@ const buildReadToolEvent = (
 
   const text = extractTextContent(event.content);
   const range = extractReadToolRange(text, event.input.offset, event.input.limit);
-  return createFileLineEvent("read_tool", { path: targetPath, ...range }, ctx);
+  return createFileLineEvent("read_tool", { path: targetPath, ...range }, ctx, {
+    toolCallId: event.toolCallId,
+  });
 };
 
-const buildWriteToolEvent = (event: { input: Record<string, unknown> }, ctx: ExtensionContext) => {
+const buildWriteToolEvent = (
+  event: { input: Record<string, unknown>; toolCallId?: string },
+  ctx: ExtensionContext,
+) => {
   const targetPath = event.input.path;
   const content = event.input.content;
   if (typeof targetPath !== "string" || typeof content !== "string") {
@@ -690,6 +735,24 @@ const buildWriteToolEvent = (event: { input: Record<string, unknown> }, ctx: Ext
     "write_tool",
     { path: targetPath, ...extractWriteToolRange(content) },
     ctx,
+    { toolCallId: event.toolCallId },
+  );
+};
+
+const buildEditToolEvent = (
+  event: { input: Record<string, unknown>; details: unknown; toolCallId?: string },
+  ctx: ExtensionContext,
+) => {
+  const targetPath = event.input.path;
+  if (typeof targetPath !== "string") {
+    return undefined;
+  }
+
+  return createFileLineEvent(
+    "edit_tool",
+    { path: targetPath, ...extractEditToolRange(event.details) },
+    ctx,
+    { toolCallId: event.toolCallId },
   );
 };
 
@@ -703,6 +766,11 @@ const createReferenceEvents = (
 
 const createBashShimPath = (toolCallId: string): string =>
   path.join(os.tmpdir(), `pi-file-line-tracker-${process.pid}-${toolCallId}.jsonl`);
+
+const getExecutableName = (rawCommand: string | undefined): string | undefined => {
+  const executable = rawCommand?.trim().match(/^([^\s;&|]+)/)?.[1];
+  return executable ? path.basename(executable) : undefined;
+};
 
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
 
@@ -756,7 +824,8 @@ const buildBashCommandEvents = async (
     return [
       createFileLineEvent("bash_command", reference, ctx, {
         toolCallId,
-        command: record.command ?? fallbackCommand,
+        command: record.command ?? getExecutableName(fallbackCommand),
+        rawCommand: fallbackCommand,
         timestamp: record.timestamp,
       }),
     ];
@@ -794,6 +863,7 @@ const summarizeEvents = (events: FileLineEvent[]): string => {
   const counts: SourceCounts = {
     read_tool: 0,
     write_tool: 0,
+    edit_tool: 0,
     bash_command: 0,
     bash_output: 0,
     assistant_output: 0,
@@ -805,10 +875,17 @@ const summarizeEvents = (events: FileLineEvent[]): string => {
 
   return [
     `${events.length} file-line events`,
-    `seen: ${counts.read_tool + counts.write_tool + counts.bash_command + counts.bash_output}`,
+    `seen: ${
+      counts.read_tool +
+      counts.write_tool +
+      counts.edit_tool +
+      counts.bash_command +
+      counts.bash_output
+    }`,
     `cited: ${counts.assistant_output}`,
     `read_tool: ${counts.read_tool}`,
     `write_tool: ${counts.write_tool}`,
+    `edit_tool: ${counts.edit_tool}`,
     `bash_command: ${counts.bash_command}`,
     `bash_output: ${counts.bash_output}`,
   ].join(" • ");
@@ -865,6 +942,14 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
       return;
     }
 
+    if (options.collectEditTool && isEditToolResult(event) && !event.isError) {
+      const record = buildEditToolEvent(event, ctx);
+      if (record) {
+        await recordEvent(pi, ctx, record, options);
+      }
+      return;
+    }
+
     if (!isBashToolResult(event)) {
       return;
     }
@@ -892,7 +977,8 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
         ctx,
         createReferenceEvents("bash_output", references, ctx, {
           toolCallId: event.toolCallId,
-          command: shim?.command,
+          command: getExecutableName(shim?.command),
+          rawCommand: shim?.command,
         }),
         options,
       );

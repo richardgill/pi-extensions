@@ -23,6 +23,7 @@ Create `file-collector.jsonc` in your pi agent config folder:
 
   "collectReadTool": true,
   "collectWriteTool": true,
+  "collectEditTool": true,
   "collectBashCommand": true,
   "collectBashOutput": true,
   "collectAssistantOutput": true,
@@ -68,7 +69,7 @@ Create `file-collector.jsonc` in your pi agent config folder:
 
 ## Usage
 
-- Records read-tool ranges, write-tool ranges, declarative bash shim file arguments, grep-style bash output, and assistant file citations.
+- Records read-tool ranges, write/edit-tool ranges, declarative bash shim file arguments, grep-style bash output, and assistant file citations.
 - Optionally appends `appendSystemPrompt` to the system prompt each user turn.
 - Persists session entries as `file-line-event` and writes one sidecar JSONL per session beside the session file: `<session-basename>-file-line-events.jsonl`.
 - `/file-lines` shows a summary of collected events on the current session branch.

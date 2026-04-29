@@ -26,8 +26,9 @@ describe("resolveOptions", () => {
     ).toBe("Use ./file.ts:1 format");
   });
 
-  it("collects write tool events by default", () => {
+  it("collects write and edit tool events by default", () => {
     expect(resolveOptions().collectWriteTool).toBe(true);
+    expect(resolveOptions().collectEditTool).toBe(true);
   });
 });
 
@@ -203,7 +204,7 @@ describe("formatFileLineEventDisplay", () => {
         command: "sed",
         matchedText: "2,3p",
       },
-      expected: "bash sed ./sample.ts:2-3",
+      expected: 'bash sed ./sample.ts:2-3 — "2,3p"',
     },
     {
       name: "formats bash command match events",
@@ -224,12 +225,12 @@ describe("formatFileLineEventDisplay", () => {
         endLine: 2,
         matchedText: "beta",
       },
-      expected: "bash output ./sample.ts:2",
+      expected: 'bash output ./sample.ts:2 — "beta"',
     },
     {
       name: "formats assistant output events",
       event: { source: "assistant_output" as const, path: "./notes.md", startLine: 1, endLine: 2 },
-      expected: "assistant cited ./notes.md:1-2",
+      expected: "cited ./notes.md:1-2",
     },
   ];
 

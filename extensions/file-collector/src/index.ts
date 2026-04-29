@@ -46,6 +46,7 @@ const ConfigSchema = z.object({
   sidecarFilename: z.string().optional(),
   collectReadTool: z.boolean().optional(),
   collectWriteTool: z.boolean().optional(),
+  collectEditTool: z.boolean().optional(),
   collectBashCommand: z.boolean().optional(),
   collectBashOutput: z.boolean().optional(),
   collectAssistantOutput: z.boolean().optional(),
