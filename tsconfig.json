@@ -12,6 +12,7 @@
     "types": ["node"],
     "noEmit": true,
     "paths": {
+      "@richardgill/pi-file-collector": ["./extensions/file-collector/src/extension.ts"],
       "@richardgill/pi-files": ["./extensions/files/src/extension.ts"],
       "@richardgill/pi-preset": ["./extensions/preset/src/extension.ts"],
       "@richardgill/pi-sub-pi": ["./extensions/sub-pi/src/extension.ts"],

@@ -2,6 +2,7 @@
 
 ## Extensions
 
+- [`@richardgill/pi-file-collector`](./extensions/file-collector/README.md)
 - [`@richardgill/pi-files`](./extensions/files/README.md)
 - [`@richardgill/pi-preset`](./extensions/preset/README.md)
 - [`@richardgill/pi-sub-pi`](./extensions/sub-pi/README.md)
