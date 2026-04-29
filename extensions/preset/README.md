@@ -4,37 +4,35 @@ Pi extension for named presets that can set model, thinking level, tools, and pe
 
 Part of [`pi-extensions`](../../README.md).
 
-## Install with pi-pack
+## Install with pi
 
 ```bash
-pi-pack install "git:github.com/richardgill/pi-extensions" --extension "preset"
+pi install git:github.com/richardgill/pi-extensions --extensions +extensions/preset/index.ts
 ```
 
 ## Configure
 
-Edit the installed `config.ts`:
+Create `preset.jsonc` in your pi agent config folder:
 
-```ts
-import { preset } from "preset";
-
-export default preset({
-	presets: {
-		plan: {
-			provider: "openai-codex",
-			model: "gpt-5.2-codex",
-			thinkingLevel: "high",
-			tools: ["read", "bash"],
-			instructions: "Planning mode. Do not edit files.",
-		},
-		implement: {
-			provider: "anthropic",
-			model: "claude-sonnet-4-5",
-			thinkingLevel: "high",
-			tools: ["read", "bash", "edit", "write"],
-			instructions: "Implementation mode. Make focused changes.",
-		},
-	},
-});
+```jsonc
+{
+  "presets": {
+    "plan": {
+      "provider": "openai-codex",
+      "model": "gpt-5.2-codex",
+      "thinkingLevel": "high",
+      "tools": ["read", "bash"],
+      "instructions": "Planning mode. Do not edit files."
+    },
+    "implement": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "thinkingLevel": "high",
+      "tools": ["read", "bash", "edit", "write"],
+      "instructions": "Implementation mode. Make focused changes."
+    }
+  }
+}
 ```
 
 ## Usage

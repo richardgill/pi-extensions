@@ -12,5 +12,14 @@
     "tsc": "tsc -p tsconfig.json --noEmit",
     "test": "vitest --run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "pi-config": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

@@ -10,25 +10,26 @@ Adds a `files` slash command and three default shortcuts:
 
 Part of [`pi-extensions`](../../README.md).
 
-## Install with pi-pack
-
-Install `pi-pack` globally:
+## Install with pi
 
 ```bash
-npm install -g pi-pack
-```
-
-```bash
-pi-pack install "git:github.com/richardgill/pi-extensions" --extension "files"
+pi install git:github.com/richardgill/pi-extensions --extensions +extensions/files/index.ts
 ```
 
 
 ## Configure
 
-```ts
-import { extension } from "files";
+Create `files.jsonc` in your pi agent config folder:
 
-export default extension({
-  commandName: "files",
-});
+```jsonc
+{
+  "commandName": "files",
+  "showRanges": true,
+  "actionOrder": ["open", "addToPrompt"],
+  "shortcuts": {
+    "browse": "ctrl+f",
+    "revealLatest": "ctrl+r",
+    "quickLookLatest": "ctrl+shift+r"
+  }
+}
 ```

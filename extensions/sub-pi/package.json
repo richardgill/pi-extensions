@@ -7,5 +7,14 @@
   "type": "module",
   "exports": {
     ".": "./src/extension.ts"
+  },
+  "dependencies": {
+    "pi-config": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

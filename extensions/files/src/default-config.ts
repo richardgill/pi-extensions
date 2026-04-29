@@ -1,9 +1,62 @@
 import os from "node:os";
-import { extension, mergeRanges, resolveEditorCommand } from "files";
+import { extension, mergeRanges, resolveEditorCommand, type RevealOptionsInput } from "files";
+import { loadConfigOrDefault } from "pi-config";
+import { z } from "zod";
 
 const PLATFORM = {
   isDarwin: process.platform === "darwin",
   isLinux: process.platform === "linux",
+};
+
+const CommandSchema = z.array(z.string());
+const FileActionSchema = z.enum(["reveal", "quicklook", "open", "edit", "addToPrompt"]);
+
+const ConfigSchema = z.object({
+  extract: z
+    .object({
+      runTests: z.boolean().optional(),
+    })
+    .optional(),
+  directories: z
+    .object({
+      includeInSelector: z.boolean().optional(),
+      allowReveal: z.boolean().optional(),
+      allowOpen: z.boolean().optional(),
+      allowAddToPrompt: z.boolean().optional(),
+      directorySuffix: z.string().optional(),
+    })
+    .optional(),
+  showRanges: z.boolean().optional(),
+  actionOrder: z.array(FileActionSchema).optional(),
+  commandName: z.string().optional(),
+  shortcuts: z
+    .object({
+      browse: z.string().optional(),
+      revealLatest: z.string().optional(),
+      quickLookLatest: z.string().optional(),
+    })
+    .optional(),
+  revealCommand: CommandSchema.optional(),
+  quickLookCommand: CommandSchema.nullable().optional(),
+  maxEditBytes: z.number().int().positive().optional(),
+});
+
+const config = loadConfigOrDefault({ filename: "files.jsonc", schema: ConfigSchema });
+
+const directories = {
+  includeInSelector: true,
+  allowReveal: true,
+  allowOpen: true,
+  allowAddToPrompt: true,
+  directorySuffix: "/",
+  ...config.directories,
+};
+
+const shortcuts = {
+  browse: "ctrl+f",
+  revealLatest: "ctrl+r",
+  quickLookLatest: "ctrl+shift+r",
+  ...config.shortcuts,
 };
 
 export default extension({
@@ -73,32 +126,27 @@ export default extension({
       { text: "README.md", expected: [{ path: "README.md" }] },
       { text: ".env", expected: [{ path: ".env" }] },
     ],
-    runTests: true,
+    runTests: config.extract?.runTests ?? true,
   },
-  directories: {
-    includeInSelector: true,
-    allowReveal: true,
-    allowOpen: true,
-    allowAddToPrompt: true,
-    directorySuffix: "/",
-  },
-  showRanges: true,
-  actionOrder: ["open", "addToPrompt"],
-  commandName: "files",
-  shortcuts: {
-    browse: "ctrl+f",
-    revealLatest: "ctrl+r",
-    quickLookLatest: "ctrl+shift+r",
-  },
+  directories,
+  showRanges: config.showRanges ?? true,
+  actionOrder: (config.actionOrder ?? ["open", "addToPrompt"]) as RevealOptionsInput["actionOrder"],
+  commandName: config.commandName ?? "files",
+  shortcuts: shortcuts as RevealOptionsInput["shortcuts"],
   openCommand: (target) => {
     const ranges = mergeRanges(target.ranges);
     const args = ranges ? [target.path, ranges] : [target.path];
     return [`${os.homedir()}/Scripts/tmux-nvim-open`, ...args];
   },
-  revealCommand: PLATFORM.isDarwin ? ["open"] : ["xdg-open"],
-  quickLookCommand: PLATFORM.isDarwin ? ["qlmanage", "-p"] : null,
+  revealCommand: config.revealCommand ?? (PLATFORM.isDarwin ? ["open"] : ["xdg-open"]),
+  quickLookCommand:
+    config.quickLookCommand === undefined
+      ? PLATFORM.isDarwin
+        ? ["qlmanage", "-p"]
+        : null
+      : config.quickLookCommand,
   resolveEditorCommand,
-  maxEditBytes: 40 * 1024 * 1024,
+  maxEditBytes: config.maxEditBytes ?? 40 * 1024 * 1024,
   sanitize: {
     leadingTrim: /^["'`(<[]+/,
     trailingTrim: /[>"'`,;).\]]+$/,

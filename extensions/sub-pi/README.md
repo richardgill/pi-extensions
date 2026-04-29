@@ -14,42 +14,31 @@ Part of [`pi-extensions`](../../README.md).
 - **Streaming updates**: see partial progress while subprocesses run
 - **Abort support**: Ctrl+C propagates to kill subprocesses
 
-## Install with pi-pack
-
-Install `pi-pack` globally:
+## Install with pi
 
 ```bash
-npm install -g pi-pack
-```
-
-```bash
-pi-pack install "git:github.com/richardgill/pi-extensions" --extension "sub-pi"
+pi install git:github.com/richardgill/pi-extensions --extensions +extensions/sub-pi/index.ts
 ```
 
 ## Configure
 
-```ts
-import { type SubPiOptions, subPi } from "sub-pi";
+Create `sub-pi.jsonc` in your pi agent config folder:
 
-export default subPi({
-  name: "sub-pi",
-  label: "Sub Pi",
-  description: [
-    "Run isolated pi subprocess tasks (single, chain, or parallel).",
-    "Optional model override (provider/modelId).",
-  ].join(" "),
-  maxParallelTasks: 8,
-  maxConcurrency: 4,
-  collapsedItemCount: 10,
-  skillListLimit: 30,
-  systemPromptPatches: [
+```jsonc
+{
+  "name": "sub-pi",
+  "label": "Sub Pi",
+  "maxParallelTasks": 8,
+  "maxConcurrency": 4,
+  "skillListLimit": 30,
+  "systemPromptPatches": [
     {
-      match:
-        /\n\s*\n\s*in addition to the tools above, you may have access to other custom tools depending on the project\./i,
-      replace: "\n- sub-pi: never run this tool unless it's a skill run or I explictly ask you to",
-    },
-  ],
-} satisfies SubPiOptions);
+      "match": "\\n\\s*\\n\\s*in addition to the tools above, you may have access to other custom tools depending on the project\\.",
+      "flags": "i",
+      "replace": "\n- sub-pi: never run this tool unless it's a skill run or I explictly ask you to"
+    }
+  ]
+}
 ```
 
 ## Usage

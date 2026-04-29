@@ -164,7 +164,10 @@ const clearPreset = async (
 const getPresetOrder = (presets: PresetsConfig): string[] => Object.keys(presets).sort();
 
 const notifyNoPresets = (ctx: ExtensionContext): void => {
-  ctx.ui.notify("No presets configured. Edit this pi-pack extension's config.ts.", "warning");
+  ctx.ui.notify(
+    "No presets configured. Create preset.jsonc in your pi agent config folder.",
+    "warning",
+  );
 };
 
 const getLastPresetEntry = (ctx: ExtensionContext): PresetEntry | undefined =>
