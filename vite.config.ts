@@ -3,7 +3,10 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["extensions/*/tests/**/*.{unit,integration,e2e}.test.ts"],
+    include: [
+      "extensions/*/tests/**/*.{unit,integration,e2e}.test.ts",
+      "packages/*/tests/**/*.{unit,integration,e2e}.test.ts",
+    ],
   },
   lint: {
     ignorePatterns: ["node_modules/**", "coverage/**", "overlay/**"],

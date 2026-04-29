@@ -2,7 +2,7 @@ name: Release
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [Checks]
     types: [completed]
 
 permissions:
@@ -28,11 +28,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup
+      - uses: ./.github/shared
 
       - name: Create Release Pull Request
         id: changesets
@@ -40,7 +40,7 @@ jobs:
         with:
           title: "chore: release"
           commit: "chore: release"
-          version: npm run changeset-version
+          version: pnpm run changeset-version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -55,11 +55,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup
+      - uses: ./.github/shared
 
       - name: Publish extension packages
-        run: npm run changeset-publish
+        run: pnpm run changeset-publish

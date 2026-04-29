@@ -16,6 +16,9 @@
     "extensions/sub-pi-skill": {
       "entry": ["src/default-config.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "packages/pi-config": {
+      "project": ["src/**/*.ts"]
     }
   },
   "ignoreExportsUsedInFile": {

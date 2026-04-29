@@ -2,14 +2,15 @@
   "name": "pi-extensions",
   "private": true,
   "workspaces": [
-    "extensions/*"
+    "extensions/*",
+    "packages/*"
   ],
   "type": "module",
   "scripts": {
     "check": "vp check",
     "check-fix": "vp check --fix",
     "changeset": "changeset",
-    "changeset-version": "changeset version && npm install",
+    "changeset-version": "changeset version && pnpm install",
     "knip": "knip",
     "local-ci": "tsx scripts/local-ci.ts",
     "misc-checks": "tsx scripts/misc-checks.ts",
@@ -37,7 +38,7 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "npm@11.13.0",
+  "packageManager": "pnpm@10.27.0",
   "pi-pack": {
     "extensions-dir": "extensions"
   }

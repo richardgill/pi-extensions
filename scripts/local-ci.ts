@@ -8,11 +8,11 @@ type CommandResult = {
 };
 
 const commands: Command[] = [
-  ["npm", ["run", "check"]],
-  ["npm", ["run", "misc-checks"]],
-  ["npm", ["run", "typecheck"]],
-  ["npm", ["run", "test"]],
-  ["npm", ["run", "knip"]],
+  ["pnpm", ["run", "check"]],
+  ["pnpm", ["run", "misc-checks"]],
+  ["pnpm", ["run", "typecheck"]],
+  ["pnpm", ["run", "test"]],
+  ["pnpm", ["run", "knip"]],
 ];
 
 const formatCommand = ([command, args]: Command) => [command, ...args].join(" ");

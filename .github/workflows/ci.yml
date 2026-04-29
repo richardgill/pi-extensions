@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -10,48 +8,48 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v4
+      - uses: ./.github/shared
 
       - name: Lint
-        run: npm run check
+        run: pnpm run check
 
   misc-checks:
     name: Misc checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v4
+      - uses: ./.github/shared
 
       - name: Misc checks
-        run: npm run misc-checks
+        run: pnpm run misc-checks
 
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v4
+      - uses: ./.github/shared
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v4
+      - uses: ./.github/shared
 
       - name: Test
-        run: npm run test
+        run: pnpm run test
 
   knip:
     name: Dead code check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v4
+      - uses: ./.github/shared
 
       - name: Knip
-        run: npm run knip
+        run: pnpm run knip

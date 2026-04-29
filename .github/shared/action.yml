@@ -1,0 +1,38 @@
+name: "Setup and install"
+description: "Common setup steps for Actions"
+
+outputs:
+  cache-hit:
+    description: "Whether pnpm store cache was hit"
+    value: ${{ steps.cache-restore.outputs.cache-hit }}
+  store-path:
+    description: "Path to pnpm store"
+    value: ${{ steps.pnpm-store.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Get pnpm store path
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+    - name: Restore pnpm cache
+      id: cache-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: pnpm-store-${{ runner.os }}-
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: ".nvmrc"
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile --prefer-offline
