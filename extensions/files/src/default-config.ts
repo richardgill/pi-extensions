@@ -1,5 +1,10 @@
 import os from "node:os";
-import { extension, mergeRanges, resolveEditorCommand, type RevealOptionsInput } from "files";
+import {
+  extension,
+  mergeRanges,
+  resolveEditorCommand,
+  type RevealOptionsInput,
+} from "@richardgill/pi-files";
 import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { z } from "zod";
 

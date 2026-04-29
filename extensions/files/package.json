@@ -1,9 +1,14 @@
 {
-  "name": "files",
+  "name": "@richardgill/pi-files",
   "version": "0.0.1",
+  "private": true,
   "keywords": [
     "pi-package"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions"
+  },
   "files": [
     "index.ts",
     "src"

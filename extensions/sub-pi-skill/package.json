@@ -4,6 +4,10 @@
   "keywords": [
     "pi-package"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions"
+  },
   "files": [
     "index.ts",
     "src"

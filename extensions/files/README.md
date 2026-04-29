@@ -1,4 +1,4 @@
-# files
+# @richardgill/pi-files
 
 pi extension for browsing, opening, revealing, and editing files mentioned in the conversation.
 

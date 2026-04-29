@@ -1,4 +1,4 @@
-# files
+# @richardgill/pi-files
 
 ## 0.0.1
 
