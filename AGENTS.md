@@ -5,7 +5,7 @@
 From the repo root:
 
 ```bash
-pi --no-extensions -e ./extensions/sub-pi/src/default-config.ts -p "Ping"
+pi --no-extensions -e ./extensions/sub-pi/src/index.ts -p "Ping"
 ```
 
 Expected: `Pong. How can I help?`
@@ -15,7 +15,7 @@ Expected: `Pong. How can I help?`
 From the repo root, start pi in a detached tmux session with a timeout:
 
 ```bash
-tmux new-session -d -s pi-ext-test "cd /home/rich/code/pi-extensions && timeout 12s pi --no-extensions -e ./extensions/sub-pi/src/default-config.ts"
+tmux new-session -d -s pi-ext-test "cd /home/rich/code/pi-extensions && timeout 12s pi --no-extensions -e ./extensions/sub-pi/src/index.ts"
 ```
 
 Send `2+2` and Enter, then capture the pane to confirm `4`:

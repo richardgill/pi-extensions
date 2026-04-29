@@ -9,7 +9,6 @@
     "url": "https://github.com/richardgill/pi-extensions"
   },
   "files": [
-    "index.ts",
     "src"
   ],
   "type": "module",
@@ -29,7 +28,7 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
     ]
   }
 }
