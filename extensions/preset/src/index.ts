@@ -1,5 +1,5 @@
 import { loadConfigOrDefault } from "@richardgill/pi-config";
-import { type PresetOptions, preset } from "@richardgill/pi-preset";
+import { DEFAULT_OPTIONS, type PresetOptions, preset } from "@richardgill/pi-preset";
 import { z } from "zod";
 
 const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
@@ -21,6 +21,10 @@ const ConfigSchema = z.object({
   persistState: z.boolean().optional(),
 });
 
-const config = loadConfigOrDefault({ filename: "preset.jsonc", schema: ConfigSchema });
+const config = loadConfigOrDefault({
+  filename: "preset.jsonc",
+  schema: ConfigSchema,
+  defaults: DEFAULT_OPTIONS,
+});
 
 export default preset(config as PresetOptions);

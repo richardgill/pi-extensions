@@ -10,6 +10,7 @@ import type {
   TurnEndEvent,
 } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
+import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 
 type SkillInvocation = {
   name: string;
@@ -69,6 +70,15 @@ const skillCommandPrefix = "/skill:";
 export type SubPiSkillOptions = {
   toolName?: string;
 };
+
+type ResolvedOptions = Required<SubPiSkillOptions>;
+
+export const DEFAULT_OPTIONS: ResolvedOptions = {
+  toolName: DEFAULT_TOOL_NAME,
+};
+
+export const resolveOptions = (options: SubPiSkillOptions = {}): ResolvedOptions =>
+  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
 
 let extensionApi: ExtensionAPI | null = null;
 let lastPrompt: string | null = null;
@@ -459,7 +469,7 @@ const handleToolCall = async (
 };
 
 export const subPiSkill = (options: SubPiSkillOptions = {}) => {
-  const resolvedToolName = options.toolName?.trim() || DEFAULT_TOOL_NAME;
+  const resolvedToolName = resolveOptions(options).toolName.trim() || DEFAULT_TOOL_NAME;
 
   return (pi: ExtensionAPI): void => {
     extensionApi = pi;

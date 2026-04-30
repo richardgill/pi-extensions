@@ -12,6 +12,7 @@ import {
   type ExtensionContext,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
+import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 
 export type RegexPatternConfig = {
   regex: string;
@@ -204,7 +205,7 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
   },
 ];
 
-const DEFAULT_OPTIONS: ResolvedOptions = {
+export const DEFAULT_OPTIONS: ResolvedOptions = {
   commandName: "file-collector",
   sidecarEnabled: true,
   sidecarFilename: "file-line-events.jsonl",
@@ -381,27 +382,12 @@ const validateBashShimCommands = (commands: BashShimCommand[]): void => {
 };
 
 export const resolveOptions = (options: FileCollectorOptions = {}): ResolvedOptions => {
+  const merged = resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
   const resolved = {
-    commandName: options.commandName ?? DEFAULT_OPTIONS.commandName,
-    sidecarEnabled: options.sidecarEnabled ?? DEFAULT_OPTIONS.sidecarEnabled,
-    sidecarFilename: options.sidecarFilename ?? DEFAULT_OPTIONS.sidecarFilename,
-    collectReadTool: options.collectReadTool ?? DEFAULT_OPTIONS.collectReadTool,
-    collectWriteTool: options.collectWriteTool ?? DEFAULT_OPTIONS.collectWriteTool,
-    collectEditTool: options.collectEditTool ?? DEFAULT_OPTIONS.collectEditTool,
-    collectBashCommand: options.collectBashCommand ?? DEFAULT_OPTIONS.collectBashCommand,
-    collectBashOutput: options.collectBashOutput ?? DEFAULT_OPTIONS.collectBashOutput,
-    collectAssistantOutput:
-      options.collectAssistantOutput ?? DEFAULT_OPTIONS.collectAssistantOutput,
-    appendSystemPrompt: options.appendSystemPrompt ?? DEFAULT_OPTIONS.appendSystemPrompt,
-    assistantCitationPatterns: clonePatternConfigs(
-      options.assistantCitationPatterns ?? DEFAULT_OPTIONS.assistantCitationPatterns,
-    ),
-    bashOutputPatterns: clonePatternConfigs(
-      options.bashOutputPatterns ?? DEFAULT_OPTIONS.bashOutputPatterns,
-    ),
-    bashShimCommands: cloneBashShimCommands(
-      options.bashShimCommands ?? DEFAULT_OPTIONS.bashShimCommands,
-    ),
+    ...merged,
+    assistantCitationPatterns: clonePatternConfigs(merged.assistantCitationPatterns),
+    bashOutputPatterns: clonePatternConfigs(merged.bashOutputPatterns),
+    bashShimCommands: cloneBashShimCommands(merged.bashShimCommands),
   };
 
   validateRegexPatterns([...resolved.assistantCitationPatterns, ...resolved.bashOutputPatterns]);

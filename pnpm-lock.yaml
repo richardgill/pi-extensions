@@ -48,6 +48,18 @@ importers:
         specifier: '=4.1.5'
         version: 4.1.5(@types/node@25.6.0)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
+  extensions/extra-context-files:
+    dependencies:
+      '@mariozechner/pi-coding-agent':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@richardgill/pi-config':
+        specifier: workspace:*
+        version: link:../../packages/pi-config
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+
   extensions/file-collector:
     dependencies:
       '@mariozechner/pi-coding-agent':

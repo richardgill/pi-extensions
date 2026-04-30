@@ -1,5 +1,5 @@
 import { loadConfigOrDefault } from "@richardgill/pi-config";
-import { fileCollector } from "@richardgill/pi-file-collector";
+import { DEFAULT_OPTIONS, fileCollector } from "@richardgill/pi-file-collector";
 import { z } from "zod";
 
 const RegexPatternSchema = z.object({
@@ -56,6 +56,10 @@ const ConfigSchema = z.object({
   bashShimCommands: z.array(BashShimCommandSchema).optional(),
 });
 
-const config = loadConfigOrDefault({ filename: "file-collector.jsonc", schema: ConfigSchema });
+const config = loadConfigOrDefault({
+  filename: "file-collector.jsonc",
+  schema: ConfigSchema,
+  defaults: DEFAULT_OPTIONS,
+});
 
 export default fileCollector(config);

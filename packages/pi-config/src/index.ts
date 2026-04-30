@@ -11,8 +11,14 @@ export type LoadConfigOptions<Schema extends z.ZodType> = {
 };
 
 export type LoadConfigOrDefaultOptions<Schema extends z.ZodType> = LoadConfigOptions<Schema> & {
-  defaultValue?: unknown;
+  defaults: unknown;
 };
+
+export type DefaultsInput<Options> = Options extends unknown[]
+  ? Options
+  : Options extends object
+    ? { [Key in keyof Options]?: DefaultsInput<Options[Key]> }
+    : Options;
 
 export const loadConfig = <Schema extends z.ZodType>({
   folder = getAgentDir(),
@@ -27,20 +33,26 @@ export const loadConfigOrDefault = <Schema extends z.ZodType>({
   folder = getAgentDir(),
   filename,
   schema,
-  defaultValue = {},
+  defaults,
 }: LoadConfigOrDefaultOptions<Schema>): z.infer<Schema> => {
   const filePath = path.resolve(folder, filename);
-  if (!fs.existsSync(filePath)) return parseConfig(filePath, schema, defaultValue);
-  return loadConfigFile(filePath, schema);
+  const value = fs.existsSync(filePath) ? readConfigValue(filePath) : {};
+  return parseConfig(filePath, schema, mergeDefaults(defaults, value));
 };
+
+export const resolveOptions = <Options extends object>(
+  defaults: Options,
+  input: DefaultsInput<Options> = {} as DefaultsInput<Options>,
+): Options => mergeDefaults(defaults, input) as Options;
 
 const loadConfigFile = <Schema extends z.ZodType>(
   filePath: string,
   schema: Schema,
-): z.infer<Schema> => {
+): z.infer<Schema> => parseConfig(filePath, schema, readConfigValue(filePath));
+
+const readConfigValue = (filePath: string): unknown => {
   const content = readConfigFile(filePath);
-  const value = parseJsoncConfig(filePath, content);
-  return parseConfig(filePath, schema, value);
+  return parseJsoncConfig(filePath, content);
 };
 
 const readConfigFile = (filePath: string): string => {
@@ -81,6 +93,19 @@ const formatJsoncError = (filePath: string, content: string, error: ParseError):
   const code = printParseErrorCode(error.error);
   return `Invalid JSONC in ${filePath}:${location.line}:${location.column}: ${code}`;
 };
+
+const mergeDefaults = (defaults: unknown, value: unknown): unknown => {
+  if (value === undefined) return defaults;
+  if (!isRecord(defaults) || !isRecord(value)) return value;
+
+  const keys = new Set([...Object.keys(defaults), ...Object.keys(value)]);
+  return Object.fromEntries(
+    [...keys].map((key) => [key, mergeDefaults(defaults[key], value[key])]),
+  );
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Object.prototype.toString.call(value) === "[object Object]";
 
 const getLineAndColumn = (content: string, offset: number) => {
   const beforeOffset = content.slice(0, offset);

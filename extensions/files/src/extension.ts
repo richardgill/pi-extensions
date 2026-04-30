@@ -199,7 +199,7 @@ export const DEFAULT_EXTRACT_PATTERNS: ExtractPattern[] = [
   dotPathExtractPattern,
 ];
 
-const DEFAULT_OPTIONS: RevealOptions = {
+export const DEFAULT_OPTIONS: RevealOptions = {
   extract: {
     patterns: DEFAULT_EXTRACT_PATTERNS,
     testCases: [],
@@ -236,7 +236,7 @@ const DEFAULT_OPTIONS: RevealOptions = {
   },
 };
 
-const resolveOptions = (input: RevealOptionsInput = {}): RevealOptions => {
+export const resolveOptions = (input: RevealOptionsInput = {}): RevealOptions => {
   const extract = input.extract;
   const directories = input.directories;
   const shortcuts = input.shortcuts;

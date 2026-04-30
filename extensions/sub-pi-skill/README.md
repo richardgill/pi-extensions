@@ -35,6 +35,13 @@ pi install npm:@richardgill/pi-sub-pi
 pi install npm:@richardgill/pi-sub-pi-skill
 ```
 
+or locally
+
+```bash
+pi install ~/code/pi-extensions/main/extensions/sub-pi
+pi install ~/code/pi-extensions/main/extensions/sub-pi-skill
+```
+
 ## Configure
 
 Create `sub-pi-skill.jsonc` in your pi agent config folder:
