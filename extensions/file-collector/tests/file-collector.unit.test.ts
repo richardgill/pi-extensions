@@ -7,6 +7,7 @@ import {
   extractReadToolRange,
   extractWriteToolRange,
   formatFileLineEventDisplay,
+  getBashOutputCommand,
   resolveAbsolutePath,
   resolveOptions,
 } from "../src/extension.js";
@@ -80,6 +81,30 @@ describe("resolveOptions config", () => {
     };
 
     expect(resolveOptions({ bashShimCommands: [command] }).bashShimCommands).toEqual([command]);
+  });
+});
+
+describe("getBashOutputCommand", () => {
+  it("uses matching shim records for compound commands", () => {
+    expect(
+      getBashOutputCommand(
+        'pwd && rg -n --with-filename "needle" ./src/a.ts',
+        [
+          { command: "cat", path: "./src/a.ts" },
+          { command: "rg", path: "./src/a.ts", matchedText: "needle" },
+        ],
+        { path: "./src/a.ts", startLine: 7, matchedText: "needle found" },
+      ),
+    ).toBe("rg");
+  });
+
+  it("falls back to grep-style commands inside compound raw commands", () => {
+    expect(
+      getBashOutputCommand('pwd && rg -n "needle" ./src/a.ts', [], {
+        path: "./src/a.ts",
+        startLine: 7,
+      }),
+    ).toBe("rg");
   });
 });
 

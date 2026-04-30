@@ -110,14 +110,14 @@ export type FileLineEvent = {
   matchedText?: string;
 };
 
-type FileReference = {
+export type FileReference = {
   path: string;
   startLine?: number;
   endLine?: number;
   matchedText?: string;
 };
 
-type BashShimRecord = {
+export type BashShimRecord = {
   command?: string;
   path?: string;
   startLine?: unknown;
@@ -779,6 +779,36 @@ const getExecutableName = (rawCommand: string | undefined): string | undefined =
   return executable ? path.basename(executable) : undefined;
 };
 
+const BASH_OUTPUT_COMMANDS = new Set(["rg", "grep", "ag", "ack", "git"]);
+
+const getRawCommandExecutables = (rawCommand: string | undefined): string[] => {
+  const matches = rawCommand?.matchAll(/(?:^|[;&|]+)\s*(?:\w+=\S+\s+)*(?<command>[^\s;&|]+)/g);
+  return Array.from(matches ?? [], (match) => path.basename(match.groups?.command ?? ""));
+};
+
+const getBashOutputCommandFromRawCommand = (rawCommand: string | undefined): string | undefined =>
+  getRawCommandExecutables(rawCommand).find((command) => BASH_OUTPUT_COMMANDS.has(command)) ??
+  getExecutableName(rawCommand);
+
+const getMatchingBashShimRecord = (
+  records: BashShimRecord[],
+  reference: FileReference,
+): BashShimRecord | undefined =>
+  records.find(
+    (record) =>
+      typeof record.path === "string" &&
+      record.path === reference.path &&
+      Boolean(record.command && BASH_OUTPUT_COMMANDS.has(record.command)),
+  ) ?? records.find((record) => typeof record.path === "string" && record.path === reference.path);
+
+export const getBashOutputCommand = (
+  rawCommand: string | undefined,
+  records: BashShimRecord[],
+  reference: FileReference,
+): string | undefined =>
+  getMatchingBashShimRecord(records, reference)?.command ??
+  getBashOutputCommandFromRawCommand(rawCommand);
+
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
 
 const buildBashShimFunction = (command: BashShimCommand): string => `${command.name}() {
@@ -809,14 +839,13 @@ const readBashShimRecords = async (shimPath: string): Promise<BashShimRecord[]> 
   }
 };
 
-const buildBashCommandEvents = async (
-  shimPath: string,
+const buildBashCommandEvents = (
+  records: BashShimRecord[],
   ctx: ExtensionContext,
   toolCallId: string,
   fallbackCommand: string,
-): Promise<FileLineEvent[]> => {
-  const records = await readBashShimRecords(shimPath);
-  return records.flatMap((record) => {
+): FileLineEvent[] =>
+  records.flatMap((record) => {
     if (typeof record.path !== "string" || !record.path) {
       return [];
     }
@@ -841,7 +870,21 @@ const buildBashCommandEvents = async (
       }),
     ];
   });
-};
+
+const createBashOutputEvents = (
+  references: FileReference[],
+  records: BashShimRecord[],
+  ctx: ExtensionContext,
+  metadata: EventMetadata = {},
+): FileLineEvent[] =>
+  references
+    .filter((reference) => isExistingFileReference(reference.path, ctx.cwd))
+    .map((reference) =>
+      createFileLineEvent("bash_output", reference, ctx, {
+        ...metadata,
+        command: getBashOutputCommand(metadata.rawCommand, records, reference),
+      }),
+    );
 
 const isFileLineEvent = (data: unknown): data is FileLineEvent => {
   if (!data || typeof data !== "object") {
@@ -968,9 +1011,12 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     const shim = bashShimPaths.get(event.toolCallId);
     bashShimPaths.delete(event.toolCallId);
 
+    const bashShimRecords =
+      options.collectBashCommand && shim ? await readBashShimRecords(shim.path) : [];
+
     if (options.collectBashCommand && shim) {
-      const commandEvents = await buildBashCommandEvents(
-        shim.path,
+      const commandEvents = buildBashCommandEvents(
+        bashShimRecords,
         ctx,
         event.toolCallId,
         shim.command,
@@ -986,9 +1032,8 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
       await recordEvents(
         pi,
         ctx,
-        createReferenceEvents("bash_output", references, ctx, {
+        createBashOutputEvents(references, bashShimRecords, ctx, {
           toolCallId: event.toolCallId,
-          command: getExecutableName(shim?.command),
           rawCommand: shim?.command,
         }),
         options,
