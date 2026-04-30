@@ -6,7 +6,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/richardgill/pi-extensions"
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/preset"
   },
   "files": [
     "src"

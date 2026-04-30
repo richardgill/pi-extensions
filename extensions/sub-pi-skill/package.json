@@ -6,7 +6,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/richardgill/pi-extensions"
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/sub-pi-skill"
   },
   "files": [
     "src"
