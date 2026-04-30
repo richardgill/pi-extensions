@@ -5,6 +5,10 @@
       "entry": ["index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
+    "extensions/extra-context-files": {
+      "entry": ["index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
     "extensions/preset": {
       "entry": ["index.ts"],
       "project": ["src/**/*.ts"]

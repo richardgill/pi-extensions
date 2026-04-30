@@ -10,6 +10,12 @@ Part of [`pi-extensions`](../../README.md).
 pi install npm:@richardgill/pi-preset
 ```
 
+or locally
+
+```bash
+pi install ~/code/pi-extensions/main/extensions/preset
+```
+
 ## Configure
 
 Create `preset.jsonc` in your pi agent config folder:

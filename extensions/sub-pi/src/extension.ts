@@ -14,6 +14,7 @@ import {
   type ThemeColor,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 import { Type } from "@sinclair/typebox";
 import {
   type BuiltInToolName,
@@ -32,17 +33,19 @@ import {
 export type PromptPatch = { match: RegExp; replace: string };
 
 export type SubPiOptions = {
-  name: string;
-  label: string;
-  description: string;
-  maxParallelTasks: number;
-  maxConcurrency: number;
-  collapsedItemCount: number;
-  skillListLimit: number;
-  systemPromptPatches: PromptPatch[];
+  name?: string;
+  label?: string;
+  description?: string;
+  maxParallelTasks?: number;
+  maxConcurrency?: number;
+  collapsedItemCount?: number;
+  skillListLimit?: number;
+  systemPromptPatches?: PromptPatch[];
 };
 
-const DEFAULT_OPTIONS: SubPiOptions = {
+type ResolvedOptions = Required<SubPiOptions>;
+
+export const DEFAULT_OPTIONS: ResolvedOptions = {
   name: "sub-pi",
   label: "Sub Pi",
   description: [
@@ -66,6 +69,9 @@ const DEFAULT_OPTIONS: SubPiOptions = {
     },
   ],
 };
+
+export const resolveOptions = (options: SubPiOptions = {}): ResolvedOptions =>
+  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
 
 const loadSkillDiscovery = (cwd: string) => {
   const settingsManager = SettingsManager.create(cwd);
@@ -913,64 +919,240 @@ const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: T
   return new Text(lines.join("\n"), 0, 0);
 };
 
-export const subPi = (options: SubPiOptions) => (pi: ExtensionAPI) => {
-  const merged = { ...DEFAULT_OPTIONS, ...options };
+export const subPi =
+  (input: SubPiOptions = {}) =>
+  (pi: ExtensionAPI) => {
+    const options = resolveOptions(input);
 
-  pi.registerTool({
-    name: merged.name,
-    label: merged.label,
-    description: merged.description,
-    parameters: TaskParams,
+    pi.registerTool({
+      name: options.name,
+      label: options.label,
+      description: options.description,
+      parameters: TaskParams,
 
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const normalized = normalizeTaskParams(params as unknown, {
-        maxParallelTasks: merged.maxParallelTasks,
-      });
-      if (!normalized.ok) {
+      async execute(_toolCallId, params, signal, onUpdate, ctx) {
+        const normalized = normalizeTaskParams(params as unknown, {
+          maxParallelTasks: options.maxParallelTasks,
+        });
+        if (!normalized.ok) {
+          const discovery = loadSkillDiscovery(ctx.cwd);
+          const available = formatAvailableSkills(discovery.skills, options.skillListLimit);
+          const suffix = available.remaining > 0 ? `, ... +${available.remaining} more` : "";
+          return {
+            content: [
+              {
+                type: "text",
+                text: `${normalized.error}\nAvailable skills: ${available.text}${suffix}`,
+              },
+            ],
+            details: { mode: "single", results: [] } as SubPiDetails,
+          };
+        }
+
         const discovery = loadSkillDiscovery(ctx.cwd);
-        const available = formatAvailableSkills(discovery.skills, merged.skillListLimit);
-        const suffix = available.remaining > 0 ? `, ... +${available.remaining} more` : "";
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${normalized.error}\nAvailable skills: ${available.text}${suffix}`,
-            },
-          ],
-          details: { mode: "single", results: [] } as SubPiDetails,
+        const skillState = createSkillPromptState(discovery.skills);
+
+        const inheritedThinking = pi.getThinkingLevel();
+        const builtInTools = getBuiltInToolsFromActiveTools(pi.getActiveTools());
+        const ctxModel = ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined;
+
+        const makeDetails = (results: SingleResult[]): SubPiDetails => {
+          return { mode: normalized.value.mode, modelOverride: normalized.value.model, results };
         };
-      }
 
-      const discovery = loadSkillDiscovery(ctx.cwd);
-      const skillState = createSkillPromptState(discovery.skills);
+        const requiresFork = normalized.value.items.some((item) => item.fork);
+        const sessionFile = requiresFork ? ctx.sessionManager.getSessionFile() : undefined;
+        if (requiresFork && !sessionFile) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Forked tasks require a persisted session file. Set fork: false or start pi with sessions enabled.",
+              },
+            ],
+            details: makeDetails([]),
+          };
+        }
 
-      const inheritedThinking = pi.getThinkingLevel();
-      const builtInTools = getBuiltInToolsFromActiveTools(pi.getActiveTools());
-      const ctxModel = ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined;
+        if (normalized.value.mode === "single") {
+          const prepared = prepareTaskExecutions({
+            items: normalized.value.items,
+            state: skillState,
+            skillListLimit: options.skillListLimit,
+            defaultModel: normalized.value.model,
+            defaultThinking: normalized.value.thinking,
+            inheritedThinking,
+            ctxModel,
+            builtInTools,
+          });
+          if (!prepared.ok) {
+            return {
+              content: [{ type: "text", text: prepared.error }],
+              details: makeDetails([]),
+            };
+          }
 
-      const makeDetails = (results: SingleResult[]): SubPiDetails => {
-        return { mode: normalized.value.mode, modelOverride: normalized.value.model, results };
-      };
+          const execution = prepared.executions[0];
+          const initial = createPlaceholderResult(
+            execution.task.item,
+            undefined,
+            execution.config.thinkingLevel,
+            execution.config.modelLabel,
+          );
+          const emitSingleUpdate = (result: SingleResult) => {
+            if (!onUpdate) return;
+            onUpdate({
+              content: [{ type: "text", text: getFinalOutput(result.messages) || "(running...)" }],
+              details: makeDetails([result]),
+            });
+          };
+          emitSingleUpdate(initial);
 
-      const requiresFork = normalized.value.items.some((item) => item.fork);
-      const sessionFile = requiresFork ? ctx.sessionManager.getSessionFile() : undefined;
-      if (requiresFork && !sessionFile) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Forked tasks require a persisted session file. Set fork: false or start pi with sessions enabled.",
-            },
-          ],
-          details: makeDetails([]),
-        };
-      }
+          const result = await runSingleTask({
+            defaultCwd: ctx.cwd,
+            item: execution.task.item,
+            subprocessPrompt: execution.task.subprocessPrompt,
+            index: undefined,
+            subprocessArgs: execution.config.subprocessArgs,
+            modelLabel: execution.config.modelLabel,
+            thinking: execution.config.thinkingLevel,
+            fork: execution.task.item.fork,
+            sessionFile,
+            signal,
+            onResultUpdate: emitSingleUpdate,
+          });
 
-      if (normalized.value.mode === "single") {
+          const error = isTaskError(result);
+          if (error) {
+            return {
+              content: [{ type: "text", text: `Task failed: ${getTaskErrorText(result)}` }],
+              details: makeDetails([result]),
+            };
+          }
+
+          return {
+            content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+            details: makeDetails([result]),
+          };
+        }
+
+        if (normalized.value.mode === "chain") {
+          const results = normalized.value.items.map((item, index) =>
+            createPlaceholderResult(
+              { ...item, prompt: buildPendingPrompt(item.prompt) },
+              index + 1,
+              undefined,
+              undefined,
+              -2,
+            ),
+          );
+          let previousOutput = "";
+
+          for (let index = 0; index < normalized.value.items.length; index++) {
+            const item = normalized.value.items[index];
+            const prompt = buildChainPrompt(item.prompt, previousOutput);
+            const stepItem = { ...item, prompt };
+
+            const config = resolveTaskConfig({
+              item,
+              defaultModel: normalized.value.model,
+              defaultThinking: normalized.value.thinking,
+              inheritedThinking,
+              ctxModel,
+              builtInTools,
+            });
+            if (!config.ok) {
+              return {
+                content: [{ type: "text", text: config.error }],
+                details: makeDetails([...results]),
+              };
+            }
+
+            const preparedPrompt = buildSubprocessPrompt(
+              stepItem,
+              skillState,
+              options.skillListLimit,
+            );
+            if (!preparedPrompt.ok) {
+              return {
+                content: [{ type: "text", text: preparedPrompt.error }],
+                details: makeDetails([...results]),
+              };
+            }
+
+            results[index] = createPlaceholderResult(
+              stepItem,
+              index + 1,
+              config.thinkingLevel,
+              config.modelLabel,
+            );
+            if (onUpdate) {
+              onUpdate({
+                content: [{ type: "text", text: "(running...)" }],
+                details: makeDetails([...results]),
+              });
+            }
+
+            const chainUpdate = onUpdate
+              ? (partial: SingleResult) => {
+                  results[index] = partial;
+                  onUpdate({
+                    content: [
+                      { type: "text", text: getFinalOutput(partial.messages) || "(running...)" },
+                    ],
+                    details: makeDetails([...results]),
+                  });
+                }
+              : undefined;
+
+            const result = await runSingleTask({
+              defaultCwd: ctx.cwd,
+              item: stepItem,
+              subprocessPrompt: preparedPrompt.prompt,
+              index: index + 1,
+              subprocessArgs: config.subprocessArgs,
+              modelLabel: config.modelLabel,
+              thinking: config.thinkingLevel,
+              fork: stepItem.fork,
+              sessionFile,
+              signal,
+              onResultUpdate: chainUpdate,
+            });
+            results[index] = result;
+            if (onUpdate) {
+              onUpdate({
+                content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+                details: makeDetails([...results]),
+              });
+            }
+
+            if (isTaskError(result)) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Chain stopped at step ${index + 1}: ${getTaskErrorText(result)}`,
+                  },
+                ],
+                details: makeDetails([...results]),
+                isError: true,
+              };
+            }
+
+            previousOutput = getFinalOutput(result.messages);
+          }
+
+          const last = results[results.length - 1];
+          return {
+            content: [{ type: "text", text: getFinalOutput(last.messages) || "(no output)" }],
+            details: makeDetails([...results]),
+          };
+        }
+
         const prepared = prepareTaskExecutions({
           items: normalized.value.items,
           state: skillState,
-          skillListLimit: merged.skillListLimit,
+          skillListLimit: options.skillListLimit,
           defaultModel: normalized.value.model,
           defaultThinking: normalized.value.thinking,
           inheritedThinking,
@@ -984,277 +1166,107 @@ export const subPi = (options: SubPiOptions) => (pi: ExtensionAPI) => {
           };
         }
 
-        const execution = prepared.executions[0];
-        const initial = createPlaceholderResult(
-          execution.task.item,
-          undefined,
-          execution.config.thinkingLevel,
-          execution.config.modelLabel,
-        );
-        const emitSingleUpdate = (result: SingleResult) => {
-          if (!onUpdate) return;
-          onUpdate({
-            content: [{ type: "text", text: getFinalOutput(result.messages) || "(running...)" }],
-            details: makeDetails([result]),
-          });
-        };
-        emitSingleUpdate(initial);
-
-        const result = await runSingleTask({
-          defaultCwd: ctx.cwd,
-          item: execution.task.item,
-          subprocessPrompt: execution.task.subprocessPrompt,
-          index: undefined,
-          subprocessArgs: execution.config.subprocessArgs,
-          modelLabel: execution.config.modelLabel,
-          thinking: execution.config.thinkingLevel,
-          fork: execution.task.item.fork,
-          sessionFile,
-          signal,
-          onResultUpdate: emitSingleUpdate,
-        });
-
-        const error = isTaskError(result);
-        if (error) {
-          return {
-            content: [{ type: "text", text: `Task failed: ${getTaskErrorText(result)}` }],
-            details: makeDetails([result]),
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
-          details: makeDetails([result]),
-        };
-      }
-
-      if (normalized.value.mode === "chain") {
-        const results = normalized.value.items.map((item, index) =>
+        const allResults = prepared.executions.map((execution, index) =>
           createPlaceholderResult(
-            { ...item, prompt: buildPendingPrompt(item.prompt) },
+            execution.task.item,
             index + 1,
-            undefined,
-            undefined,
-            -2,
+            execution.config.thinkingLevel,
+            execution.config.modelLabel,
           ),
         );
-        let previousOutput = "";
 
-        for (let index = 0; index < normalized.value.items.length; index++) {
-          const item = normalized.value.items[index];
-          const prompt = buildChainPrompt(item.prompt, previousOutput);
-          const stepItem = { ...item, prompt };
-
-          const config = resolveTaskConfig({
-            item,
-            defaultModel: normalized.value.model,
-            defaultThinking: normalized.value.thinking,
-            inheritedThinking,
-            ctxModel,
-            builtInTools,
+        const emitParallelUpdate = () => {
+          if (!onUpdate) return;
+          const running = allResults.filter((result) => result.exitCode === -1).length;
+          const done = allResults.filter((result) => result.exitCode !== -1).length;
+          onUpdate({
+            content: [
+              {
+                type: "text",
+                text: `Parallel: ${done}/${allResults.length} done, ${running} running...`,
+              },
+            ],
+            details: makeDetails([...allResults]),
           });
-          if (!config.ok) {
-            return {
-              content: [{ type: "text", text: config.error }],
-              details: makeDetails([...results]),
-            };
-          }
-
-          const preparedPrompt = buildSubprocessPrompt(stepItem, skillState, merged.skillListLimit);
-          if (!preparedPrompt.ok) {
-            return {
-              content: [{ type: "text", text: preparedPrompt.error }],
-              details: makeDetails([...results]),
-            };
-          }
-
-          results[index] = createPlaceholderResult(
-            stepItem,
-            index + 1,
-            config.thinkingLevel,
-            config.modelLabel,
-          );
-          if (onUpdate) {
-            onUpdate({
-              content: [{ type: "text", text: "(running...)" }],
-              details: makeDetails([...results]),
-            });
-          }
-
-          const chainUpdate = onUpdate
-            ? (partial: SingleResult) => {
-                results[index] = partial;
-                onUpdate({
-                  content: [
-                    { type: "text", text: getFinalOutput(partial.messages) || "(running...)" },
-                  ],
-                  details: makeDetails([...results]),
-                });
-              }
-            : undefined;
-
-          const result = await runSingleTask({
-            defaultCwd: ctx.cwd,
-            item: stepItem,
-            subprocessPrompt: preparedPrompt.prompt,
-            index: index + 1,
-            subprocessArgs: config.subprocessArgs,
-            modelLabel: config.modelLabel,
-            thinking: config.thinkingLevel,
-            fork: stepItem.fork,
-            sessionFile,
-            signal,
-            onResultUpdate: chainUpdate,
-          });
-          results[index] = result;
-          if (onUpdate) {
-            onUpdate({
-              content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
-              details: makeDetails([...results]),
-            });
-          }
-
-          if (isTaskError(result)) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Chain stopped at step ${index + 1}: ${getTaskErrorText(result)}`,
-                },
-              ],
-              details: makeDetails([...results]),
-              isError: true,
-            };
-          }
-
-          previousOutput = getFinalOutput(result.messages);
-        }
-
-        const last = results[results.length - 1];
-        return {
-          content: [{ type: "text", text: getFinalOutput(last.messages) || "(no output)" }],
-          details: makeDetails([...results]),
         };
-      }
 
-      const prepared = prepareTaskExecutions({
-        items: normalized.value.items,
-        state: skillState,
-        skillListLimit: merged.skillListLimit,
-        defaultModel: normalized.value.model,
-        defaultThinking: normalized.value.thinking,
-        inheritedThinking,
-        ctxModel,
-        builtInTools,
-      });
-      if (!prepared.ok) {
+        emitParallelUpdate();
+
+        const results = await mapWithConcurrencyLimit(
+          prepared.executions,
+          options.maxConcurrency,
+          async (execution, index) => {
+            const result = await runSingleTask({
+              defaultCwd: ctx.cwd,
+              item: execution.task.item,
+              subprocessPrompt: execution.task.subprocessPrompt,
+              index: index + 1,
+              subprocessArgs: execution.config.subprocessArgs,
+              modelLabel: execution.config.modelLabel,
+              thinking: execution.config.thinkingLevel,
+              fork: execution.task.item.fork,
+              sessionFile,
+              signal,
+              onResultUpdate: (partial) => {
+                allResults[index] = partial;
+                emitParallelUpdate();
+              },
+            });
+            allResults[index] = result;
+            emitParallelUpdate();
+            return result;
+          },
+        );
+
+        const successCount = results.filter((result) => !isTaskError(result)).length;
+        const summaries = results.map((result) => {
+          const output = getFinalOutput(result.messages);
+          const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "");
+          return `[${getTaskSummaryLabel(result)}] ${isTaskError(result) ? "failed" : "completed"}: ${preview || "(no output)"}`;
+        });
+
         return {
-          content: [{ type: "text", text: prepared.error }],
-          details: makeDetails([]),
-        };
-      }
-
-      const allResults = prepared.executions.map((execution, index) =>
-        createPlaceholderResult(
-          execution.task.item,
-          index + 1,
-          execution.config.thinkingLevel,
-          execution.config.modelLabel,
-        ),
-      );
-
-      const emitParallelUpdate = () => {
-        if (!onUpdate) return;
-        const running = allResults.filter((result) => result.exitCode === -1).length;
-        const done = allResults.filter((result) => result.exitCode !== -1).length;
-        onUpdate({
           content: [
             {
               type: "text",
-              text: `Parallel: ${done}/${allResults.length} done, ${running} running...`,
+              text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`,
             },
           ],
-          details: makeDetails([...allResults]),
-        });
-      };
+          details: makeDetails(results),
+        };
+      },
 
-      emitParallelUpdate();
+      renderCall(_args, _theme) {
+        return new Text("", 0, 0);
+      },
 
-      const results = await mapWithConcurrencyLimit(
-        prepared.executions,
-        merged.maxConcurrency,
-        async (execution, index) => {
-          const result = await runSingleTask({
-            defaultCwd: ctx.cwd,
-            item: execution.task.item,
-            subprocessPrompt: execution.task.subprocessPrompt,
-            index: index + 1,
-            subprocessArgs: execution.config.subprocessArgs,
-            modelLabel: execution.config.modelLabel,
-            thinking: execution.config.thinkingLevel,
-            fork: execution.task.item.fork,
-            sessionFile,
-            signal,
-            onResultUpdate: (partial) => {
-              allResults[index] = partial;
-              emitParallelUpdate();
-            },
-          });
-          allResults[index] = result;
-          emitParallelUpdate();
-          return result;
-        },
-      );
+      renderResult(result, { expanded }, theme) {
+        const details = result.details as SubPiDetails | undefined;
+        if (!details || details.results.length === 0) {
+          const textBlock = result.content[0];
+          return new Text(textBlock?.type === "text" ? textBlock.text : "(no output)", 0, 0);
+        }
 
-      const successCount = results.filter((result) => !isTaskError(result)).length;
-      const summaries = results.map((result) => {
-        const output = getFinalOutput(result.messages);
-        const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "");
-        return `[${getTaskSummaryLabel(result)}] ${isTaskError(result) ? "failed" : "completed"}: ${preview || "(no output)"}`;
-      });
+        if (details.mode === "single" && details.results.length === 1) {
+          return renderSingleResult(details.results[0], expanded, theme);
+        }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`,
-          },
-        ],
-        details: makeDetails(results),
-      };
-    },
+        if (details.mode === "chain") {
+          return renderChainResult(details.results, expanded, theme);
+        }
 
-    renderCall(_args, _theme) {
-      return new Text("", 0, 0);
-    },
+        if (details.mode === "parallel") {
+          return renderParallelResult(details.results, expanded, theme);
+        }
 
-    renderResult(result, { expanded }, theme) {
-      const details = result.details as SubPiDetails | undefined;
-      if (!details || details.results.length === 0) {
         const textBlock = result.content[0];
         return new Text(textBlock?.type === "text" ? textBlock.text : "(no output)", 0, 0);
-      }
+      },
+    });
 
-      if (details.mode === "single" && details.results.length === 1) {
-        return renderSingleResult(details.results[0], expanded, theme);
-      }
-
-      if (details.mode === "chain") {
-        return renderChainResult(details.results, expanded, theme);
-      }
-
-      if (details.mode === "parallel") {
-        return renderParallelResult(details.results, expanded, theme);
-      }
-
-      const textBlock = result.content[0];
-      return new Text(textBlock?.type === "text" ? textBlock.text : "(no output)", 0, 0);
-    },
-  });
-
-  pi.on("before_agent_start", async (event, _ctx) => {
-    return {
-      systemPrompt: applyPromptPatches(event.systemPrompt, merged.systemPromptPatches),
-    };
-  });
-};
+    pi.on("before_agent_start", async (event, _ctx) => {
+      return {
+        systemPrompt: applyPromptPatches(event.systemPrompt, options.systemPromptPatches),
+      };
+    });
+  };

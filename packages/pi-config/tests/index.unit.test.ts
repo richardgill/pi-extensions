@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { loadConfig, loadConfigOrDefault } from "../src/index.js";
+import { loadConfig, loadConfigOrDefault, resolveOptions } from "../src/index.js";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
@@ -21,6 +21,20 @@ afterEach(() => {
   }
 
   process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+});
+
+describe("resolveOptions", () => {
+  it("merges input over defaults", () => {
+    expect(resolveOptions({ name: "pi", nested: { enabled: true } }, { nested: {} })).toEqual({
+      name: "pi",
+      nested: { enabled: true },
+    });
+  });
+
+  it("preserves non-plain object defaults", () => {
+    const regex = /abc/g;
+    expect(resolveOptions({ regex }, {})).toEqual({ regex });
+  });
 });
 
 describe("loadConfig", () => {
@@ -67,12 +81,32 @@ describe("loadConfig", () => {
     );
   });
 
-  it("uses the default value when optional config is missing", () => {
+  it("uses defaults when optional config is missing", () => {
     const folder = createTempDir();
-    const schema = z.object({ value: z.string().default("fallback") });
+    const schema = z.object({ value: z.string() });
 
-    expect(loadConfigOrDefault({ folder, filename: "missing.json", schema })).toEqual({
-      value: "fallback",
-    });
+    expect(
+      loadConfigOrDefault({
+        folder,
+        filename: "missing.json",
+        schema,
+        defaults: { value: "fallback" },
+      }),
+    ).toEqual({ value: "fallback" });
+  });
+
+  it("merges defaults with partial optional config", () => {
+    const folder = createTempDir();
+    const schema = z.object({ value: z.string(), nested: z.object({ count: z.number() }) });
+    writeConfig(folder, "partial.json", '{ "nested": { "count": 2 } }');
+
+    expect(
+      loadConfigOrDefault({
+        folder,
+        filename: "partial.json",
+        schema,
+        defaults: { value: "fallback", nested: { count: 1 } },
+      }),
+    ).toEqual({ value: "fallback", nested: { count: 2 } });
   });
 });

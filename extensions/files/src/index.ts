@@ -46,7 +46,7 @@ const ConfigSchema = z.object({
   maxEditBytes: z.number().int().positive().optional(),
 });
 
-const config = loadConfigOrDefault({ filename: "files.jsonc", schema: ConfigSchema });
+const config = loadConfigOrDefault({ filename: "files.jsonc", schema: ConfigSchema, defaults: {} });
 
 const directories = {
   includeInSelector: true,

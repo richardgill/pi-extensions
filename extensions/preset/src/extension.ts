@@ -1,6 +1,7 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { KeyId } from "@mariozechner/pi-tui";
+import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -46,7 +47,7 @@ type PresetState = {
 
 type PresetEntry = { data?: { name?: string } };
 
-const DEFAULT_OPTIONS: ResolvedOptions = {
+export const DEFAULT_OPTIONS: ResolvedOptions = {
   presets: {},
   commandName: "preset",
   flagName: "preset",
@@ -55,14 +56,8 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   persistState: true,
 };
 
-const resolveOptions = (options: PresetOptions = {}): ResolvedOptions => ({
-  presets: options.presets ?? DEFAULT_OPTIONS.presets,
-  commandName: options.commandName ?? DEFAULT_OPTIONS.commandName,
-  flagName: options.flagName ?? DEFAULT_OPTIONS.flagName,
-  cycleShortcut: options.cycleShortcut ?? DEFAULT_OPTIONS.cycleShortcut,
-  defaultTools: options.defaultTools ?? DEFAULT_OPTIONS.defaultTools,
-  persistState: options.persistState ?? DEFAULT_OPTIONS.persistState,
-});
+export const resolveOptions = (options: PresetOptions = {}): ResolvedOptions =>
+  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
 
 const createState = (): PresetState => ({
   activeName: undefined,

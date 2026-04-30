@@ -1,5 +1,10 @@
 import { loadConfigOrDefault } from "@richardgill/pi-config";
-import { type SubPiOptions, subPi } from "@richardgill/pi-sub-pi";
+import {
+  DEFAULT_OPTIONS,
+  type PromptPatch,
+  type SubPiOptions,
+  subPi,
+} from "@richardgill/pi-sub-pi";
 import { z } from "zod";
 
 type PromptPatchConfig = { match: string; flags?: string; replace: string };
@@ -13,21 +18,14 @@ const defaultPromptPatches: PromptPatchConfig[] = [
   },
 ];
 
-const defaultOptions: SubPiOptions = {
-  name: "sub-pi",
-  label: "Sub Pi",
+const defaultConfig = {
+  ...DEFAULT_OPTIONS,
   description: [
     "Run isolated pi subprocess tasks (single, chain, or parallel).",
     "Optional model override (provider/modelId).",
   ].join(" "),
   maxParallelTasks: 8,
-  maxConcurrency: 4,
-  collapsedItemCount: 10,
-  skillListLimit: 30,
-  systemPromptPatches: defaultPromptPatches.map((patch) => ({
-    match: new RegExp(patch.match, patch.flags),
-    replace: patch.replace,
-  })),
+  systemPromptPatches: defaultPromptPatches,
 };
 
 const PromptPatchSchema = z.object({
@@ -47,15 +45,18 @@ const ConfigSchema = z.object({
   systemPromptPatches: z.array(PromptPatchSchema).optional(),
 });
 
-const toPromptPatch = (patch: PromptPatchConfig): SubPiOptions["systemPromptPatches"][number] => ({
+const toPromptPatch = (patch: PromptPatchConfig): PromptPatch => ({
   match: new RegExp(patch.match, patch.flags),
   replace: patch.replace,
 });
 
-const config = loadConfigOrDefault({ filename: "sub-pi.jsonc", schema: ConfigSchema });
+const config = loadConfigOrDefault({
+  filename: "sub-pi.jsonc",
+  schema: ConfigSchema,
+  defaults: defaultConfig,
+});
 
 export default subPi({
-  ...defaultOptions,
   ...config,
   systemPromptPatches: (config.systemPromptPatches ?? defaultPromptPatches).map(toPromptPatch),
 } satisfies SubPiOptions);

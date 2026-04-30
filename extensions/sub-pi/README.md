@@ -20,6 +20,12 @@ Part of [`pi-extensions`](../../README.md).
 pi install npm:@richardgill/pi-sub-pi
 ```
 
+or locally
+
+```bash
+pi install ~/code/pi-extensions/main/extensions/sub-pi
+```
+
 ## Configure
 
 Create `sub-pi.jsonc` in your pi agent config folder:
