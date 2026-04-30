@@ -7,20 +7,11 @@ import {
   extractReadToolRange,
   extractWriteToolRange,
   formatFileLineEventDisplay,
-  getBashOutputCommand,
   resolveAbsolutePath,
   resolveOptions,
 } from "../src/extension.js";
 
 describe("resolveOptions", () => {
-  it("uses the default command name", () => {
-    expect(resolveOptions().commandName).toBe("file-collector");
-  });
-
-  it("allows command name override", () => {
-    expect(resolveOptions({ commandName: "collect-files" }).commandName).toBe("collect-files");
-  });
-
   it("allows system prompt append text", () => {
     expect(
       resolveOptions({ appendSystemPrompt: "Use ./file.ts:1 format" }).appendSystemPrompt,
@@ -64,9 +55,8 @@ describe("extractAssistantReferences", () => {
 });
 
 describe("resolveOptions config", () => {
-  it("allows flat collector and sidecar options", () => {
-    expect(resolveOptions({ sidecarEnabled: false, collectBashOutput: false })).toMatchObject({
-      sidecarEnabled: false,
+  it("allows flat collector options", () => {
+    expect(resolveOptions({ collectBashOutput: false })).toMatchObject({
       collectBashOutput: false,
     });
   });
@@ -82,29 +72,12 @@ describe("resolveOptions config", () => {
 
     expect(resolveOptions({ bashShimCommands: [command] }).bashShimCommands).toEqual([command]);
   });
-});
 
-describe("getBashOutputCommand", () => {
-  it("uses matching shim records for compound commands", () => {
-    expect(
-      getBashOutputCommand(
-        'pwd && rg -n --with-filename "needle" ./src/a.ts',
-        [
-          { command: "cat", path: "./src/a.ts" },
-          { command: "rg", path: "./src/a.ts", matchedText: "needle" },
-        ],
-        { path: "./src/a.ts", startLine: 7, matchedText: "needle found" },
-      ),
-    ).toBe("rg");
-  });
+  it("does not arg-shim search commands by default", () => {
+    const commandNames = resolveOptions().bashShimCommands.map((command) => command.name);
 
-  it("falls back to grep-style commands inside compound raw commands", () => {
-    expect(
-      getBashOutputCommand('pwd && rg -n "needle" ./src/a.ts', [], {
-        path: "./src/a.ts",
-        startLine: 7,
-      }),
-    ).toBe("rg");
+    expect(commandNames).not.toContain("rg");
+    expect(commandNames).not.toContain("grep");
   });
 });
 
@@ -113,6 +86,11 @@ describe("extractBashOutputReferences", () => {
     {
       name: "extracts grep-style output",
       input: "./src/a.ts:7:const x = 1\nnot a ref",
+      expected: [{ path: "./src/a.ts", startLine: 7, endLine: 7, matchedText: "const x = 1" }],
+    },
+    {
+      name: "extracts grep-style output after pwd output",
+      input: "/tmp/project\n./src/a.ts:7:const x = 1",
       expected: [{ path: "./src/a.ts", startLine: 7, endLine: 7, matchedText: "const x = 1" }],
     },
     {

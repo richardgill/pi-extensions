@@ -16,9 +16,6 @@ Create `file-collector.jsonc` in your pi agent config folder:
 
 ```jsonc
 {
-  "commandName": "file-lines",
-
-  "sidecarEnabled": true,
   "sidecarFilename": "file-line-events.jsonl",
 
   "collectReadTool": true,
@@ -28,7 +25,7 @@ Create `file-collector.jsonc` in your pi agent config folder:
   "collectBashOutput": true,
   "collectAssistantOutput": true,
 
-  "appendSystemPrompt": "When citing files, always include file paths with line ranges like ./src/file.ts:12-18. Prefer this format over prose-only references.",
+  "appendSystemPrompt": "When citing files, always include file paths with line ranges like ./src/file.ts:12-18. Prefer this format over prose-only references. When using rg or grep always use -n",
 
   "bashShimCommands": [
     { "name": "cat", "capture": { "paths": { "from": "positionals" } } },
@@ -87,5 +84,4 @@ Create `file-collector.jsonc` in your pi agent config folder:
 
 - Records read-tool ranges, write/edit-tool ranges, declarative bash shim file arguments, grep-style bash output, and assistant file citations.
 - Optionally appends `appendSystemPrompt` to the system prompt each user turn.
-- Persists session entries as `file-line-event` and writes one sidecar JSONL per session beside the session file: `<session-basename>-file-line-events.jsonl`.
-- `/file-lines` shows a summary of collected events on the current session branch.
+- Writes a JSONL per session beside the session file: `<session-basename>-file-line-events.jsonl`.

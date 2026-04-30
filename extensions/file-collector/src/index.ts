@@ -41,8 +41,6 @@ const BashShimCommandSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  commandName: z.string().optional(),
-  sidecarEnabled: z.boolean().optional(),
   sidecarFilename: z.string().optional(),
   collectReadTool: z.boolean().optional(),
   collectWriteTool: z.boolean().optional(),

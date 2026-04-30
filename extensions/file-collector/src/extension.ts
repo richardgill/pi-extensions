@@ -10,7 +10,6 @@ import {
   isWriteToolResult,
   type ExtensionAPI,
   type ExtensionContext,
-  type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 
@@ -48,8 +47,6 @@ export type BashShimCommand = {
 };
 
 export type FileCollectorOptions = {
-  commandName?: string;
-  sidecarEnabled?: boolean;
   sidecarFilename?: string;
   collectReadTool?: boolean;
   collectWriteTool?: boolean;
@@ -66,8 +63,6 @@ export type FileCollectorOptions = {
 type ResolvedOptions = Required<
   Pick<
     FileCollectorOptions,
-    | "commandName"
-    | "sidecarEnabled"
     | "sidecarFilename"
     | "collectReadTool"
     | "collectWriteTool"
@@ -110,14 +105,14 @@ export type FileLineEvent = {
   matchedText?: string;
 };
 
-export type FileReference = {
+type FileReference = {
   path: string;
   startLine?: number;
   endLine?: number;
   matchedText?: string;
 };
 
-export type BashShimRecord = {
+type BashShimRecord = {
   command?: string;
   path?: string;
   startLine?: unknown;
@@ -126,13 +121,9 @@ export type BashShimRecord = {
   timestamp?: string;
 };
 
-type SourceCounts = Record<FileLineEventSource, number>;
-
 type EventMetadata = Partial<
   Pick<FileLineEvent, "toolCallId" | "command" | "rawCommand" | "timestamp">
 >;
-
-const CUSTOM_TYPE = "file-line-event";
 
 const DEFAULT_ASSISTANT_CITATION_PATTERNS: RegexPatternConfig[] = [
   {
@@ -166,28 +157,6 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
     },
   },
   {
-    name: "grep",
-    argv: {
-      valueOptions: ["-f"],
-      namedValueOptions: { "-e": "pattern" },
-    },
-    capture: {
-      paths: { from: "positionalsAfter", arg: "pattern" },
-      matchedText: { from: "arg", arg: "pattern" },
-    },
-  },
-  {
-    name: "rg",
-    argv: {
-      valueOptions: ["-g", "--glob", "-t", "--type"],
-      namedValueOptions: { "-e": "pattern" },
-    },
-    capture: {
-      paths: { from: "positionalsAfter", arg: "pattern" },
-      matchedText: { from: "arg", arg: "pattern" },
-    },
-  },
-  {
     name: "head",
     argv: { valueOptions: ["-n", "--lines"] },
     capture: {
@@ -206,8 +175,6 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
 ];
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
-  commandName: "file-collector",
-  sidecarEnabled: true,
   sidecarFilename: "file-line-events.jsonl",
   collectReadTool: true,
   collectWriteTool: true,
@@ -373,7 +340,7 @@ const validateRegexPatterns = (patterns: RegexPatternConfig[]): void => {
   }
 };
 
-const validateBashShimCommands = (commands: BashShimCommand[]): void => {
+const validateBashCommandNames = (commands: Array<Pick<BashShimCommand, "name">>): void => {
   for (const command of commands) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(command.name)) {
       throw new Error(`Invalid bash shim command name: ${command.name}`);
@@ -391,7 +358,7 @@ export const resolveOptions = (options: FileCollectorOptions = {}): ResolvedOpti
   };
 
   validateRegexPatterns([...resolved.assistantCitationPatterns, ...resolved.bashOutputPatterns]);
-  validateBashShimCommands(resolved.bashShimCommands);
+  validateBashCommandNames(resolved.bashShimCommands);
   return resolved;
 };
 
@@ -522,9 +489,7 @@ export const createSessionSidecarPath = (sessionFile: string, sidecarFilename: s
 
 const getSidecarPath = (ctx: ExtensionContext, options: ResolvedOptions): string | undefined => {
   const sessionFile = ctx.sessionManager.getSessionFile();
-  return sessionFile && options.sidecarEnabled
-    ? createSessionSidecarPath(sessionFile, options.sidecarFilename)
-    : undefined;
+  return sessionFile ? createSessionSidecarPath(sessionFile, options.sidecarFilename) : undefined;
 };
 
 const writeSidecarEvent = async (
@@ -542,35 +507,29 @@ const writeSidecarEvent = async (
 };
 
 const appendRecordEvent = async (
-  pi: ExtensionAPI,
   sidecarPath: string | undefined,
   record: FileLineEvent,
 ): Promise<void> => {
   await writeSidecarEvent(sidecarPath, record);
-  try {
-    pi.appendEntry<FileLineEvent>(CUSTOM_TYPE, record);
-  } catch {}
 };
 
 const recordEvent = async (
-  pi: ExtensionAPI,
   ctx: ExtensionContext,
   record: FileLineEvent,
   options: ResolvedOptions,
 ): Promise<void> => {
   const sidecarPath = getSidecarPath(ctx, options);
-  await appendRecordEvent(pi, sidecarPath, record);
+  await appendRecordEvent(sidecarPath, record);
 };
 
 const recordEvents = async (
-  pi: ExtensionAPI,
   ctx: ExtensionContext,
   records: FileLineEvent[],
   options: ResolvedOptions,
 ): Promise<void> => {
   const sidecarPath = getSidecarPath(ctx, options);
   for (const record of records) {
-    await appendRecordEvent(pi, sidecarPath, record);
+    await appendRecordEvent(sidecarPath, record);
   }
 };
 
@@ -779,36 +738,6 @@ const getExecutableName = (rawCommand: string | undefined): string | undefined =
   return executable ? path.basename(executable) : undefined;
 };
 
-const BASH_OUTPUT_COMMANDS = new Set(["rg", "grep", "ag", "ack", "git"]);
-
-const getRawCommandExecutables = (rawCommand: string | undefined): string[] => {
-  const matches = rawCommand?.matchAll(/(?:^|[;&|]+)\s*(?:\w+=\S+\s+)*(?<command>[^\s;&|]+)/g);
-  return Array.from(matches ?? [], (match) => path.basename(match.groups?.command ?? ""));
-};
-
-const getBashOutputCommandFromRawCommand = (rawCommand: string | undefined): string | undefined =>
-  getRawCommandExecutables(rawCommand).find((command) => BASH_OUTPUT_COMMANDS.has(command)) ??
-  getExecutableName(rawCommand);
-
-const getMatchingBashShimRecord = (
-  records: BashShimRecord[],
-  reference: FileReference,
-): BashShimRecord | undefined =>
-  records.find(
-    (record) =>
-      typeof record.path === "string" &&
-      record.path === reference.path &&
-      Boolean(record.command && BASH_OUTPUT_COMMANDS.has(record.command)),
-  ) ?? records.find((record) => typeof record.path === "string" && record.path === reference.path);
-
-export const getBashOutputCommand = (
-  rawCommand: string | undefined,
-  records: BashShimRecord[],
-  reference: FileReference,
-): string | undefined =>
-  getMatchingBashShimRecord(records, reference)?.command ??
-  getBashOutputCommandFromRawCommand(rawCommand);
-
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
 
 const buildBashShimFunction = (command: BashShimCommand): string => `${command.name}() {
@@ -873,87 +802,12 @@ const buildBashCommandEvents = (
 
 const createBashOutputEvents = (
   references: FileReference[],
-  records: BashShimRecord[],
   ctx: ExtensionContext,
   metadata: EventMetadata = {},
 ): FileLineEvent[] =>
   references
     .filter((reference) => isExistingFileReference(reference.path, ctx.cwd))
-    .map((reference) =>
-      createFileLineEvent("bash_output", reference, ctx, {
-        ...metadata,
-        command: getBashOutputCommand(metadata.rawCommand, records, reference),
-      }),
-    );
-
-const isFileLineEvent = (data: unknown): data is FileLineEvent => {
-  if (!data || typeof data !== "object") {
-    return false;
-  }
-
-  const record = data as Record<string, unknown>;
-  return (
-    typeof record.source === "string" &&
-    typeof record.path === "string" &&
-    typeof record.absolutePath === "string" &&
-    typeof record.timestamp === "string"
-  );
-};
-
-const getBranchFileLineEvents = (entries: SessionEntry[]): FileLineEvent[] =>
-  entries.flatMap((entry) => {
-    if (
-      entry.type !== "custom" ||
-      entry.customType !== CUSTOM_TYPE ||
-      !isFileLineEvent(entry.data)
-    ) {
-      return [];
-    }
-
-    return [entry.data];
-  });
-
-const summarizeEvents = (events: FileLineEvent[]): string => {
-  const counts: SourceCounts = {
-    read_tool: 0,
-    write_tool: 0,
-    edit_tool: 0,
-    bash_command: 0,
-    bash_output: 0,
-    assistant_output: 0,
-  };
-
-  for (const event of events) {
-    counts[event.source] += 1;
-  }
-
-  return [
-    `${events.length} file-line events`,
-    `seen: ${
-      counts.read_tool +
-      counts.write_tool +
-      counts.edit_tool +
-      counts.bash_command +
-      counts.bash_output
-    }`,
-    `cited: ${counts.assistant_output}`,
-    `read_tool: ${counts.read_tool}`,
-    `write_tool: ${counts.write_tool}`,
-    `edit_tool: ${counts.edit_tool}`,
-    `bash_command: ${counts.bash_command}`,
-    `bash_output: ${counts.bash_output}`,
-  ].join(" • ");
-};
-
-const registerCommand = (options: ResolvedOptions, pi: ExtensionAPI): void => {
-  pi.registerCommand(options.commandName, {
-    description: "Show collected file/line evidence for this session branch",
-    handler: async (_args, ctx) => {
-      const events = getBranchFileLineEvents(ctx.sessionManager.getBranch());
-      ctx.ui.notify(summarizeEvents(events), "info");
-    },
-  });
-};
+    .map((reference) => createFileLineEvent("bash_output", reference, ctx, metadata));
 
 const registerSystemPromptAppender = (options: ResolvedOptions, pi: ExtensionAPI): void => {
   const append = options.appendSystemPrompt.trim();
@@ -983,7 +837,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     if (options.collectReadTool && isReadToolResult(event) && !event.isError) {
       const record = buildReadToolEvent(event, ctx);
       if (record) {
-        await recordEvent(pi, ctx, record, options);
+        await recordEvent(ctx, record, options);
       }
       return;
     }
@@ -991,7 +845,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     if (options.collectWriteTool && isWriteToolResult(event) && !event.isError) {
       const record = buildWriteToolEvent(event, ctx);
       if (record) {
-        await recordEvent(pi, ctx, record, options);
+        await recordEvent(ctx, record, options);
       }
       return;
     }
@@ -999,7 +853,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     if (options.collectEditTool && isEditToolResult(event) && !event.isError) {
       const record = buildEditToolEvent(event, ctx);
       if (record) {
-        await recordEvent(pi, ctx, record, options);
+        await recordEvent(ctx, record, options);
       }
       return;
     }
@@ -1021,7 +875,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
         event.toolCallId,
         shim.command,
       );
-      await recordEvents(pi, ctx, commandEvents, options);
+      await recordEvents(ctx, commandEvents, options);
     }
 
     if (options.collectBashOutput && !event.isError) {
@@ -1030,9 +884,8 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
         options.bashOutputPatterns,
       );
       await recordEvents(
-        pi,
         ctx,
-        createBashOutputEvents(references, bashShimRecords, ctx, {
+        createBashOutputEvents(references, ctx, {
           toolCallId: event.toolCallId,
           rawCommand: shim?.command,
         }),
@@ -1055,12 +908,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
       extractTextContent(message.content),
       options.assistantCitationPatterns,
     );
-    await recordEvents(
-      pi,
-      ctx,
-      createReferenceEvents("assistant_output", references, ctx),
-      options,
-    );
+    await recordEvents(ctx, createReferenceEvents("assistant_output", references, ctx), options);
   });
 };
 
@@ -1068,7 +916,6 @@ export const fileCollector = (input: FileCollectorOptions = {}) => {
   const options = resolveOptions(input);
 
   return (pi: ExtensionAPI): void => {
-    registerCommand(options, pi);
     registerSystemPromptAppender(options, pi);
     registerCollectors(options, pi);
   };
