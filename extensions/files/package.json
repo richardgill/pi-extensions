@@ -5,6 +5,7 @@
   "keywords": [
     "pi-package"
   ],
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/files",
   "repository": {
     "type": "git",
     "url": "https://github.com/richardgill/pi-extensions",
