@@ -1,5 +1,14 @@
 # @richardgill/pi-extra-context-files
 
+## 0.0.4
+
+### Patch Changes
+
+- [`d405126`](https://github.com/richardgill/pi-extensions/commit/d405126008e6ef9a0c7d5dd061637f381fbe6efa) Thanks [@richardgill](https://github.com/richardgill)! - Publish package homepage metadata.
+
+- Updated dependencies [[`d405126`](https://github.com/richardgill/pi-extensions/commit/d405126008e6ef9a0c7d5dd061637f381fbe6efa)]:
+  - @richardgill/pi-config@0.0.4
+
 ## 0.0.3
 
 ### Patch Changes
