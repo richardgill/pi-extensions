@@ -192,7 +192,7 @@ describe("formatFileLineEventDisplay", () => {
     {
       name: "formats write events",
       event: { source: "write_tool" as const, path: "./generated.txt", startLine: 1, endLine: 3 },
-      expected: "wrote ./generated.txt:1-3",
+      expected: "write ./generated.txt:1-3",
     },
     {
       name: "formats bash command events",

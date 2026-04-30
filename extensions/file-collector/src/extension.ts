@@ -483,7 +483,7 @@ const getFileLineEventAction = (
   event: Pick<FileLineEvent, "source"> & Partial<Pick<FileLineEvent, "command">>,
 ): string => {
   if (event.source === "read_tool") return "read";
-  if (event.source === "write_tool") return "wrote";
+  if (event.source === "write_tool") return "write";
   if (event.source === "edit_tool") return "edited";
   if (event.source === "assistant_output") return "cited";
   return event.command ? `bash ${event.command}` : "bash output";
