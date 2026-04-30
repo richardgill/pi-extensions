@@ -1,5 +1,11 @@
 # @richardgill/pi-file-collector
 
+## 0.0.5
+
+### Patch Changes
+
+- [`1621591`](https://github.com/richardgill/pi-extensions/commit/16215910e93795b56bc96c91eecc0d2a5f9699c0) Thanks [@richardgill](https://github.com/richardgill)! - Remove the file collector slash command and always write the sidecar when a session file is available.
+
 ## 0.0.4
 
 ### Patch Changes
