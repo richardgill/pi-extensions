@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { formatContextSection, loadExtraContextFiles, resolveOptions } from "../src/extension.js";
+import { formatContextSection, loadExtraContextFiles, resolveOptions } from "../src/index.js";
 
 const tempDirs: string[] = [];
 

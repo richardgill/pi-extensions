@@ -14,7 +14,7 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./src/extension.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "tsc": "tsc -p tsconfig.json --noEmit",
