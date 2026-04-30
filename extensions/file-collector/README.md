@@ -47,6 +47,22 @@ Create `file-collector.jsonc` in your pi agent config folder:
         "paths": { "from": "positionalsAfter", "arg": "pattern" },
         "matchedText": { "from": "arg", "arg": "pattern" }
       }
+    },
+    {
+      "name": "head",
+      "argv": { "valueOptions": ["-n", "--lines"] },
+      "capture": {
+        "paths": { "from": "lastPositional" },
+        "range": { "from": "headLineCount", "option": "-n" }
+      }
+    },
+    {
+      "name": "tail",
+      "argv": { "valueOptions": ["-n", "--lines"] },
+      "capture": {
+        "paths": { "from": "lastPositional" },
+        "range": { "from": "tailLineCount", "option": "-n" }
+      }
     }
   ],
 

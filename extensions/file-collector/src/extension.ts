@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -188,6 +188,7 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
   },
   {
     name: "head",
+    argv: { valueOptions: ["-n", "--lines"] },
     capture: {
       paths: { from: "lastPositional" },
       range: { from: "headLineCount", option: "-n" },
@@ -195,6 +196,7 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
   },
   {
     name: "tail",
+    argv: { valueOptions: ["-n", "--lines"] },
     capture: {
       paths: { from: "lastPositional" },
       range: { from: "tailLineCount", option: "-n" },
@@ -258,6 +260,13 @@ const countFileLines = (target) => {
     return lines.at(-1) === "" ? lines.length - 1 : lines.length;
   } catch {
     return undefined;
+  }
+};
+const isExistingFileTarget = (target) => {
+  try {
+    return fs.statSync(target).isFile();
+  } catch {
+    return false;
   }
 };
 const collectPositionals = () => {
@@ -330,7 +339,7 @@ const captureRange = (target) => {
 };
 const matchedText = captureMatchedText();
 for (const target of capturePaths()) {
-  if (target && target !== "-") {
+  if (target && target !== "-" && isExistingFileTarget(target)) {
     const range = captureRange(target);
     fs.appendFileSync(file, JSON.stringify({ command, path: target, matchedText, timestamp: new Date().toISOString(), ...range }) + "\n");
   }
@@ -439,6 +448,14 @@ export const resolveAbsolutePath = (targetPath: string, cwd: string): string => 
     return realpathSync.native(normalized);
   } catch {
     return normalized;
+  }
+};
+
+const isExistingFileReference = (targetPath: string, cwd: string): boolean => {
+  try {
+    return statSync(resolveAbsolutePath(targetPath, cwd)).isFile();
+  } catch {
+    return false;
   }
 };
 
@@ -762,7 +779,11 @@ const createReferenceEvents = (
   ctx: ExtensionContext,
   metadata: EventMetadata = {},
 ): FileLineEvent[] =>
-  references.map((reference) => createFileLineEvent(source, reference, ctx, metadata));
+  references
+    .filter((reference) =>
+      source === "bash_output" ? isExistingFileReference(reference.path, ctx.cwd) : true,
+    )
+    .map((reference) => createFileLineEvent(source, reference, ctx, metadata));
 
 const createBashShimPath = (toolCallId: string): string =>
   path.join(os.tmpdir(), `pi-file-line-tracker-${process.pid}-${toolCallId}.jsonl`);
@@ -811,6 +832,10 @@ const buildBashCommandEvents = async (
   const records = await readBashShimRecords(shimPath);
   return records.flatMap((record) => {
     if (typeof record.path !== "string" || !record.path) {
+      return [];
+    }
+
+    if (!isExistingFileReference(record.path, ctx.cwd)) {
       return [];
     }
 
