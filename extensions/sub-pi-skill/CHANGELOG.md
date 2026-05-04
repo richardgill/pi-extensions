@@ -1,5 +1,11 @@
 # @richardgill/pi-sub-pi-skill
 
+## 0.0.5
+
+### Patch Changes
+
+- [#10](https://github.com/richardgill/pi-extensions/pull/10) [`8068b0d`](https://github.com/richardgill/pi-extensions/commit/8068b0d977fe3e737b262c38e10299cf9970e03e) Thanks [@richardgill](https://github.com/richardgill)! - Fix sub-pi subprocess completion when child Pi emits `agent_end` but keeps live handles, and make sub-pi skill handoffs ask the main model to answer from the sub-pi result.
+
 ## 0.0.4
 
 ### Patch Changes
