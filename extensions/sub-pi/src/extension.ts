@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Message } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 import {
   type ExtensionAPI,
   getAgentDir,
@@ -113,6 +113,11 @@ type SubPiDetails = {
   mode: "single" | "parallel" | "chain";
   modelOverride?: string;
   results: SingleResult[];
+};
+
+type RenderableSubPiResult = {
+  content: string | (TextContent | ImageContent)[];
+  details?: unknown;
 };
 
 type TaskStatus = "Running" | "Done" | "Failed" | "Pending";
@@ -583,6 +588,19 @@ const getTaskErrorText = (result: SingleResult): string => {
   return result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 };
 
+// Child pi may be a wrapper; kill the process group so the real Node process is not orphaned.
+const killProcessGroup = (proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void => {
+  if (!proc.pid) return;
+
+  try {
+    process.kill(-proc.pid, signal);
+  } catch {
+    try {
+      proc.kill(signal);
+    } catch {}
+  }
+};
+
 const attachAbortSignal = (
   proc: ChildProcessWithoutNullStreams,
   signal: AbortSignal | undefined,
@@ -592,9 +610,9 @@ const attachAbortSignal = (
 
   const killProcess = () => {
     aborted = true;
-    proc.kill("SIGTERM");
+    killProcessGroup(proc, "SIGTERM");
     setTimeout(() => {
-      if (!proc.killed) proc.kill("SIGKILL");
+      killProcessGroup(proc, "SIGKILL");
     }, 5000);
   };
 
@@ -618,6 +636,10 @@ const isMessage = (value: unknown): value is Message => {
   if (!isRecord(value)) return false;
   const role = value.role;
   return role === "assistant" || role === "user" || role === "toolResult";
+};
+
+const isAgentEndEvent = (event: Record<string, unknown> | undefined): boolean => {
+  return event?.type === "agent_end";
 };
 
 const applyAssistantUsage = (result: SingleResult, message: AssistantMessage): void => {
@@ -765,13 +787,35 @@ const runSingleTask = async (options: {
         cwd: options.defaultCwd,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
+        // Create a child process group so completion/abort cleanup can kill the whole tree.
+        detached: true,
       });
 
       proc.stdin.end();
 
       const abortState = attachAbortSignal(proc, options.signal);
 
+      let finished = false;
+      let closed = false;
       let buffer = "";
+      const finish = (code: number) => {
+        if (finished) return;
+        finished = true;
+        currentResult.exitCode = code;
+        if (abortState.isAborted()) currentResult.stopReason = "aborted";
+        resolve(code);
+      };
+      const finishAfterAgentEnd = () => {
+        // Pi JSON mode can emit agent_end but stay alive on provider keep-alive sockets.
+        setTimeout(() => {
+          if (finished) return;
+          killProcessGroup(proc, "SIGTERM");
+          finish(0);
+          setTimeout(() => {
+            if (!closed) killProcessGroup(proc, "SIGKILL");
+          }, 2000);
+        }, 250);
+      };
       const processLine = (line: string) => {
         const event = parseJsonLine(line);
         if (!event) return;
@@ -785,6 +829,7 @@ const runSingleTask = async (options: {
           handleEventMessage(currentResult, messageValue);
           emitUpdate();
         }
+        if (isAgentEndEvent(event)) finishAfterAgentEnd();
       };
 
       proc.stdout.on("data", (data) => {
@@ -799,15 +844,13 @@ const runSingleTask = async (options: {
       });
 
       proc.on("close", (code) => {
+        closed = true;
         if (buffer.trim()) processLine(buffer);
-        currentResult.exitCode = code ?? 0;
-        if (abortState.isAborted()) currentResult.stopReason = "aborted";
-        resolve(code ?? 0);
+        finish(code ?? 0);
       });
 
       proc.on("error", () => {
-        currentResult.exitCode = 1;
-        resolve(1);
+        finish(1);
       });
     });
 
@@ -917,6 +960,37 @@ const renderChainResult = (results: SingleResult[], _expanded: boolean, theme: T
   }
 
   return new Text(lines.join("\n"), 0, 0);
+};
+
+const getRenderableText = (result: RenderableSubPiResult): string => {
+  if (typeof result.content === "string") return result.content;
+  const textBlock = result.content[0];
+  return textBlock?.type === "text" ? textBlock.text : "(no output)";
+};
+
+export const renderSubPiResult = (
+  result: RenderableSubPiResult,
+  expanded: boolean,
+  theme: Theme,
+): Text => {
+  const details = result.details as SubPiDetails | undefined;
+  if (!details || details.results.length === 0) {
+    return new Text(getRenderableText(result), 0, 0);
+  }
+
+  if (details.mode === "single" && details.results.length === 1) {
+    return renderSingleResult(details.results[0], expanded, theme);
+  }
+
+  if (details.mode === "chain") {
+    return renderChainResult(details.results, expanded, theme);
+  }
+
+  if (details.mode === "parallel") {
+    return renderParallelResult(details.results, expanded, theme);
+  }
+
+  return new Text(getRenderableText(result), 0, 0);
 };
 
 export const subPi =
@@ -1241,26 +1315,7 @@ export const subPi =
       },
 
       renderResult(result, { expanded }, theme) {
-        const details = result.details as SubPiDetails | undefined;
-        if (!details || details.results.length === 0) {
-          const textBlock = result.content[0];
-          return new Text(textBlock?.type === "text" ? textBlock.text : "(no output)", 0, 0);
-        }
-
-        if (details.mode === "single" && details.results.length === 1) {
-          return renderSingleResult(details.results[0], expanded, theme);
-        }
-
-        if (details.mode === "chain") {
-          return renderChainResult(details.results, expanded, theme);
-        }
-
-        if (details.mode === "parallel") {
-          return renderParallelResult(details.results, expanded, theme);
-        }
-
-        const textBlock = result.content[0];
-        return new Text(textBlock?.type === "text" ? textBlock.text : "(no output)", 0, 0);
+        return renderSubPiResult(result, expanded, theme);
       },
     });
 

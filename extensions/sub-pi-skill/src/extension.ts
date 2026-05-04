@@ -102,12 +102,18 @@ const parseModelOverride = (value: string): ModelOverrideParse => {
   const trimmed = value.trim();
   const slashIndex = trimmed.indexOf("/");
   if (slashIndex <= 0 || slashIndex === trimmed.length - 1) {
-    return { ok: false, error: `Invalid model format: "${value}". Expected provider/modelId.` };
+    return {
+      ok: false,
+      error: `Invalid model format: "${value}". Expected provider/modelId.`,
+    };
   }
   const provider = trimmed.slice(0, slashIndex).trim();
   const modelId = trimmed.slice(slashIndex + 1).trim();
   if (!provider || !modelId) {
-    return { ok: false, error: `Invalid model format: "${value}". Expected provider/modelId.` };
+    return {
+      ok: false,
+      error: `Invalid model format: "${value}". Expected provider/modelId.`,
+    };
   }
   return { ok: true, provider, modelId };
 };
@@ -315,7 +321,12 @@ const buildSubPiParams = (
 };
 
 const formatSubPiMessage = (params: SubPiParams): string => {
-  return `Call the ${toolName} tool with the following JSON. Respond only with the tool call.\n${JSON.stringify(params)}`;
+  return [
+    `Call the ${toolName} tool with the following JSON.`,
+    "First respond only with the tool call.",
+    "After the tool returns, answer the user's original request, include the tool's verbatim final output.",
+    JSON.stringify(params),
+  ].join("\n");
 };
 
 const isSubPiToolRegistered = (pi: ExtensionAPI): boolean =>
