@@ -86,12 +86,8 @@ export type FileLineEventSource =
   | "bash_output"
   | "assistant_output";
 
-export type FileLineEventKind = "read" | "write" | "edit" | "bash" | "assistant_citation";
-
 export type FileLineEvent = {
   source: FileLineEventSource;
-  kind: FileLineEventKind;
-  action: string;
   path: string;
   absolutePath: string;
   startLine?: number;
@@ -280,15 +276,7 @@ const formatMatchedText = (matchedText: string): string => {
   return JSON.stringify(preview);
 };
 
-const getFileLineEventKind = (source: FileLineEventSource): FileLineEventKind => {
-  if (source === "read_tool") return "read";
-  if (source === "write_tool") return "write";
-  if (source === "edit_tool") return "edit";
-  if (source === "assistant_output") return "assistant_citation";
-  return "bash";
-};
-
-const getFileLineEventAction = (
+const getFileLineEventDisplayLabel = (
   event: Pick<FileLineEvent, "source"> & Partial<Pick<FileLineEvent, "command">>,
 ): string => {
   if (event.source === "read_tool") return "read";
@@ -307,12 +295,12 @@ const formatDisplayDetail = (detail?: string): string =>
 
 export const formatFileLineEventDisplay = (
   event: Pick<FileLineEvent, "source" | "path" | "startLine" | "endLine"> &
-    Partial<Pick<FileLineEvent, "action" | "command" | "detail" | "matchedText">>,
+    Partial<Pick<FileLineEvent, "command" | "detail" | "matchedText">>,
 ): string => {
   const file = formatRange(event.path, event.startLine, event.endLine);
-  const action = event.action ?? getFileLineEventAction(event);
+  const label = getFileLineEventDisplayLabel(event);
   const detail = getFileLineEventDetail(event);
-  return `${action} ${file}${formatDisplayDetail(detail)}`;
+  return `${label} ${file}${formatDisplayDetail(detail)}`;
 };
 
 const createFileLineEvent = (
@@ -323,7 +311,6 @@ const createFileLineEvent = (
 ): FileLineEvent => {
   const event = {
     source,
-    kind: getFileLineEventKind(source),
     path: reference.path,
     absolutePath: resolveAbsolutePath(reference.path, ctx.cwd),
     ...normalizeLineRange(reference.startLine, reference.endLine),
@@ -331,13 +318,11 @@ const createFileLineEvent = (
     ...metadata,
     ...(reference.matchedText ? { matchedText: reference.matchedText } : {}),
   };
-  const action = getFileLineEventAction(event);
   const detail = getFileLineEventDetail(event);
-  const display = formatFileLineEventDisplay({ ...event, action, detail });
+  const display = formatFileLineEventDisplay({ ...event, detail });
 
   return {
     ...event,
-    action,
     ...(detail ? { detail } : {}),
     display,
     previewTitle: display,
