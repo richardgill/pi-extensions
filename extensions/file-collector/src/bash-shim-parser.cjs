@@ -1,7 +1,9 @@
 const fs = require("node:fs");
 
-const [file, command, specJson, ...argv] = process.argv.slice(2);
-const spec = JSON.parse(specJson);
+const readInput = (processArgv) => {
+  const [file, command, specJson, ...argv] = processArgv.slice(2);
+  return { file, command, spec: JSON.parse(specJson), argv };
+};
 
 const toNumber = (value) => (/^\d+$/.test(String(value || "")) ? Number(value) : undefined);
 
@@ -19,7 +21,7 @@ const parseSedRange = (script) => {
   return startLine ? { startLine, endLine } : {};
 };
 
-const findLineCount = (option) => {
+const findLineCount = (argv, option) => {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
@@ -52,7 +54,7 @@ const isExistingFileTarget = (target) => {
   }
 };
 
-const collectPositionals = () => {
+const collectPositionals = (spec, argv) => {
   const valueOptions = new Set(spec.argv?.valueOptions || []);
   const namedValueOptions = spec.argv?.namedValueOptions || {};
   const stopAtDoubleDash = spec.argv?.stopAtDoubleDash !== false;
@@ -83,47 +85,45 @@ const collectPositionals = () => {
   return { positionals, namedArgs, namedIndexes };
 };
 
-const parsed = collectPositionals();
+const ensureArg = (parsedArgs, argName) => {
+  if (parsedArgs.namedArgs[argName] !== undefined) return parsedArgs.namedArgs[argName];
 
-const ensureArg = (argName) => {
-  if (parsed.namedArgs[argName] !== undefined) return parsed.namedArgs[argName];
-
-  const first = parsed.positionals[0];
+  const first = parsedArgs.positionals[0];
   if (first !== undefined) {
-    parsed.namedArgs[argName] = first;
-    parsed.namedIndexes[argName] = 0;
+    parsedArgs.namedArgs[argName] = first;
+    parsedArgs.namedIndexes[argName] = 0;
   }
 
   return first;
 };
 
-const capturePaths = () => {
+const capturePaths = (spec, parsedArgs) => {
   const rule = spec.capture.paths;
-  if (rule.from === "positionals") return parsed.positionals;
-  if (rule.from === "lastPositional") return parsed.positionals.slice(-1);
+  if (rule.from === "positionals") return parsedArgs.positionals;
+  if (rule.from === "lastPositional") return parsedArgs.positionals.slice(-1);
 
-  const argValue = ensureArg(rule.arg);
-  const index = parsed.namedIndexes[rule.arg];
+  const argValue = ensureArg(parsedArgs, rule.arg);
+  const index = parsedArgs.namedIndexes[rule.arg];
   return argValue !== undefined && index !== undefined
-    ? parsed.positionals.slice(index + 1)
-    : parsed.positionals;
+    ? parsedArgs.positionals.slice(index + 1)
+    : parsedArgs.positionals;
 };
 
-const captureMatchedText = () => {
+const captureMatchedText = (spec, parsedArgs) => {
   const rule = spec.capture.matchedText;
-  return rule?.from === "arg" ? ensureArg(rule.arg) : undefined;
+  return rule?.from === "arg" ? ensureArg(parsedArgs, rule.arg) : undefined;
 };
 
-const captureRange = (target) => {
+const captureRange = (spec, argv, parsedArgs, target) => {
   const rule = spec.capture.range;
   if (!rule) return {};
-  if (rule.from === "sedPrintScript") return parseSedRange(ensureArg(rule.arg));
+  if (rule.from === "sedPrintScript") return parseSedRange(ensureArg(parsedArgs, rule.arg));
   if (rule.from === "headLineCount") {
-    const endLine = findLineCount(rule.option);
+    const endLine = findLineCount(argv, rule.option);
     return endLine ? { startLine: 1, endLine } : {};
   }
   if (rule.from === "tailLineCount") {
-    const count = findLineCount(rule.option);
+    const count = findLineCount(argv, rule.option);
     const total = countFileLines(target);
     if (!count || !total) return {};
     return { startLine: Math.max(1, total - count + 1), endLine: total };
@@ -132,23 +132,29 @@ const captureRange = (target) => {
   return {};
 };
 
-const appendTarget = (target, matchedText) => {
-  if (!target || target === "-" || !isExistingFileTarget(target)) {
-    return;
-  }
+const createRecord = ({ command, spec, argv, parsedArgs, target, matchedText }) => ({
+  command,
+  path: target,
+  matchedText,
+  timestamp: new Date().toISOString(),
+  ...captureRange(spec, argv, parsedArgs, target),
+});
 
-  const range = captureRange(target);
-  const record = {
-    command,
-    path: target,
-    matchedText,
-    timestamp: new Date().toISOString(),
-    ...range,
-  };
-  fs.appendFileSync(file, `${JSON.stringify(record)}\n`);
+const appendExistingFileRecords = (input, targets, matchedText) => {
+  for (const target of targets) {
+    if (target && target !== "-" && isExistingFileTarget(target)) {
+      const record = createRecord({ ...input, target, matchedText });
+      fs.appendFileSync(input.file, `${JSON.stringify(record)}\n`);
+    }
+  }
 };
 
-const matchedText = captureMatchedText();
-for (const target of capturePaths()) {
-  appendTarget(target, matchedText);
-}
+const main = () => {
+  const input = readInput(process.argv);
+  const parsedArgs = collectPositionals(input.spec, input.argv);
+  const targets = capturePaths(input.spec, parsedArgs);
+  const matchedText = captureMatchedText(input.spec, parsedArgs);
+  appendExistingFileRecords({ ...input, parsedArgs }, targets, matchedText);
+};
+
+main();
