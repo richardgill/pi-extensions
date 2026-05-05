@@ -194,24 +194,6 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   bashShimCommands: DEFAULT_BASH_SHIM_COMMANDS,
 };
 
-const clonePatternConfigs = (patterns: RegexPatternConfig[]): RegexPatternConfig[] =>
-  patterns.map((pattern) => ({ ...pattern }));
-
-const cloneBashShimCommands = (commands: BashShimCommand[]): BashShimCommand[] =>
-  commands.map((command) => ({
-    ...command,
-    argv: command.argv
-      ? {
-          ...command.argv,
-          valueOptions: command.argv.valueOptions ? [...command.argv.valueOptions] : undefined,
-          namedValueOptions: command.argv.namedValueOptions
-            ? { ...command.argv.namedValueOptions }
-            : undefined,
-        }
-      : undefined,
-    capture: { ...command.capture },
-  }));
-
 const validateRegexPatterns = (patterns: RegexPatternConfig[]): void => {
   for (const pattern of patterns) {
     new RegExp(pattern.regex, pattern.flags);
@@ -227,17 +209,13 @@ const validateBashCommandNames = (commands: Array<Pick<BashShimCommand, "name">>
 };
 
 export const resolveOptions = (options: FileCollectorOptions = {}): ResolvedOptions => {
-  const merged = resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
-  const resolved = {
-    ...merged,
-    assistantCitationPatterns: clonePatternConfigs(merged.assistantCitationPatterns),
-    bashOutputPatterns: clonePatternConfigs(merged.bashOutputPatterns),
-    bashShimCommands: cloneBashShimCommands(merged.bashShimCommands),
-  };
-
-  validateRegexPatterns([...resolved.assistantCitationPatterns, ...resolved.bashOutputPatterns]);
-  validateBashCommandNames(resolved.bashShimCommands);
-  return resolved;
+  const resolvedConfig = resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
+  validateRegexPatterns([
+    ...resolvedConfig.assistantCitationPatterns,
+    ...resolvedConfig.bashOutputPatterns,
+  ]);
+  validateBashCommandNames(resolvedConfig.bashShimCommands);
+  return resolvedConfig;
 };
 
 const toPositiveLine = (value: unknown): number | undefined => {
@@ -357,7 +335,13 @@ const createFileLineEvent = (
   const detail = getFileLineEventDetail(event);
   const display = formatFileLineEventDisplay({ ...event, action, detail });
 
-  return { ...event, action, ...(detail ? { detail } : {}), display, previewTitle: display };
+  return {
+    ...event,
+    action,
+    ...(detail ? { detail } : {}),
+    display,
+    previewTitle: display,
+  };
 };
 
 export const createSessionSidecarPath = (
@@ -535,7 +519,10 @@ export const extractReadToolRange = (
   const limit = toPositiveLine(fallbackLimit);
   const contentLineCount = countTextLines(content);
   const endLine = limit ?? contentLineCount;
-  return { startLine, ...(endLine ? { endLine: startLine + endLine - 1 } : {}) };
+  return {
+    startLine,
+    ...(endLine ? { endLine: startLine + endLine - 1 } : {}),
+  };
 };
 
 export const extractWriteToolRange = (content: string) => {
@@ -551,7 +538,11 @@ export const extractEditToolRange = (details: unknown) => {
 };
 
 const buildReadToolEvent = (
-  event: { input: Record<string, unknown>; content: unknown; toolCallId?: string },
+  event: {
+    input: Record<string, unknown>;
+    content: unknown;
+    toolCallId?: string;
+  },
   ctx: ExtensionContext,
 ) => {
   const targetPath = event.input.path;
@@ -585,7 +576,11 @@ const buildWriteToolEvent = (
 };
 
 const buildEditToolEvent = (
-  event: { input: Record<string, unknown>; details: unknown; toolCallId?: string },
+  event: {
+    input: Record<string, unknown>;
+    details: unknown;
+    toolCallId?: string;
+  },
   ctx: ExtensionContext,
 ) => {
   const targetPath = event.input.path;
@@ -712,7 +707,10 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     }
 
     const shimPath = createBashShimPath(event.toolCallId);
-    bashShimPaths.set(event.toolCallId, { path: shimPath, command: event.input.command });
+    bashShimPaths.set(event.toolCallId, {
+      path: shimPath,
+      command: event.input.command,
+    });
     event.input.command = buildBashCommandWithShim(event.input.command, shimPath, options);
   });
 
