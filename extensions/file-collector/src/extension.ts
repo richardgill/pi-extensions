@@ -2,6 +2,7 @@ import { realpathSync, statSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   isBashToolResult,
   isEditToolResult,
@@ -47,7 +48,7 @@ export type BashShimCommand = {
 };
 
 export type FileCollectorOptions = {
-  sidecarFilename?: string;
+  sidecarFilenameSuffix?: string;
   collectReadTool?: boolean;
   collectWriteTool?: boolean;
   collectEditTool?: boolean;
@@ -63,7 +64,7 @@ export type FileCollectorOptions = {
 type ResolvedOptions = Required<
   Pick<
     FileCollectorOptions,
-    | "sidecarFilename"
+    | "sidecarFilenameSuffix"
     | "collectReadTool"
     | "collectWriteTool"
     | "collectEditTool"
@@ -125,11 +126,15 @@ type EventMetadata = Partial<
   Pick<FileLineEvent, "toolCallId" | "command" | "rawCommand" | "timestamp">
 >;
 
+const BASH_SHIM_PARSER_PATH = fileURLToPath(new URL("./bash-shim-parser.cjs", import.meta.url));
+
 const DEFAULT_ASSISTANT_CITATION_PATTERNS: RegexPatternConfig[] = [
+  // Example: ./src/file.ts#L12 or ./src/file.ts#L12-L20
   {
     regex: String.raw`(?:^|[\s\`"'(<\[])(?<path>[^\s\`"'<>)]*?)#L(?<start>\d+)(?:-L?(?<end>\d+))?(?=$|[\s\`"'<>),;.\]])`,
     flags: "g",
   },
+  // Example: ./src/file.ts:12 or ./src/file.ts:12-20
   {
     regex: String.raw`(?:^|[\s\`"'(<\[])(?<path>[^\s\`"'<>)]*?):(?<start>\d+)(?:-(?<end>\d+))?(?=$|[\s\`"'<>),;.\]])`,
     flags: "g",
@@ -137,6 +142,7 @@ const DEFAULT_ASSISTANT_CITATION_PATTERNS: RegexPatternConfig[] = [
 ];
 
 const DEFAULT_BASH_OUTPUT_PATTERNS: RegexPatternConfig[] = [
+  // Example: ./src/file.ts:12:matched text
   {
     regex: String.raw`^(?<path>.+?):(?<start>\d+):(?<matchedText>.*)$`,
     flags: "gm",
@@ -175,7 +181,7 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
 ];
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
-  sidecarFilename: "file-line-events.jsonl",
+  sidecarFilenameSuffix: "file-line-events.jsonl",
   collectReadTool: true,
   collectWriteTool: true,
   collectEditTool: true,
@@ -187,134 +193,6 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   bashOutputPatterns: DEFAULT_BASH_OUTPUT_PATTERNS,
   bashShimCommands: DEFAULT_BASH_SHIM_COMMANDS,
 };
-
-const BASH_SHIM_RUNTIME = String.raw`
-__pi_file_line_tracker_parse() {
-  local __pi_file_line_tracker_command="$1"
-  local __pi_file_line_tracker_spec="$2"
-  shift 2
-  node - "$__PI_FILE_LINE_TRACKER_EVENTS" "$__pi_file_line_tracker_command" "$__pi_file_line_tracker_spec" "$@" <<'__PI_FILE_LINE_TRACKER_NODE__'
-const fs = require("node:fs");
-const [file, command, specJson, ...argv] = process.argv.slice(2);
-const spec = JSON.parse(specJson);
-const toNumber = (value) => /^\d+$/.test(String(value || "")) ? Number(value) : undefined;
-const optionParts = (arg) => {
-  const index = arg.indexOf("=");
-  return index > 0 ? { name: arg.slice(0, index), value: arg.slice(index + 1) } : { name: arg };
-};
-const parseSedRange = (script) => {
-  const range = String(script || "").match(/^(\d+)(?:,(\d+))?p/);
-  if (!range) return {};
-  const startLine = toNumber(range[1]);
-  const endLine = toNumber(range[2]) || startLine;
-  return startLine ? { startLine, endLine } : {};
-};
-const findLineCount = (option) => {
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    const next = argv[index + 1];
-    const direct = arg === option ? toNumber(next) : undefined;
-    const joined = arg.startsWith(option) ? toNumber(arg.slice(option.length)) : undefined;
-    const count = direct || joined;
-    if (count) return count;
-  }
-  return undefined;
-};
-const countFileLines = (target) => {
-  try {
-    const content = fs.readFileSync(target, "utf8");
-    if (!content) return 0;
-    const lines = content.split(/\r\n|\r|\n/);
-    return lines.at(-1) === "" ? lines.length - 1 : lines.length;
-  } catch {
-    return undefined;
-  }
-};
-const isExistingFileTarget = (target) => {
-  try {
-    return fs.statSync(target).isFile();
-  } catch {
-    return false;
-  }
-};
-const collectPositionals = () => {
-  const valueOptions = new Set(spec.argv?.valueOptions || []);
-  const namedValueOptions = spec.argv?.namedValueOptions || {};
-  const stopAtDoubleDash = spec.argv?.stopAtDoubleDash !== false;
-  const namedArgs = {};
-  const namedIndexes = {};
-  const positionals = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (stopAtDoubleDash && arg === "--") {
-      positionals.push(...argv.slice(index + 1));
-      index = argv.length;
-    } else if (arg.startsWith("-") && arg !== "-") {
-      const option = optionParts(arg);
-      const namedArg = namedValueOptions[option.name];
-      if (namedArg) {
-        const value = option.value === undefined ? argv[index + 1] : option.value;
-        if (value !== undefined) namedArgs[namedArg] = value;
-        if (option.value === undefined) index += 1;
-      } else if (valueOptions.has(option.name) && option.value === undefined) {
-        index += 1;
-      }
-    } else {
-      positionals.push(arg);
-    }
-  }
-  return { positionals, namedArgs, namedIndexes };
-};
-const parsed = collectPositionals();
-const ensureArg = (argName) => {
-  if (parsed.namedArgs[argName] !== undefined) return parsed.namedArgs[argName];
-  const first = parsed.positionals[0];
-  if (first !== undefined) {
-    parsed.namedArgs[argName] = first;
-    parsed.namedIndexes[argName] = 0;
-  }
-  return first;
-};
-const capturePaths = () => {
-  const rule = spec.capture.paths;
-  if (rule.from === "positionals") return parsed.positionals;
-  if (rule.from === "lastPositional") return parsed.positionals.slice(-1);
-  const argValue = ensureArg(rule.arg);
-  const index = parsed.namedIndexes[rule.arg];
-  return argValue !== undefined && index !== undefined
-    ? parsed.positionals.slice(index + 1)
-    : parsed.positionals;
-};
-const captureMatchedText = () => {
-  const rule = spec.capture.matchedText;
-  return rule?.from === "arg" ? ensureArg(rule.arg) : undefined;
-};
-const captureRange = (target) => {
-  const rule = spec.capture.range;
-  if (!rule) return {};
-  if (rule.from === "sedPrintScript") return parseSedRange(ensureArg(rule.arg));
-  if (rule.from === "headLineCount") {
-    const endLine = findLineCount(rule.option);
-    return endLine ? { startLine: 1, endLine } : {};
-  }
-  if (rule.from === "tailLineCount") {
-    const count = findLineCount(rule.option);
-    const total = countFileLines(target);
-    if (!count || !total) return {};
-    return { startLine: Math.max(1, total - count + 1), endLine: total };
-  }
-  return {};
-};
-const matchedText = captureMatchedText();
-for (const target of capturePaths()) {
-  if (target && target !== "-" && isExistingFileTarget(target)) {
-    const range = captureRange(target);
-    fs.appendFileSync(file, JSON.stringify({ command, path: target, matchedText, timestamp: new Date().toISOString(), ...range }) + "\n");
-  }
-}
-__PI_FILE_LINE_TRACKER_NODE__
-}
-`;
 
 const clonePatternConfigs = (patterns: RegexPatternConfig[]): RegexPatternConfig[] =>
   patterns.map((pattern) => ({ ...pattern }));
@@ -482,14 +360,19 @@ const createFileLineEvent = (
   return { ...event, action, ...(detail ? { detail } : {}), display, previewTitle: display };
 };
 
-export const createSessionSidecarPath = (sessionFile: string, sidecarFilename: string): string => {
+export const createSessionSidecarPath = (
+  sessionFile: string,
+  sidecarFilenameSuffix: string,
+): string => {
   const parsed = path.parse(sessionFile);
-  return path.join(parsed.dir, `${parsed.name}-${sidecarFilename}`);
+  return path.join(parsed.dir, `${parsed.name}-${sidecarFilenameSuffix}`);
 };
 
 const getSidecarPath = (ctx: ExtensionContext, options: ResolvedOptions): string | undefined => {
   const sessionFile = ctx.sessionManager.getSessionFile();
-  return sessionFile ? createSessionSidecarPath(sessionFile, options.sidecarFilename) : undefined;
+  return sessionFile
+    ? createSessionSidecarPath(sessionFile, options.sidecarFilenameSuffix)
+    : undefined;
 };
 
 const writeSidecarEvent = async (
@@ -741,7 +624,7 @@ const getExecutableName = (rawCommand: string | undefined): string | undefined =
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
 
 const buildBashShimFunction = (command: BashShimCommand): string => `${command.name}() {
-  __pi_file_line_tracker_parse ${shellQuote(command.name)} ${shellQuote(JSON.stringify(command))} "$@"
+  node ${shellQuote(BASH_SHIM_PARSER_PATH)} "$__PI_FILE_LINE_TRACKER_EVENTS" ${shellQuote(command.name)} ${shellQuote(JSON.stringify(command))} "$@"
   command ${command.name} "$@"
 }`;
 
@@ -751,7 +634,7 @@ const buildBashCommandWithShim = (
   options: ResolvedOptions,
 ): string => {
   const shims = options.bashShimCommands.map(buildBashShimFunction).join("\n\n");
-  return `export __PI_FILE_LINE_TRACKER_EVENTS=${shellQuote(shimPath)}\n${BASH_SHIM_RUNTIME}\n${shims}\n${command}`;
+  return `export __PI_FILE_LINE_TRACKER_EVENTS=${shellQuote(shimPath)}\n${shims}\n${command}`;
 };
 
 const readBashShimRecords = async (shimPath: string): Promise<BashShimRecord[]> => {
