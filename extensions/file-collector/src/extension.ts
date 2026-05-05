@@ -142,7 +142,7 @@ const DEFAULT_ASSISTANT_CITATION_PATTERNS: RegexPatternConfig[] = [
 ];
 
 const DEFAULT_BASH_OUTPUT_PATTERNS: RegexPatternConfig[] = [
-  // Example: ./src/file.ts:12:matched text
+  // Example: ./src/file.ts:12:<matched text>
   {
     regex: String.raw`^(?<path>.+?):(?<start>\d+):(?<matchedText>.*)$`,
     flags: "gm",
