@@ -4,8 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bashTimeoutGuard,
-  createBashPromptGuidelines,
-  createBashPromptSnippet,
+  createBashPromptMetadata,
   createTimeoutGuardedBashTool,
   DEFAULT_OPTIONS,
   DEFAULT_TIMEOUT_SECONDS,
@@ -68,11 +67,11 @@ describe("prompt templating", () => {
 
   it("adds configured prompt to bash guidelines", () => {
     expect(
-      createBashPromptGuidelines({
+      createBashPromptMetadata({
         defaultTimeoutSeconds: 10,
         maxTimeoutSeconds: 20,
         prompt: "Do not set bash timeout above {{maxTimeoutSeconds}} seconds.",
-      }),
+      }).promptGuidelines,
     ).toContain("Do not set bash timeout above 20 seconds.");
   });
 });
@@ -82,8 +81,10 @@ describe("createTimeoutGuardedBashTool", () => {
     const tool = createTimeoutGuardedBashTool(process.cwd());
 
     expect(tool.name).toBe("bash");
-    expect(tool.promptSnippet).toBe(createBashPromptSnippet(DEFAULT_OPTIONS));
-    expect(tool.promptGuidelines).toEqual(createBashPromptGuidelines(DEFAULT_OPTIONS));
+    expect(tool.promptSnippet).toBe(createBashPromptMetadata(DEFAULT_OPTIONS).promptSnippet);
+    expect(tool.promptGuidelines).toEqual(
+      createBashPromptMetadata(DEFAULT_OPTIONS).promptGuidelines,
+    );
     expect(tool.description).toContain("30 second timeout");
     expect(tool.description).toContain("60 seconds");
     expect(tool.description).toContain("tmux");
@@ -147,6 +148,15 @@ describe("createTimeoutGuardedBashTool", () => {
       { cwd: "/session", timeout: 10 },
       { cwd: "/session", timeout: 20 },
     ]);
+  });
+
+  it("rejects programmatic options where default timeout exceeds max timeout", () => {
+    expect(() =>
+      createTimeoutGuardedBashTool("/initial", {
+        defaultTimeoutSeconds: 20,
+        maxTimeoutSeconds: 10,
+      }),
+    ).toThrow("defaultTimeoutSeconds must be less than or equal to maxTimeoutSeconds");
   });
 });
 
