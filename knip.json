@@ -9,6 +9,10 @@
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
+    "extensions/bash-timeout-guard": {
+      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
     "extensions/preset": {
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
