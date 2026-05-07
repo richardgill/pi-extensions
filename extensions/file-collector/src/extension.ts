@@ -48,7 +48,7 @@ export type BashShimCommand = {
 };
 
 export type FileCollectorOptions = {
-  sidecarFilenameSuffix?: string;
+  filenameSuffix?: string;
   collectReadTool?: boolean;
   collectWriteTool?: boolean;
   collectEditTool?: boolean;
@@ -64,7 +64,7 @@ export type FileCollectorOptions = {
 type ResolvedOptions = Required<
   Pick<
     FileCollectorOptions,
-    | "sidecarFilenameSuffix"
+    | "filenameSuffix"
     | "collectReadTool"
     | "collectWriteTool"
     | "collectEditTool"
@@ -177,7 +177,7 @@ const DEFAULT_BASH_SHIM_COMMANDS: BashShimCommand[] = [
 ];
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
-  sidecarFilenameSuffix: "file-line-events.jsonl",
+  filenameSuffix: "file-line-events.jsonl",
   collectReadTool: true,
   collectWriteTool: true,
   collectEditTool: true,
@@ -329,19 +329,14 @@ const createFileLineEvent = (
   };
 };
 
-export const createSessionSidecarPath = (
-  sessionFile: string,
-  sidecarFilenameSuffix: string,
-): string => {
+export const createSessionSidecarPath = (sessionFile: string, filenameSuffix: string): string => {
   const parsed = path.parse(sessionFile);
-  return path.join(parsed.dir, `${parsed.name}-${sidecarFilenameSuffix}`);
+  return path.join(parsed.dir, `${parsed.name}-${filenameSuffix}`);
 };
 
 const getSidecarPath = (ctx: ExtensionContext, options: ResolvedOptions): string | undefined => {
   const sessionFile = ctx.sessionManager.getSessionFile();
-  return sessionFile
-    ? createSessionSidecarPath(sessionFile, options.sidecarFilenameSuffix)
-    : undefined;
+  return sessionFile ? createSessionSidecarPath(sessionFile, options.filenameSuffix) : undefined;
 };
 
 const writeSidecarEvent = async (
@@ -586,11 +581,10 @@ const createReferenceEvents = (
   references: FileReference[],
   ctx: ExtensionContext,
   metadata: EventMetadata = {},
+  { requireExistingFile = false }: { requireExistingFile?: boolean } = {},
 ): FileLineEvent[] =>
   references
-    .filter((reference) =>
-      source === "bash_output" ? isExistingFileReference(reference.path, ctx.cwd) : true,
-    )
+    .filter((reference) => !requireExistingFile || isExistingFileReference(reference.path, ctx.cwd))
     .map((reference) => createFileLineEvent(source, reference, ctx, metadata));
 
 const createBashShimPath = (toolCallId: string): string =>
@@ -662,15 +656,6 @@ const buildBashCommandEvents = (
       }),
     ];
   });
-
-const createBashOutputEvents = (
-  references: FileReference[],
-  ctx: ExtensionContext,
-  metadata: EventMetadata = {},
-): FileLineEvent[] =>
-  references
-    .filter((reference) => isExistingFileReference(reference.path, ctx.cwd))
-    .map((reference) => createFileLineEvent("bash_output", reference, ctx, metadata));
 
 const registerSystemPromptAppender = (options: ResolvedOptions, pi: ExtensionAPI): void => {
   const append = options.appendSystemPrompt.trim();
@@ -751,10 +736,16 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
       );
       await recordEvents(
         ctx,
-        createBashOutputEvents(references, ctx, {
-          toolCallId: event.toolCallId,
-          rawCommand: shim?.command,
-        }),
+        createReferenceEvents(
+          "bash_output",
+          references,
+          ctx,
+          {
+            toolCallId: event.toolCallId,
+            rawCommand: shim?.command,
+          },
+          { requireExistingFile: true },
+        ),
         options,
       );
     }
