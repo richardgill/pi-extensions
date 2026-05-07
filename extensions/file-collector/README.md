@@ -16,7 +16,7 @@ Create `file-collector.jsonc` in your pi agent config folder:
 
 ```jsonc
 {
-  "sidecarFilename": "file-line-events.jsonl",
+  "filenameSuffix": "file-line-events.jsonl",
 
   "collectReadTool": true,
   "collectWriteTool": true,

@@ -1,7 +1,6 @@
 {
   "name": "@richardgill/pi-file-collector",
   "version": "0.0.5",
-  "private": true,
   "keywords": [
     "pi-package"
   ],
