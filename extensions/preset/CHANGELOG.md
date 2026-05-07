@@ -1,5 +1,12 @@
 # @richardgill/pi-preset
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [[`43f9a8c`](https://github.com/richardgill/pi-extensions/commit/43f9a8c69fd729f02b35ebf2a86474bf618cc8ce)]:
+  - @richardgill/pi-config@0.0.5
+
 ## 0.0.4
 
 ### Patch Changes
