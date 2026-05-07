@@ -9,3 +9,6 @@
 - [`@richardgill/pi-sub-pi`](./extensions/sub-pi/README.md)
 - [`@richardgill/pi-sub-pi-skill`](./extensions/sub-pi-skill/README.md)
 
+## Packages
+
+- [`@richardgill/pi-config`](./packages/pi-config)

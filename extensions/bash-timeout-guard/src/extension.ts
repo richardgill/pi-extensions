@@ -78,13 +78,8 @@ export const normalizeBashTimeout = (
   return Math.min(assertWholeSeconds("bash timeout", timeout), config.maxTimeoutSeconds);
 };
 
-export const renderPromptTemplate = (template: string, config: BashTimeoutGuardConfig): string =>
-  template
-    .replaceAll("{{defaultTimeoutSeconds}}", String(config.defaultTimeoutSeconds))
-    .replaceAll("{{maxTimeoutSeconds}}", String(config.maxTimeoutSeconds));
-
 export const createBashPromptMetadata = (config: BashTimeoutGuardConfig): BashPromptMetadata => {
-  const extraPrompt = renderPromptTemplate(config.prompt, config).trim();
+  const extraPrompt = config.prompt.trim();
   const promptGuidelines = [
     `Use bash only for short-lived, non-interactive shell commands; pi-bash-timeout-guard applies a ${config.defaultTimeoutSeconds} second default timeout when bash timeout is omitted.`,
     `Bash timeout values must be positive whole seconds and are clamped to a maximum of ${config.maxTimeoutSeconds} seconds.`,

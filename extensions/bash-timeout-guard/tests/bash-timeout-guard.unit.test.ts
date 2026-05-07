@@ -10,7 +10,6 @@ import {
   DEFAULT_TIMEOUT_SECONDS,
   MAX_TIMEOUT_SECONDS,
   normalizeBashTimeout,
-  renderPromptTemplate,
   type BashToolFactory,
 } from "../src/extension.js";
 
@@ -54,23 +53,13 @@ describe("normalizeBashTimeout", () => {
   });
 });
 
-describe("prompt templating", () => {
-  it("renders configured timeout placeholders", () => {
-    expect(
-      renderPromptTemplate("bash max is {{maxTimeoutSeconds}}s", {
-        defaultTimeoutSeconds: 10,
-        maxTimeoutSeconds: 20,
-        prompt: "",
-      }),
-    ).toBe("bash max is 20s");
-  });
-
+describe("prompt metadata", () => {
   it("adds configured prompt to bash guidelines", () => {
     expect(
       createBashPromptMetadata({
         defaultTimeoutSeconds: 10,
         maxTimeoutSeconds: 20,
-        prompt: "Do not set bash timeout above {{maxTimeoutSeconds}} seconds.",
+        prompt: "Do not set bash timeout above 20 seconds.",
       }).promptGuidelines,
     ).toContain("Do not set bash timeout above 20 seconds.");
   });

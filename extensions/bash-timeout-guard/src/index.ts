@@ -1,4 +1,4 @@
-import { loadConfigOrDefault } from "@richardgill/pi-config";
+import { loadConfigOrDefault, templatedString } from "@richardgill/pi-config";
 import { z } from "zod";
 import { bashTimeoutGuard, DEFAULT_OPTIONS } from "pi-bash-timeout-guard";
 
@@ -6,7 +6,9 @@ const ConfigSchema = z
   .object({
     defaultTimeoutSeconds: z.number().int().positive().optional(),
     maxTimeoutSeconds: z.number().int().positive().optional(),
-    prompt: z.string().optional(),
+    prompt: templatedString({
+      variables: ["defaultTimeoutSeconds", "maxTimeoutSeconds"],
+    }).optional(),
   })
   .refine(
     (config) =>
