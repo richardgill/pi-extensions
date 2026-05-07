@@ -1,5 +1,11 @@
 # @richardgill/pi-file-collector
 
+## 0.0.6
+
+### Patch Changes
+
+- [#13](https://github.com/richardgill/pi-extensions/pull/13) [`fe618ba`](https://github.com/richardgill/pi-extensions/commit/fe618ba947a42d3fc1fb8d5787d607a7cd6d28ad) Thanks [@richardgill](https://github.com/richardgill)! - Publish the file collector package.
+
 ## 0.0.5
 
 ### Patch Changes
