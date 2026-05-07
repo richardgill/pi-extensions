@@ -4,46 +4,36 @@ import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { z } from "zod";
 
-export type LoadConfigOptions<Schema extends z.ZodType> = {
+type LoadConfigOptions<Schema extends z.ZodType> = {
   folder?: string;
   filename: string;
   schema: Schema;
   renderTemplates?: boolean;
 };
 
-export type LoadConfigOrDefaultOptions<Schema extends z.ZodType> = LoadConfigOptions<Schema> & {
+type LoadConfigOrDefaultOptions<Schema extends z.ZodType> = LoadConfigOptions<Schema> & {
   defaults: unknown;
 };
 
-export type DefaultsInput<Options> = Options extends unknown[]
+type DefaultsInput<Options> = Options extends unknown[]
   ? Options
   : Options extends object
     ? { [Key in keyof Options]?: DefaultsInput<Options[Key]> }
     : Options;
 
-export type TemplateMissingBehavior = "keep" | "throw";
+type TemplateMissingBehavior = "keep" | "throw";
 
-export type TemplateStringOptions = {
+type TemplateStringOptions = {
   variables: string[];
   missing?: TemplateMissingBehavior;
 };
 
-export type RenderConfigTemplateOptions = TemplateStringOptions & {
+type RenderConfigTemplateOptions = TemplateStringOptions & {
   fieldPath?: string;
 };
 
 type TemplateMetadata = {
   piConfigTemplate?: TemplateStringOptions;
-};
-
-export const loadConfig = <Schema extends z.ZodType>({
-  folder = getAgentDir(),
-  filename,
-  schema,
-  renderTemplates = true,
-}: LoadConfigOptions<Schema>): z.infer<Schema> => {
-  const filePath = path.resolve(folder, filename);
-  return loadConfigFile(filePath, schema, renderTemplates);
 };
 
 export const loadConfigOrDefault = <Schema extends z.ZodType>({
@@ -68,7 +58,7 @@ export const templatedString = (options: TemplateStringOptions): z.ZodString =>
     piConfigTemplate: { ...options, variables: [...options.variables] },
   });
 
-export const renderConfigTemplate = (
+const renderConfigTemplate = (
   template: string,
   values: Record<string, unknown>,
   options: RenderConfigTemplateOptions,
@@ -79,14 +69,8 @@ export const renderConfigTemplate = (
   );
 };
 
-export const renderSchemaTemplates = <Value>(schema: z.ZodType, value: Value): Value =>
+const renderSchemaTemplates = <Value>(schema: z.ZodType, value: Value): Value =>
   renderSchemaValue(schema, value, value, "config") as Value;
-
-const loadConfigFile = <Schema extends z.ZodType>(
-  filePath: string,
-  schema: Schema,
-  renderTemplates: boolean,
-): z.infer<Schema> => parseConfig(filePath, schema, readConfigValue(filePath), renderTemplates);
 
 const readConfigValue = (filePath: string): unknown => {
   const content = readConfigFile(filePath);

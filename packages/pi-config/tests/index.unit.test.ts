@@ -3,13 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import {
-  loadConfig,
-  loadConfigOrDefault,
-  renderConfigTemplate,
-  resolveOptions,
-  templatedString,
-} from "../src/index.js";
+import { loadConfigOrDefault, resolveOptions, templatedString } from "../src/index.js";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
@@ -43,102 +37,102 @@ describe("resolveOptions", () => {
   });
 });
 
-describe("renderConfigTemplate", () => {
+describe("templatedString", () => {
   it("renders declared variables", () => {
+    const folder = createTempDir();
+    const schema = z.object({
+      defaultTimeoutSeconds: z.number(),
+      maxTimeoutSeconds: z.number(),
+      prompt: templatedString({ variables: ["defaultTimeoutSeconds", "maxTimeoutSeconds"] }),
+    });
+    writeConfig(
+      folder,
+      "template.json",
+      '{ "defaultTimeoutSeconds": 10, "maxTimeoutSeconds": 20, "prompt": "default {{ defaultTimeoutSeconds }}s, max {{maxTimeoutSeconds}}s" }',
+    );
+
     expect(
-      renderConfigTemplate(
-        "default {{ defaultTimeoutSeconds }}s, max {{maxTimeoutSeconds}}s",
-        {
-          defaultTimeoutSeconds: 10,
-          maxTimeoutSeconds: 20,
-        },
-        {
-          variables: ["defaultTimeoutSeconds", "maxTimeoutSeconds"],
-        },
-      ),
-    ).toBe("default 10s, max 20s");
+      loadConfigOrDefault({ folder, filename: "template.json", schema, defaults: {} }),
+    ).toEqual({
+      defaultTimeoutSeconds: 10,
+      maxTimeoutSeconds: 20,
+      prompt: "default 10s, max 20s",
+    });
   });
 
   it("rejects undeclared variables", () => {
+    const folder = createTempDir();
+    const schema = z.object({ prompt: templatedString({ variables: ["maxTimeoutSeconds"] }) });
+    writeConfig(folder, "unknown-template.json", '{ "prompt": "max {{timeoutMax}}s" }');
+
     expect(() =>
-      renderConfigTemplate(
-        "max {{timeoutMax}}s",
-        { timeoutMax: 20 },
-        {
-          fieldPath: "config.prompt",
-          variables: ["maxTimeoutSeconds"],
-        },
-      ),
+      loadConfigOrDefault({ folder, filename: "unknown-template.json", schema, defaults: {} }),
     ).toThrow('config.prompt uses unknown template variable "timeoutMax"');
   });
 
   it("rejects missing variables by default", () => {
+    const folder = createTempDir();
+    const schema = z.object({ prompt: templatedString({ variables: ["maxTimeoutSeconds"] }) });
+    writeConfig(folder, "missing-template.json", '{ "prompt": "max {{maxTimeoutSeconds}}s" }');
+
     expect(() =>
-      renderConfigTemplate(
-        "max {{maxTimeoutSeconds}}s",
-        {},
-        {
-          fieldPath: "config.prompt",
-          variables: ["maxTimeoutSeconds"],
-        },
-      ),
+      loadConfigOrDefault({ folder, filename: "missing-template.json", schema, defaults: {} }),
     ).toThrow('config.prompt uses missing template variable "maxTimeoutSeconds"');
   });
 
   it("keeps missing variables when configured", () => {
+    const folder = createTempDir();
+    const schema = z.object({
+      prompt: templatedString({ missing: "keep", variables: ["maxTimeoutSeconds"] }),
+    });
+    writeConfig(folder, "keep-template.json", '{ "prompt": "max {{maxTimeoutSeconds}}s" }');
+
     expect(
-      renderConfigTemplate(
-        "max {{maxTimeoutSeconds}}s",
-        {},
-        {
-          missing: "keep",
-          variables: ["maxTimeoutSeconds"],
-        },
-      ),
-    ).toBe("max {{maxTimeoutSeconds}}s");
+      loadConfigOrDefault({ folder, filename: "keep-template.json", schema, defaults: {} }),
+    ).toEqual({
+      prompt: "max {{maxTimeoutSeconds}}s",
+    });
   });
 
   it("rejects malformed templates", () => {
+    const folder = createTempDir();
+    const schema = z.object({ prompt: templatedString({ variables: ["maxTimeoutSeconds"] }) });
+    writeConfig(folder, "malformed-template.json", '{ "prompt": "max {{maxTimeoutSeconds}s" }');
+
     expect(() =>
-      renderConfigTemplate(
-        "max {{maxTimeoutSeconds}s",
-        { maxTimeoutSeconds: 20 },
-        {
-          fieldPath: "config.prompt",
-          variables: ["maxTimeoutSeconds"],
-        },
-      ),
+      loadConfigOrDefault({ folder, filename: "malformed-template.json", schema, defaults: {} }),
     ).toThrow('config.prompt has unclosed template open "{{"');
   });
 
   it("rejects triple-brace templates", () => {
+    const folder = createTempDir();
+    const schema = z.object({ prompt: templatedString({ variables: ["maxTimeoutSeconds"] }) });
+    writeConfig(folder, "triple-template.json", '{ "prompt": "max {{{maxTimeoutSeconds}}}" }');
+
     expect(() =>
-      renderConfigTemplate(
-        "max {{{maxTimeoutSeconds}}}",
-        { maxTimeoutSeconds: 20 },
-        {
-          fieldPath: "config.prompt",
-          variables: ["maxTimeoutSeconds"],
-        },
-      ),
+      loadConfigOrDefault({ folder, filename: "triple-template.json", schema, defaults: {} }),
     ).toThrow("config.prompt has a malformed template variable");
   });
 
   it("rejects unsupported variable value types", () => {
+    const folder = createTempDir();
+    const schema = z.object({
+      limits: z.object({ max: z.number() }),
+      prompt: templatedString({ variables: ["limits"] }),
+    });
+    writeConfig(
+      folder,
+      "object-template.json",
+      '{ "limits": { "max": 20 }, "prompt": "limits {{limits}}" }',
+    );
+
     expect(() =>
-      renderConfigTemplate(
-        "limits {{limits}}",
-        { limits: { max: 20 } },
-        {
-          fieldPath: "config.prompt",
-          variables: ["limits"],
-        },
-      ),
+      loadConfigOrDefault({ folder, filename: "object-template.json", schema, defaults: {} }),
     ).toThrow('config.prompt uses unsupported template value "limits"');
   });
 });
 
-describe("loadConfig", () => {
+describe("loadConfigOrDefault", () => {
   it("loads JSONC and returns the schema output type", () => {
     const folder = createTempDir();
     const schema = z.object({ enabled: z.boolean(), names: z.array(z.string()) });
@@ -148,7 +142,7 @@ describe("loadConfig", () => {
       '{\n  // comment\n  "enabled": true,\n  "names": ["a", "b"],\n}\n',
     );
 
-    const config = loadConfig({ folder, filename: "example.json", schema });
+    const config = loadConfigOrDefault({ folder, filename: "example.json", schema, defaults: {} });
 
     expect(config).toEqual({ enabled: true, names: ["a", "b"] });
   });
@@ -159,7 +153,9 @@ describe("loadConfig", () => {
     const schema = z.object({ value: z.string() });
     writeConfig(folder, "default.json", '{ "value": "from-agent-dir" }');
 
-    expect(loadConfig({ filename: "default.json", schema })).toEqual({ value: "from-agent-dir" });
+    expect(loadConfigOrDefault({ filename: "default.json", schema, defaults: {} })).toEqual({
+      value: "from-agent-dir",
+    });
   });
 
   it("throws with the config path for invalid JSONC", () => {
@@ -167,9 +163,9 @@ describe("loadConfig", () => {
     const schema = z.object({ value: z.string() });
     writeConfig(folder, "broken.json", '{ "value": }');
 
-    expect(() => loadConfig({ folder, filename: "broken.json", schema })).toThrow(
-      /Invalid JSONC .*broken\.json:1:/,
-    );
+    expect(() =>
+      loadConfigOrDefault({ folder, filename: "broken.json", schema, defaults: {} }),
+    ).toThrow(/Invalid JSONC .*broken\.json:1:/);
   });
 
   it("throws with the config path for schema errors", () => {
@@ -177,9 +173,9 @@ describe("loadConfig", () => {
     const schema = z.object({ value: z.string() });
     writeConfig(folder, "invalid.json", '{ "value": 123 }');
 
-    expect(() => loadConfig({ folder, filename: "invalid.json", schema })).toThrow(
-      /Invalid config .*invalid\.json/,
-    );
+    expect(() =>
+      loadConfigOrDefault({ folder, filename: "invalid.json", schema, defaults: {} }),
+    ).toThrow(/Invalid config .*invalid\.json/);
   });
 
   it("uses defaults when optional config is missing", () => {
@@ -248,10 +244,11 @@ describe("loadConfig", () => {
     writeConfig(folder, "template-default.json", '{ "value": 2, "prompt": "value {{value}}" }');
 
     expect(
-      loadConfig({
+      loadConfigOrDefault({
         folder,
         filename: "template-default.json",
         schema,
+        defaults: {},
       }),
     ).toEqual({ value: 2, prompt: "value 2" });
   });
@@ -265,10 +262,11 @@ describe("loadConfig", () => {
     writeConfig(folder, "template-disabled.json", '{ "value": 2, "prompt": "value {{value}}" }');
 
     expect(
-      loadConfig({
+      loadConfigOrDefault({
         folder,
         filename: "template-disabled.json",
         schema,
+        defaults: {},
         renderTemplates: false,
       }),
     ).toEqual({ value: 2, prompt: "value {{value}}" });
@@ -283,10 +281,11 @@ describe("loadConfig", () => {
     writeConfig(folder, "optional-template.json", '{ "value": 2, "prompt": "value {{value}}" }');
 
     expect(
-      loadConfig({
+      loadConfigOrDefault({
         folder,
         filename: "optional-template.json",
         schema,
+        defaults: {},
         renderTemplates: true,
       }),
     ).toEqual({ value: 2, prompt: "value 2" });
@@ -305,10 +304,11 @@ describe("loadConfig", () => {
     );
 
     expect(() =>
-      loadConfig({
+      loadConfigOrDefault({
         folder,
         filename: "invalid-rendered-template.json",
         schema,
+        defaults: {},
       }),
     ).toThrow(/Invalid config .*invalid-rendered-template\.json/);
   });
@@ -326,10 +326,11 @@ describe("loadConfig", () => {
     writeConfig(folder, "transform-template.json", '{ "value": "x", "prompt": "{{value}}" }');
 
     expect(
-      loadConfig({
+      loadConfigOrDefault({
         folder,
         filename: "transform-template.json",
         schema,
+        defaults: {},
       }),
     ).toEqual({ value: "x", prompt: "x" });
     expect(transformCount).toBe(1);
