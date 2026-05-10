@@ -1,0 +1,39 @@
+{
+  "name": "@richardgill/pi-task-context",
+  "version": "0.0.1",
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/task-context",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/task-context"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/extension.ts"
+  },
+  "scripts": {
+    "tsc": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@richardgill/pi-config": "workspace:*",
+    "@richardgill/pi-file-collector": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

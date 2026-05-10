@@ -61,6 +61,12 @@ export type FileCollectorOptions = {
   bashShimCommands?: BashShimCommand[];
 };
 
+export type FileCollectorQueryOptions = {
+  filenameSuffix?: string;
+  sources?: FileLineEventSource[];
+  dedupe?: boolean;
+};
+
 type ResolvedOptions = Required<
   Pick<
     FileCollectorOptions,
@@ -96,6 +102,7 @@ export type FileLineEvent = {
   display: string;
   detail?: string;
   previewTitle: string;
+  turnIndex?: number;
   toolCallId?: string;
   command?: string;
   rawCommand?: string;
@@ -119,7 +126,7 @@ type BashShimRecord = {
 };
 
 type EventMetadata = Partial<
-  Pick<FileLineEvent, "toolCallId" | "command" | "rawCommand" | "timestamp">
+  Pick<FileLineEvent, "turnIndex" | "toolCallId" | "command" | "rawCommand" | "timestamp">
 >;
 
 const BASH_SHIM_PARSER_PATH = fileURLToPath(new URL("./bash-shim-parser.cjs", import.meta.url));
@@ -339,6 +346,47 @@ const getSidecarPath = (ctx: ExtensionContext, options: ResolvedOptions): string
   return sessionFile ? createSessionSidecarPath(sessionFile, options.filenameSuffix) : undefined;
 };
 
+const pendingSidecarWrites = new Map<string, Promise<void>[]>();
+
+const getPendingWriteKey = (sidecarPath: string, turnIndex: number): string =>
+  `${sidecarPath}\0${turnIndex}`;
+
+const removePendingWrite = (key: string, write: Promise<void>): void => {
+  const writes = pendingSidecarWrites.get(key)?.filter((item) => item !== write) ?? [];
+  if (writes.length === 0) {
+    pendingSidecarWrites.delete(key);
+    return;
+  }
+
+  pendingSidecarWrites.set(key, writes);
+};
+
+const trackSidecarWrite = (
+  sidecarPath: string | undefined,
+  record: FileLineEvent,
+  write: Promise<void>,
+): Promise<void> => {
+  if (!sidecarPath || record.turnIndex === undefined) {
+    return write;
+  }
+
+  const key = getPendingWriteKey(sidecarPath, record.turnIndex);
+  const tracked = write.finally(() => removePendingWrite(key, tracked));
+  pendingSidecarWrites.set(key, [...(pendingSidecarWrites.get(key) ?? []), tracked]);
+  return tracked;
+};
+
+const waitForPendingWrites = async (
+  sidecarPath: string | undefined,
+  turnIndex: number,
+): Promise<void> => {
+  if (!sidecarPath) {
+    return;
+  }
+
+  await Promise.all(pendingSidecarWrites.get(getPendingWriteKey(sidecarPath, turnIndex)) ?? []);
+};
+
 const writeSidecarEvent = async (
   sidecarPath: string | undefined,
   record: FileLineEvent,
@@ -357,7 +405,7 @@ const appendRecordEvent = async (
   sidecarPath: string | undefined,
   record: FileLineEvent,
 ): Promise<void> => {
-  await writeSidecarEvent(sidecarPath, record);
+  await trackSidecarWrite(sidecarPath, record, writeSidecarEvent(sidecarPath, record));
 };
 
 const recordEvent = async (
@@ -379,6 +427,70 @@ const recordEvents = async (
     await appendRecordEvent(sidecarPath, record);
   }
 };
+
+const parseSidecarEvents = (content: string): FileLineEvent[] =>
+  content
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as FileLineEvent];
+      } catch {
+        return [];
+      }
+    });
+
+const getDedupeKey = (event: FileLineEvent): string =>
+  [event.source, event.path, event.startLine ?? "", event.endLine ?? "", event.detail ?? ""].join(
+    "\0",
+  );
+
+const dedupeEvents = (events: FileLineEvent[]): FileLineEvent[] => {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    const key = getDedupeKey(event);
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+};
+
+export const collectFileEventsForTurnFromSessionFile = async (
+  sessionFile: string | undefined,
+  turnIndex: number,
+  options: FileCollectorQueryOptions = {},
+): Promise<FileLineEvent[]> => {
+  const resolved = resolveOptions({ filenameSuffix: options.filenameSuffix });
+  const sidecarPath = sessionFile
+    ? createSessionSidecarPath(sessionFile, resolved.filenameSuffix)
+    : undefined;
+  await waitForPendingWrites(sidecarPath, turnIndex);
+
+  if (!sidecarPath) {
+    return [];
+  }
+
+  try {
+    const content = await readFile(sidecarPath, "utf8");
+    const events = parseSidecarEvents(content).filter((event) => event.turnIndex === turnIndex);
+    const sourceFiltered = options.sources
+      ? events.filter((event) => options.sources?.includes(event.source))
+      : events;
+    return options.dedupe ? dedupeEvents(sourceFiltered) : sourceFiltered;
+  } catch {
+    return [];
+  }
+};
+
+export const collectFileEventsForTurn = async (
+  ctx: ExtensionContext,
+  turnIndex: number,
+  options: FileCollectorQueryOptions = {},
+): Promise<FileLineEvent[]> =>
+  collectFileEventsForTurnFromSessionFile(ctx.sessionManager.getSessionFile(), turnIndex, options);
 
 const extractTextContent = (content: unknown): string => {
   if (typeof content === "string") {
@@ -524,6 +636,7 @@ const buildReadToolEvent = (
     toolCallId?: string;
   },
   ctx: ExtensionContext,
+  metadata: EventMetadata = {},
 ) => {
   const targetPath = event.input.path;
   if (typeof targetPath !== "string") {
@@ -533,6 +646,7 @@ const buildReadToolEvent = (
   const text = extractTextContent(event.content);
   const range = extractReadToolRange(text, event.input.offset, event.input.limit);
   return createFileLineEvent("read_tool", { path: targetPath, ...range }, ctx, {
+    ...metadata,
     toolCallId: event.toolCallId,
   });
 };
@@ -540,6 +654,7 @@ const buildReadToolEvent = (
 const buildWriteToolEvent = (
   event: { input: Record<string, unknown>; toolCallId?: string },
   ctx: ExtensionContext,
+  metadata: EventMetadata = {},
 ) => {
   const targetPath = event.input.path;
   const content = event.input.content;
@@ -551,7 +666,7 @@ const buildWriteToolEvent = (
     "write_tool",
     { path: targetPath, ...extractWriteToolRange(content) },
     ctx,
-    { toolCallId: event.toolCallId },
+    { ...metadata, toolCallId: event.toolCallId },
   );
 };
 
@@ -562,6 +677,7 @@ const buildEditToolEvent = (
     toolCallId?: string;
   },
   ctx: ExtensionContext,
+  metadata: EventMetadata = {},
 ) => {
   const targetPath = event.input.path;
   if (typeof targetPath !== "string") {
@@ -572,7 +688,7 @@ const buildEditToolEvent = (
     "edit_tool",
     { path: targetPath, ...extractEditToolRange(event.details) },
     ctx,
-    { toolCallId: event.toolCallId },
+    { ...metadata, toolCallId: event.toolCallId },
   );
 };
 
@@ -630,6 +746,7 @@ const buildBashCommandEvents = (
   ctx: ExtensionContext,
   toolCallId: string,
   fallbackCommand: string,
+  metadata: EventMetadata = {},
 ): FileLineEvent[] =>
   records.flatMap((record) => {
     if (typeof record.path !== "string" || !record.path) {
@@ -649,6 +766,7 @@ const buildBashCommandEvents = (
 
     return [
       createFileLineEvent("bash_command", reference, ctx, {
+        ...metadata,
         toolCallId,
         command: record.command ?? getExecutableName(fallbackCommand),
         rawCommand: fallbackCommand,
@@ -670,6 +788,11 @@ const registerSystemPromptAppender = (options: ResolvedOptions, pi: ExtensionAPI
 
 const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void => {
   const bashShimPaths = new Map<string, { path: string; command: string }>();
+  let currentTurnIndex: number | undefined;
+
+  pi.on("turn_start", async (event) => {
+    currentTurnIndex = event.turnIndex;
+  });
 
   pi.on("tool_call", async (event) => {
     if (!options.collectBashCommand || !isToolCallEventType("bash", event)) {
@@ -685,8 +808,10 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
   });
 
   pi.on("tool_result", async (event, ctx) => {
+    const metadata = { turnIndex: currentTurnIndex };
+
     if (options.collectReadTool && isReadToolResult(event) && !event.isError) {
-      const record = buildReadToolEvent(event, ctx);
+      const record = buildReadToolEvent(event, ctx, metadata);
       if (record) {
         await recordEvent(ctx, record, options);
       }
@@ -694,7 +819,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     }
 
     if (options.collectWriteTool && isWriteToolResult(event) && !event.isError) {
-      const record = buildWriteToolEvent(event, ctx);
+      const record = buildWriteToolEvent(event, ctx, metadata);
       if (record) {
         await recordEvent(ctx, record, options);
       }
@@ -702,7 +827,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
     }
 
     if (options.collectEditTool && isEditToolResult(event) && !event.isError) {
-      const record = buildEditToolEvent(event, ctx);
+      const record = buildEditToolEvent(event, ctx, metadata);
       if (record) {
         await recordEvent(ctx, record, options);
       }
@@ -725,6 +850,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
         ctx,
         event.toolCallId,
         shim.command,
+        metadata,
       );
       await recordEvents(ctx, commandEvents, options);
     }
@@ -741,6 +867,7 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
           references,
           ctx,
           {
+            ...metadata,
             toolCallId: event.toolCallId,
             rawCommand: shim?.command,
           },
@@ -765,7 +892,11 @@ const registerCollectors = (options: ResolvedOptions, pi: ExtensionAPI): void =>
       extractTextContent(message.content),
       options.assistantCitationPatterns,
     );
-    await recordEvents(ctx, createReferenceEvents("assistant_output", references, ctx), options);
+    await recordEvents(
+      ctx,
+      createReferenceEvents("assistant_output", references, ctx, { turnIndex: currentTurnIndex }),
+      options,
+    );
   });
 };
 
