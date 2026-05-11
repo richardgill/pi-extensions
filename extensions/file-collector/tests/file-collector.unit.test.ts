@@ -1,6 +1,10 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  collectFileEventsForTurn,
   createSessionSidecarPath,
   extractAssistantReferences,
   extractBashOutputReferences,
@@ -256,5 +260,39 @@ describe("createSessionSidecarPath", () => {
         "file-line-events.jsonl",
       ),
     ).toBe("/sessions/2026-04-29T22-42-11-601Z_019ddb68-file-line-events.jsonl");
+  });
+});
+
+describe("collectFileEventsForTurn", () => {
+  it("reads, filters, and dedupes sidecar events for a turn", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-file-collector-test-"));
+    const sessionFile = path.join(dir, "session.jsonl");
+    const sidecarPath = createSessionSidecarPath(sessionFile, "file-line-events.jsonl");
+    const event = {
+      source: "read_tool",
+      path: "./a.ts",
+      absolutePath: path.join(dir, "a.ts"),
+      startLine: 1,
+      endLine: 2,
+      timestamp: "2026-05-09T12:00:00.000Z",
+      display: "read ./a.ts:1-2",
+      previewTitle: "read ./a.ts:1-2",
+      turnIndex: 3,
+    };
+    await writeFile(
+      sidecarPath,
+      [
+        JSON.stringify(event),
+        JSON.stringify(event),
+        JSON.stringify({ ...event, turnIndex: 2 }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const ctx = {
+      sessionManager: { getSessionFile: () => sessionFile },
+    } as never;
+
+    await expect(collectFileEventsForTurn(ctx, 3, { dedupe: true })).resolves.toEqual([event]);
   });
 });
