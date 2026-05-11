@@ -1,7 +1,12 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  TurnEndEvent,
+} from "@mariozechner/pi-coding-agent";
 import { createSessionSidecarPath } from "@richardgill/pi-file-collector";
 import { describe, expect, it, vi } from "vitest";
 
@@ -10,6 +15,7 @@ const completeSimpleMock = vi.hoisted(() => vi.fn());
 vi.mock("@mariozechner/pi-ai", () => ({ completeSimple: completeSimpleMock }));
 import {
   buildEvidencePacket,
+  buildTaskContextMarkdown,
   buildUpdaterSystemPrompt,
   prependSnapshot,
   readLatestSnapshot,
@@ -65,6 +71,10 @@ const turnEvent = (): TurnEndEvent =>
   }) as TurnEndEvent;
 
 type RegisteredHandlers = {
+  before_agent_start?: (
+    event: { systemPrompt: string },
+    ctx: ExtensionContext,
+  ) => Promise<{ systemPrompt: string } | void> | { systemPrompt: string } | void;
   turn_start?: (event: { turnIndex: number }, ctx: ExtensionContext) => Promise<void> | void;
   turn_end?: (event: TurnEndEvent, ctx: ExtensionContext) => Promise<void> | void;
 };
@@ -73,6 +83,9 @@ const createPi = () => {
   const handlers: RegisteredHandlers = {};
   const pi = {
     on: vi.fn((event: string, handler: unknown) => {
+      if (event === "before_agent_start") {
+        handlers.before_agent_start = handler as RegisteredHandlers["before_agent_start"];
+      }
       if (event === "turn_start") {
         handlers.turn_start = handler as RegisteredHandlers["turn_start"];
       }
@@ -80,6 +93,8 @@ const createPi = () => {
         handlers.turn_end = handler as RegisteredHandlers["turn_end"];
       }
     }),
+    registerCommand: vi.fn(),
+    sendMessage: vi.fn(),
   } as unknown as ExtensionAPI;
   return { pi, handlers };
 };
@@ -471,7 +486,185 @@ describe("buildEvidencePacket", () => {
   });
 });
 
+describe("buildTaskContextMarkdown", () => {
+  it("includes the snapshot, relevant file references, and custom command output", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const options = resolveOptions({
+      outputPath: "./task-context.jsonl",
+      customCommands: [{ command: "bash", args: ["./custom-command.sh"], title: "custom" }],
+    });
+    await writeFile(path.join(dir, "whole.ts"), "export const whole = true;\n");
+    await writeFile(path.join(dir, "range.ts"), "one\ntwo\nthree\nfour\n");
+    await writeFile(
+      path.join(dir, "custom-command.sh"),
+      "#!/usr/bin/env bash\necho custom-output\necho custom-error >&2\n",
+    );
+    await writeFile(
+      path.join(dir, "task-context.json"),
+      `${JSON.stringify(
+        {
+          ...snapshot("Markdown"),
+          relevantFiles: [
+            {
+              path: "./whole.ts",
+              role: "implementation",
+              whyImportant: "Whole file matters.",
+              type: "whole_file",
+            },
+            {
+              path: "./range.ts",
+              role: "reference",
+              whyImportant: "Range matters.",
+              type: "range",
+              ranges: [
+                { start: 2, end: 3 },
+                { start: 4, end: 4 },
+              ],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const markdown = await buildTaskContextMarkdown({ cwd: dir, options });
+
+    expect(markdown).toContain(
+      [
+        "# Task Context",
+        "",
+        "## Current Snapshot",
+        "",
+        "```json",
+        "{",
+        '  "title": "Markdown",',
+      ].join("\n"),
+    );
+    expect(markdown).toContain(
+      "- `./whole.ts` — implementation: Whole file matters.\n- `./range.ts:2-3, ./range.ts:4-4` — reference: Range matters.",
+    );
+    expect(markdown).not.toContain("## Loaded File Contents");
+    expect(markdown).not.toContain("export const whole = true;");
+    expect(markdown).not.toContain("two\nthree");
+    expect(markdown).toContain("- Ran `bash ./custom-command.sh` and loaded its output.");
+    expect(markdown).toContain("### custom");
+    expect(markdown).toContain("custom-output");
+    expect(markdown).toContain("custom-error");
+  });
+
+  it("includes custom command failures without failing markdown generation", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const options = resolveOptions({
+      outputPath: "./task-context.jsonl",
+      customCommands: [
+        { command: "bash", args: ["-c", "echo nope >&2; exit 7"], title: "failing command" },
+      ],
+    });
+    await writeFile(
+      path.join(dir, "task-context.json"),
+      `${JSON.stringify(snapshot("Markdown"))}\n`,
+    );
+
+    const markdown = await buildTaskContextMarkdown({ cwd: dir, options });
+
+    expect(markdown).toContain("### failing command");
+    expect(markdown).toContain("Exit code: 7");
+    expect(markdown).toContain("nope");
+  });
+
+  it("prefers the current snapshot over JSONL history", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const options = resolveOptions({ outputPath: "./task-context.jsonl" });
+    await writeFile(
+      path.join(dir, "task-context.jsonl"),
+      `${JSON.stringify(snapshot("History"))}\n`,
+    );
+    await writeFile(
+      path.join(dir, "task-context.json"),
+      `${JSON.stringify(snapshot("Current"))}\n`,
+    );
+
+    const markdown = await buildTaskContextMarkdown({ cwd: dir, options });
+
+    expect(markdown).toContain('"title": "Current"');
+    expect(markdown).not.toContain('"title": "History"');
+  });
+
+  it("falls back to JSONL history when current snapshots are disabled", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const options = resolveOptions({
+      outputPath: "./task-context.jsonl",
+      currentOutputPath: false,
+    });
+    await writeFile(
+      path.join(dir, "task-context.jsonl"),
+      `${JSON.stringify(snapshot("History"))}\n`,
+    );
+    await writeFile(
+      path.join(dir, "task-context.json"),
+      `${JSON.stringify(snapshot("Current"))}\n`,
+    );
+
+    const markdown = await buildTaskContextMarkdown({ cwd: dir, options });
+
+    expect(markdown).toContain('"title": "History"');
+    expect(markdown).not.toContain('"title": "Current"');
+  });
+
+  it("truncates custom command stdout and stderr independently", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const options = resolveOptions({
+      outputPath: "./task-context.jsonl",
+      customCommands: [
+        {
+          command: "bash",
+          args: ["-c", "printf abcdefghij; printf klmnopqrst >&2"],
+          title: "truncated command",
+          maxOutputChars: 4,
+        },
+      ],
+    });
+    await writeFile(
+      path.join(dir, "task-context.json"),
+      `${JSON.stringify(snapshot("Truncate"))}\n`,
+    );
+
+    const markdown = await buildTaskContextMarkdown({ cwd: dir, options });
+
+    expect(markdown).toContain("abcd\n[truncated 6 chars]");
+    expect(markdown).toContain("klmn\n[truncated 6 chars]");
+  });
+});
+
 describe("taskContext", () => {
+  it("registers task-context command and includes markdown in the next turn", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    await writeFile(
+      path.join(dir, "task-context.json"),
+      `${JSON.stringify(snapshot("Command"))}\n`,
+    );
+    const { pi, handlers } = createPi();
+    const ctx = createContext(dir, path.join(dir, "session.jsonl"));
+
+    taskContext({ outputPath: "./task-context.jsonl" })(pi);
+    const command = (pi.registerCommand as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]?.[1] as { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> };
+    await command.handler("", ctx as ExtensionCommandContext);
+    const sendCalls = (pi.sendMessage as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const result = await handlers.before_agent_start?.({ systemPrompt: "base" }, ctx);
+
+    expect(sendCalls[0]?.[0]).toMatchObject({
+      customType: "task-context-preview",
+      content: expect.stringContaining('"title": "Command"'),
+      display: true,
+    });
+    expect(result?.systemPrompt).toContain("base\n\n# Task Context");
+    expect(result?.systemPrompt).toContain('"title": "Command"');
+    await expect(
+      handlers.before_agent_start?.({ systemPrompt: "base" }, ctx),
+    ).resolves.toBeUndefined();
+  });
+
   it("registers turn handlers and writes snapshots from collected session file events", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
     const sessionFile = path.join(dir, "session.jsonl");

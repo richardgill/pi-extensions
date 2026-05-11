@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -7,13 +9,20 @@ import {
   type Message,
   type UserMessage,
 } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  TurnEndEvent,
+} from "@mariozechner/pi-coding-agent";
 import {
   collectFileEventsForTurnFromSessionFile,
   type FileLineEvent,
 } from "@richardgill/pi-file-collector";
 import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 import { z } from "zod";
+
+const execFileAsync = promisify(execFile);
 
 type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -23,11 +32,19 @@ export type TaskContextModelOptions = {
   thinkingLevel?: ThinkingLevel;
 };
 
+export type TaskContextCommandOptions = {
+  command: string;
+  args?: string[];
+  title?: string;
+  maxOutputChars?: number;
+};
+
 export type TaskContextOptions = {
   outputPath?: string;
   currentOutputPath?: string | false;
   maxSnapshots?: number;
   model?: TaskContextModelOptions;
+  customCommands?: TaskContextCommandOptions[];
   jsonShape?: string;
   updaterPrompt?: string;
   updateInstructions?: string;
@@ -114,6 +131,19 @@ type UpdateTaskContextJsonlInput = {
   completeSnapshot?: (evidence: EvidencePacket) => Promise<unknown>;
 };
 
+type TaskContextCommandInput = {
+  cwd: string;
+  options: ResolvedOptions;
+};
+
+type CustomCommandResult = {
+  config: TaskContextCommandOptions;
+  stdout: string;
+  stderr: string;
+  exitCode?: number;
+  error?: string;
+};
+
 const DEFAULT_JSON_SHAPE = JSON.stringify(
   {
     title: "",
@@ -158,6 +188,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   updaterPrompt: DEFAULT_UPDATER_PROMPT,
   updateInstructions:
     "Keep entries concise. Preserve useful existing context. Only include files that matter for resuming the task.",
+  customCommands: [],
   assistantTextMaxChars: 6000,
   toolResultContentMaxChars: 2000,
   maxToolResults: 20,
@@ -306,6 +337,32 @@ export const readLatestSnapshot = async (filePath: string): Promise<TaskContextS
   return parseStoredSnapshot(JSON.parse(firstLine));
 };
 
+const readSnapshotFile = async (filePath: string): Promise<TaskContextSnapshot | undefined> => {
+  try {
+    return parseStoredSnapshot(JSON.parse(await readFile(filePath, "utf8")));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
+const readCurrentOrLatestSnapshot = async ({
+  cwd,
+  options,
+}: TaskContextCommandInput): Promise<TaskContextSnapshot> => {
+  const outputPath = resolveOutputPath(options.outputPath, cwd);
+  const currentOutputPath = resolveCurrentOutputPath(
+    options.outputPath,
+    options.currentOutputPath,
+    cwd,
+  );
+  const current = currentOutputPath ? await readSnapshotFile(currentOutputPath) : undefined;
+  return current ?? readLatestSnapshot(outputPath);
+};
+
 const atomicWrite = async (filePath: string, content: string): Promise<void> => {
   await mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -404,6 +461,166 @@ export const buildEvidencePacket = (
   },
   fileEvents: buildFileEventsEvidence(fileEvents, options),
 });
+
+const getMarkdownFence = (content: string): string => (content.includes("```") ? "````" : "```");
+
+const getLanguage = (filePath: string): string => {
+  if (filePath === "shell") return "sh";
+  if (filePath === "txt") return "text";
+
+  const extension = path.extname(filePath).slice(1);
+  if (extension === "ts" || extension === "tsx") return "ts";
+  if (extension === "js" || extension === "jsx") return "js";
+  if (extension === "json" || extension === "jsonl" || extension === "jsonc") return "json";
+  if (extension === "md") return "md";
+  return "";
+};
+
+const formatCodeBlock = (filePath: string, content: string): string => {
+  const fence = getMarkdownFence(content);
+  return `${fence}${getLanguage(filePath)}\n${content}\n${fence}`;
+};
+
+const getRelevantFileLabel = (file: TaskContextSnapshot["relevantFiles"][number]): string => {
+  if (file.type === "whole_file") {
+    return file.path;
+  }
+
+  return file.ranges.map((range) => `${file.path}:${range.start}-${range.end}`).join(", ");
+};
+
+const formatRelevantFileLoaded = (file: TaskContextSnapshot["relevantFiles"][number]): string =>
+  `- \`${getRelevantFileLabel(file)}\` — ${file.role}: ${file.whyImportant}`;
+
+const truncateCommandOutput = (value: string, maxChars: number): string => {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}\n[truncated ${value.length - maxChars} chars]`;
+};
+
+const resolveCommandPath = (command: string): string =>
+  command.startsWith(`~${path.sep}`) ? path.join(os.homedir(), command.slice(2)) : command;
+
+const getCommandErrorCode = (error: unknown): number | undefined => {
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "number" ? code : undefined;
+};
+
+const runCustomCommand = async (
+  cwd: string,
+  config: TaskContextCommandOptions,
+): Promise<CustomCommandResult> => {
+  const maxOutputChars = config.maxOutputChars ?? 20000;
+  try {
+    const result = await execFileAsync(resolveCommandPath(config.command), config.args ?? [], {
+      cwd,
+      shell: false,
+      maxBuffer: 1024 * 1024 * 10,
+    });
+    return {
+      config,
+      stdout: truncateCommandOutput(result.stdout, maxOutputChars),
+      stderr: truncateCommandOutput(result.stderr, maxOutputChars),
+    };
+  } catch (error) {
+    const result = error as { stdout?: string; stderr?: string; message?: string };
+    return {
+      config,
+      stdout: truncateCommandOutput(result.stdout ?? "", maxOutputChars),
+      stderr: truncateCommandOutput(result.stderr ?? "", maxOutputChars),
+      exitCode: getCommandErrorCode(error),
+      error: result.message,
+    };
+  }
+};
+
+const formatCommandInvocation = (config: TaskContextCommandOptions): string =>
+  [config.command, ...(config.args ?? [])].join(" ");
+
+const getCommandLoadedText = (result: CustomCommandResult): string => {
+  const invocation = formatCommandInvocation(result.config);
+  const exit = result.exitCode === undefined ? "" : ` Exit code: ${result.exitCode}.`;
+  return `- Ran \`${invocation}\` and loaded its output.${exit}`;
+};
+
+const formatCustomCommandOutput = (result: CustomCommandResult): string => {
+  const title = result.config.title ?? formatCommandInvocation(result.config);
+  const status = result.exitCode === undefined ? [] : ["", `Exit code: ${result.exitCode}`];
+  return [
+    `### ${title}`,
+    "",
+    "Command:",
+    "",
+    formatCodeBlock("shell", formatCommandInvocation(result.config)),
+    ...status,
+    "",
+    "Stdout:",
+    "",
+    formatCodeBlock("txt", result.stdout || "(empty)"),
+    "",
+    "Stderr:",
+    "",
+    formatCodeBlock("txt", result.stderr || result.error || "(empty)"),
+  ].join("\n");
+};
+
+const runCustomCommands = (cwd: string, options: ResolvedOptions): Promise<CustomCommandResult[]> =>
+  Promise.all(options.customCommands.map((config) => runCustomCommand(cwd, config)));
+
+const getDisplaySnapshot = (snapshot: TaskContextSnapshot): TaskContextSnapshot => ({
+  ...snapshot,
+  relevantFiles: snapshot.relevantFiles.length > 0 ? (["..."] as never) : [],
+});
+
+const getCustomCommandsLoaded = (results: CustomCommandResult[]): string => {
+  if (results.length === 0) {
+    return "- No custom commands configured.";
+  }
+
+  return results.map(getCommandLoadedText).join("\n");
+};
+
+const getRelevantFilesLoaded = (snapshot: TaskContextSnapshot): string => {
+  if (snapshot.relevantFiles.length === 0) {
+    return "- No relevant files recorded.";
+  }
+
+  return snapshot.relevantFiles.map(formatRelevantFileLoaded).join("\n");
+};
+
+const getLoadedCommandOutputs = (results: CustomCommandResult[]): string =>
+  results.map(formatCustomCommandOutput).join("\n\n");
+
+export const buildTaskContextMarkdown = async ({
+  cwd,
+  options,
+}: TaskContextCommandInput): Promise<string> => {
+  const snapshot = await readCurrentOrLatestSnapshot({ cwd, options });
+  const commandResults = await runCustomCommands(cwd, options);
+  return [
+    "# Task Context",
+    "",
+    "## Current Snapshot",
+    "",
+    "```json",
+    JSON.stringify(getDisplaySnapshot(snapshot), null, 2),
+    "```",
+    "",
+    "## Custom Commands",
+    "",
+    getCustomCommandsLoaded(commandResults),
+    "",
+    "## Relevant Files Loaded",
+    "",
+    getRelevantFilesLoaded(snapshot),
+    "",
+    "## Loaded Command Outputs",
+    "",
+    getLoadedCommandOutputs(commandResults),
+  ].join("\n");
+};
 
 const renderUpdaterPromptTemplate = (
   template: string,
@@ -515,12 +732,53 @@ const createTaskContextRuntime = (ctx: ExtensionContext): TaskContextRuntime => 
   modelRegistry: ctx.modelRegistry,
 });
 
+const prepareTaskContext = async (
+  ctx: ExtensionCommandContext,
+  options: ResolvedOptions,
+): Promise<string> => buildTaskContextMarkdown({ cwd: ctx.cwd, options });
+
+const showTaskContextPreview = (pi: ExtensionAPI, markdown: string): void => {
+  pi.sendMessage({
+    customType: "task-context-preview",
+    content: markdown,
+    display: true,
+  });
+};
+
+const notifyTaskContextPrepared = (ctx: ExtensionCommandContext): void => {
+  if (!ctx.hasUI) {
+    return;
+  }
+
+  ctx.ui.notify("Task context will be included in the next turn.", "info");
+};
+
 export const taskContext = (input: TaskContextOptions = {}) => {
   const options = resolveOptions(input);
 
   return (pi: ExtensionAPI): void => {
     const runtimes = new Map<number, TaskContextRuntime>();
     let lastRuntime: TaskContextRuntime | undefined;
+    let pendingTaskContext: string | undefined;
+
+    pi.registerCommand("task-context", {
+      description: "Include current task context and relevant file contents in the next turn.",
+      handler: async (_args, ctx) => {
+        pendingTaskContext = await prepareTaskContext(ctx, options);
+        showTaskContextPreview(pi, pendingTaskContext);
+        notifyTaskContextPrepared(ctx);
+      },
+    });
+
+    pi.on("before_agent_start", async (event) => {
+      if (!pendingTaskContext) {
+        return;
+      }
+
+      const context = pendingTaskContext;
+      pendingTaskContext = undefined;
+      return { systemPrompt: `${event.systemPrompt}\n\n${context}` };
+    });
 
     pi.on("turn_start", async (event, ctx) => {
       try {

@@ -4,6 +4,13 @@ import { z } from "zod";
 
 const ThinkingLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh"]);
 
+const CustomCommandSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  title: z.string().optional(),
+  maxOutputChars: z.number().int().positive().optional(),
+});
+
 const ConfigSchema = z.object({
   outputPath: z.string().optional(),
   currentOutputPath: z.union([z.string(), z.literal(false)]).optional(),
@@ -15,6 +22,7 @@ const ConfigSchema = z.object({
       thinkingLevel: ThinkingLevelSchema.optional(),
     })
     .optional(),
+  customCommands: z.array(CustomCommandSchema).optional(),
   jsonShape: z.string().optional(),
   updaterPrompt: templatedString({
     variables: ["jsonShape", "updateInstructions"],
