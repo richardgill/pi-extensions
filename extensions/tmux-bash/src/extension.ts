@@ -63,68 +63,74 @@ const PollParams = Type.Object({
   pollLines: Type.Optional(Type.Number({ description: "Scrollback lines captured per poll." })),
 });
 
-const BashInTmuxParams = Type.Union([
-  Type.Intersect([
-    BashBaseParams,
-    PollParams,
-    Type.Object({
-      background: Type.Literal(true, {
-        description: "Return immediately after starting the command in tmux.",
-      }),
-    }),
-  ]),
-  Type.Intersect([
-    BashBaseParams,
-    BashTimeoutParams,
-    PollParams,
-    Type.Object({
-      background: Type.Optional(Type.Literal(false)),
-      timeoutAction: Type.Literal("background", {
-        description: "Leave the command running in tmux if the timeout is reached.",
-      }),
-    }),
-  ]),
-  Type.Intersect([
-    BashBaseParams,
-    BashTimeoutParams,
-    Type.Object({
-      background: Type.Optional(Type.Literal(false)),
-      timeoutAction: Type.Optional(
-        Type.Literal("kill", {
-          description: "Kill the tmux window if the timeout is reached.",
+const BashInTmuxParams = Type.Union(
+  [
+    Type.Intersect([
+      BashBaseParams,
+      PollParams,
+      Type.Object({
+        background: Type.Literal(true, {
+          description: "Return immediately after starting the command in tmux.",
         }),
-      ),
-    }),
-  ]),
-]);
+      }),
+    ]),
+    Type.Intersect([
+      BashBaseParams,
+      BashTimeoutParams,
+      PollParams,
+      Type.Object({
+        background: Type.Optional(Type.Literal(false)),
+        timeoutAction: Type.Literal("background", {
+          description: "Leave the command running in tmux if the timeout is reached.",
+        }),
+      }),
+    ]),
+    Type.Intersect([
+      BashBaseParams,
+      BashTimeoutParams,
+      Type.Object({
+        background: Type.Optional(Type.Literal(false)),
+        timeoutAction: Type.Optional(
+          Type.Literal("kill", {
+            description: "Kill the tmux window if the timeout is reached.",
+          }),
+        ),
+      }),
+    ]),
+  ],
+  { type: "object" },
+);
 
 const WindowParam = Type.Union([Type.Number(), Type.String()]);
 const PeekWindowParam = Type.Union([Type.Literal("all"), Type.Number(), Type.String()]);
 
-const TmuxParams = Type.Union([
-  Type.Object({ action: Type.Literal("list") }),
-  Type.Object({ action: Type.Literal("kill") }),
-  Type.Object({ action: Type.Literal("list-polls") }),
-  Type.Object({
-    action: Type.Literal("attach"),
-    window: Type.Optional(WindowParam),
-  }),
-  Type.Object({
-    action: Type.Literal("peek"),
-    window: Type.Optional(PeekWindowParam),
-  }),
-  Type.Intersect([
-    PollParams,
+const TmuxParams = Type.Union(
+  [
+    Type.Object({ action: Type.Literal("list") }),
+    Type.Object({ action: Type.Literal("kill") }),
+    Type.Object({ action: Type.Literal("list-polls") }),
     Type.Object({
-      action: Type.Literal("poll"),
+      action: Type.Literal("attach"),
+      window: Type.Optional(WindowParam),
+    }),
+    Type.Object({
+      action: Type.Literal("peek"),
+      window: Type.Optional(PeekWindowParam),
+    }),
+    Type.Intersect([
+      PollParams,
+      Type.Object({
+        action: Type.Literal("poll"),
+        window: WindowParam,
+      }),
+    ]),
+    Type.Object({
+      action: Type.Literal("unpoll"),
       window: WindowParam,
     }),
-  ]),
-  Type.Object({
-    action: Type.Literal("unpoll"),
-    window: WindowParam,
-  }),
-]);
+  ],
+  { type: "object" },
+);
 
 type TmuxInput = {
   action: TmuxAction;
