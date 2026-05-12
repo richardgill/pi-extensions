@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -22,7 +23,7 @@ import {
 import type { FSWatcher } from "node:fs";
 import { join } from "node:path";
 import {
-  attachToSession,
+  attachToResolvedSession,
   backgroundSessionName,
   capturePanes,
   DEFAULT_SESSION_NAME_TEMPLATE,
@@ -42,9 +43,13 @@ import {
 } from "./tool-call-schemas.js";
 
 const SIGNAL_BASE = "/tmp/pi-tmux-bash";
+const SHARED_SESSION_NAME = "pi-background";
 
 export type TmuxBashOptions = {
+  projectSessionNameTemplate?: string;
   sessionNameTemplate?: string;
+  sessionScope?: "project" | "shared";
+  sharedSessionName?: string;
   toolName?: string;
   commandPrefix?: string;
   captureLines?: number;
@@ -53,6 +58,10 @@ export type TmuxBashOptions = {
   windowNameTemplate?: string;
   maxWindowNameLength?: number;
   autoKillIdleOnStartup?: boolean;
+  autoCloseWindowsOnCompletion?: boolean;
+  alwaysShowOutputFilePath?: boolean;
+  preserveOutputFiles?: boolean;
+  outputDir?: string;
   killSessionOnShutdown?: boolean;
   replaceBashTool?: boolean;
   defaultTimeoutSeconds?: number;
@@ -62,7 +71,7 @@ export type TmuxBashOptions = {
   prompt?: string;
 };
 
-type ResolvedOptions = Required<TmuxBashOptions>;
+type ResolvedOptions = Required<Omit<TmuxBashOptions, "sessionNameTemplate">>;
 type RawBashInput = {
   command: string;
   name?: string;
@@ -77,10 +86,13 @@ type Poller = {
   timer: NodeJS.Timeout;
   session: string;
   windowIndex: number;
+  gitRoot: string;
   interval: number;
   lines: number;
   signalInfo?: SignalInfo;
 };
+
+type PollerDetails = Omit<Poller, "timer" | "signalInfo">;
 
 type ExtensionState = {
   signalDir: string | null;
@@ -88,13 +100,16 @@ type ExtensionState = {
   bashSignals: Set<string>;
   pollers: Map<string, Poller>;
   activeSession: string | null;
+  activeGitRoot: string | null;
 };
 
 type RunWindowResult = { index: number; id: string; outputFile?: string };
 type FormattedOutput = { text: string; details: BashToolDetails | undefined };
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
-  sessionNameTemplate: DEFAULT_SESSION_NAME_TEMPLATE,
+  projectSessionNameTemplate: DEFAULT_SESSION_NAME_TEMPLATE,
+  sessionScope: "project",
+  sharedSessionName: SHARED_SESSION_NAME,
   toolName: "tmux",
   commandPrefix: "tmux",
   captureLines: 50,
@@ -103,6 +118,10 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   windowNameTemplate: "{{nameOrCommand}}",
   maxWindowNameLength: 30,
   autoKillIdleOnStartup: false,
+  autoCloseWindowsOnCompletion: true,
+  alwaysShowOutputFilePath: false,
+  preserveOutputFiles: false,
+  outputDir: SIGNAL_BASE,
   killSessionOnShutdown: false,
   replaceBashTool: true,
   defaultTimeoutSeconds: 30,
@@ -112,9 +131,11 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   prompt: "",
 };
 
-const assertSessionNameTemplate = (template: string): string => {
+const assertProjectSessionNameTemplate = (template: string): string => {
   if (!template.includes("{{}}")) {
-    throw new Error('sessionNameTemplate must include "{{}}" as the project session placeholder');
+    throw new Error(
+      'projectSessionNameTemplate must include "{{}}" as the project session placeholder',
+    );
   }
 
   return template;
@@ -152,8 +173,15 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
   }
 
   return {
-    sessionNameTemplate: assertSessionNameTemplate(
-      input.sessionNameTemplate ?? DEFAULT_OPTIONS.sessionNameTemplate,
+    projectSessionNameTemplate: assertProjectSessionNameTemplate(
+      input.projectSessionNameTemplate ??
+        input.sessionNameTemplate ??
+        DEFAULT_OPTIONS.projectSessionNameTemplate,
+    ),
+    sessionScope: input.sessionScope ?? DEFAULT_OPTIONS.sessionScope,
+    sharedSessionName: nonEmpty(
+      "sharedSessionName",
+      input.sharedSessionName ?? DEFAULT_OPTIONS.sharedSessionName,
     ),
     toolName: nonEmpty("toolName", input.toolName ?? DEFAULT_OPTIONS.toolName),
     commandPrefix: nonEmpty("commandPrefix", input.commandPrefix ?? DEFAULT_OPTIONS.commandPrefix),
@@ -175,6 +203,12 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
       input.maxWindowNameLength ?? DEFAULT_OPTIONS.maxWindowNameLength,
     ),
     autoKillIdleOnStartup: input.autoKillIdleOnStartup ?? DEFAULT_OPTIONS.autoKillIdleOnStartup,
+    autoCloseWindowsOnCompletion:
+      input.autoCloseWindowsOnCompletion ?? DEFAULT_OPTIONS.autoCloseWindowsOnCompletion,
+    alwaysShowOutputFilePath:
+      input.alwaysShowOutputFilePath ?? DEFAULT_OPTIONS.alwaysShowOutputFilePath,
+    preserveOutputFiles: input.preserveOutputFiles ?? DEFAULT_OPTIONS.preserveOutputFiles,
+    outputDir: nonEmpty("outputDir", input.outputDir ?? DEFAULT_OPTIONS.outputDir),
     killSessionOnShutdown: input.killSessionOnShutdown ?? DEFAULT_OPTIONS.killSessionOnShutdown,
     replaceBashTool: input.replaceBashTool ?? DEFAULT_OPTIONS.replaceBashTool,
     defaultTimeoutSeconds,
@@ -197,21 +231,28 @@ export const createState = (): ExtensionState => ({
   bashSignals: new Set(),
   pollers: new Map(),
   activeSession: null,
+  activeGitRoot: null,
 });
 
-const getSignalDir = (state: ExtensionState): string => {
+const signalDirPath = (options: ResolvedOptions, id: string): string => join(options.outputDir, id);
+
+const getSignalDir = (state: ExtensionState, options: ResolvedOptions): string => {
   if (state.signalDir) return state.signalDir;
 
-  state.signalDir = join(SIGNAL_BASE, randomBytes(8).toString("hex"));
+  state.signalDir = signalDirPath(options, randomBytes(8).toString("hex"));
   mkdirSync(state.signalDir, { recursive: true });
   return state.signalDir;
 };
 
-const resetSignalDir = (state: ExtensionState, sessionFile?: string): void => {
+const resetSignalDir = (
+  state: ExtensionState,
+  options: ResolvedOptions,
+  sessionFile?: string,
+): void => {
   const id = sessionFile
     ? Buffer.from(sessionFile).toString("base64url").slice(0, 24)
     : randomBytes(8).toString("hex");
-  state.signalDir = join(SIGNAL_BASE, id);
+  state.signalDir = signalDirPath(options, id);
   mkdirSync(state.signalDir, { recursive: true });
 };
 
@@ -233,6 +274,14 @@ const windowNameForCommand = (
     .replaceAll("{{name}}", name ?? "")
     .replaceAll("{{command}}", cmd)
     .slice(0, options.maxWindowNameLength);
+
+const sessionNameForGitRoot = (gitRoot: string, options: ResolvedOptions): string =>
+  options.sessionScope === "shared"
+    ? options.sharedSessionName
+    : backgroundSessionName(gitRoot, options.projectSessionNameTemplate);
+
+const filteredGitRoot = (gitRoot: string, options: ResolvedOptions): string | undefined =>
+  options.sessionScope === "shared" ? gitRoot : undefined;
 
 const parseSignalFilename = (filename: string): SignalInfo | null => {
   const lastDot = filename.lastIndexOf(".");
@@ -259,6 +308,11 @@ const lastLineBytes = (content: string): number =>
 const fullOutputSuffix = (fullOutputPath: string | undefined): string =>
   fullOutputPath ? `. Full output: ${fullOutputPath}` : "";
 
+const fullOutputNotice = (fullOutputPath: string): string => `[Full output: ${fullOutputPath}]`;
+
+const shouldShowOutputPath = (options: ResolvedOptions): boolean =>
+  options.alwaysShowOutputFilePath || options.autoCloseWindowsOnCompletion;
+
 const truncationNotice = (
   content: string,
   truncation: TruncationResult,
@@ -284,10 +338,17 @@ export const formatTmuxOutputForContext = (
   content: string,
   fullOutputPath?: string,
   emptyText = "(no output)",
+  showFullOutputPath = false,
 ): FormattedOutput => {
   const text = content || emptyText;
   const truncation = truncateTail(text);
-  if (!truncation.truncated) return { text, details: undefined };
+  if (!truncation.truncated && (!showFullOutputPath || !fullOutputPath)) {
+    return { text, details: undefined };
+  }
+
+  if (!truncation.truncated && fullOutputPath) {
+    return { text: `${text}\n\n${fullOutputNotice(fullOutputPath)}`, details: { fullOutputPath } };
+  }
 
   return {
     text: `${truncation.content}\n\n${truncationNotice(text, truncation, fullOutputPath)}`,
@@ -297,8 +358,12 @@ export const formatTmuxOutputForContext = (
 
 const formatOutput = formatTmuxOutputForContext;
 
-const formatTrimmedOutput = (content: string, fullOutputPath?: string): FormattedOutput =>
-  formatOutput(content.trim(), fullOutputPath);
+const formatTrimmedOutput = (
+  content: string,
+  fullOutputPath?: string,
+  showFullOutputPath = false,
+): FormattedOutput =>
+  formatOutput(content.trim(), fullOutputPath, "(no output)", showFullOutputPath);
 
 const outputFileForSignal = (signalDir: string, { session, winIdx, id }: SignalInfo): string =>
   join(signalDir, `${session}.${winIdx}.${id}.out`);
@@ -306,6 +371,21 @@ const outputFileForSignal = (signalDir: string, { session, winIdx, id }: SignalI
 const readOutputFile = (outputFile: string | undefined): string | null => {
   if (!outputFile || !existsSync(outputFile)) return null;
   return readFileSync(outputFile, "utf-8");
+};
+
+const closeWindowOnCompletion = (
+  session: string,
+  windowIndex: number,
+  options: ResolvedOptions,
+): void => {
+  if (!options.autoCloseWindowsOnCompletion) return;
+  execSafe(`tmux kill-window -t ${shellQuote(`${session}:${windowIndex}`)}`);
+};
+
+const tagWindowGitRoot = (session: string, windowIndex: number, gitRoot: string): void => {
+  execSafe(
+    `tmux set-window-option -q -t ${shellQuote(`${session}:${windowIndex}`)} @pi-tmux-bash-git-root ${shellQuote(gitRoot)}`,
+  );
 };
 
 const createBashCommandScript = (
@@ -358,6 +438,7 @@ const addBashWindow = (
     `tmux new-window -d -t ${shellQuote(session)} -n ${shellQuote(windowNameForCommand(cmd, name, options))} -c ${shellQuote(gitRoot)} -P -F '#{window_index}' ${shellQuote(script.scriptPath)}`,
   );
   const index = parseInt(raw);
+  tagWindowGitRoot(session, index, gitRoot);
   return {
     index,
     id: script.id,
@@ -378,6 +459,7 @@ const createBashSessionWindow = (
     `tmux new-session -d -s ${shellQuote(session)} -n ${shellQuote(windowNameForCommand(cmd, name, options))} -c ${shellQuote(gitRoot)} -P -F '#{window_index}' ${shellQuote(script.scriptPath)}`,
   );
   const index = parseInt(raw);
+  tagWindowGitRoot(session, index, gitRoot);
   return {
     index,
     id: script.id,
@@ -453,6 +535,20 @@ const stopPoller = (state: ExtensionState, session: string, windowIndex: number)
   return true;
 };
 
+const pollerDetails = ({
+  session,
+  windowIndex,
+  gitRoot,
+  interval,
+  lines,
+}: Poller): PollerDetails => ({
+  session,
+  windowIndex,
+  gitRoot,
+  interval,
+  lines,
+});
+
 const startPoller = (
   pi: ExtensionAPI,
   state: ExtensionState,
@@ -460,13 +556,17 @@ const startPoller = (
   windowIndex: number,
   interval: number,
   lines: number,
+  options: ResolvedOptions,
+  gitRoot: string,
   signalInfo?: SignalInfo,
 ): void => {
   if (interval <= 0) return;
 
   stopPoller(state, session, windowIndex);
   const timer = setInterval(() => {
-    const window = getWindows(session).find((item) => item.index === windowIndex);
+    const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
+      (item) => item.index === windowIndex,
+    );
     if (!window) {
       stopPoller(state, session, windowIndex);
       return;
@@ -475,6 +575,7 @@ const startPoller = (
     const output = formatTrimmedOutput(
       commandOutput(session, windowIndex, lines, signalInfo?.outputFile),
       signalInfo?.outputFile,
+      shouldShowOutputPath(options),
     ).text;
     const exitCode = readSignalExitCode(state, signalInfo);
     const completed = exitCode !== undefined;
@@ -494,12 +595,14 @@ const startPoller = (
       },
       { triggerTurn: true, deliverAs: "followUp" },
     );
+    if (completed) closeWindowOnCompletion(session, windowIndex, options);
   }, interval * 1000);
 
   state.pollers.set(pollerKey(session, windowIndex), {
     timer,
     session,
     windowIndex,
+    gitRoot,
     interval,
     lines,
     signalInfo,
@@ -532,9 +635,12 @@ const handleCompletionSignal = (
   const output = formatOutput(
     trimOutput(rawOutput, options.completionTailLines),
     fileOutput === null ? undefined : outputFile,
+    "(no output)",
+    shouldShowOutputPath(options),
   ).text;
   const code = parseInt(exitCode);
   const status = code === 0 ? "completed successfully" : `exited with code ${code}`;
+  stopPoller(state, parsed.session, parsed.winIdx);
 
   pi.sendMessage(
     {
@@ -544,6 +650,7 @@ const handleCompletionSignal = (
     },
     { triggerTurn: true, deliverAs: "followUp" },
   );
+  closeWindowOnCompletion(parsed.session, parsed.winIdx, options);
 };
 
 const handleSignalFile = (
@@ -566,14 +673,26 @@ const handleSignalFile = (
 const startWatching = (state: ExtensionState, pi: ExtensionAPI, options: ResolvedOptions): void => {
   if (state.watcher) return;
 
-  const signalDir = getSignalDir(state);
+  const signalDir = getSignalDir(state, options);
   state.watcher = watch(signalDir, (_eventType, filename) => {
     if (!filename || filename.endsWith(".sh") || filename.endsWith(".out")) return;
     setTimeout(() => handleSignalFile(state, pi, signalDir, filename.toString(), options), 100);
   });
 };
 
-const cleanupState = (state: ExtensionState): void => {
+const cleanupSignalDir = (signalDir: string, preserveOutputFiles: boolean): void => {
+  if (!existsSync(signalDir)) return;
+  if (!preserveOutputFiles) {
+    rmSync(signalDir, { recursive: true, force: true });
+    return;
+  }
+
+  readdirSync(signalDir, { withFileTypes: true })
+    .filter((entry) => !entry.isFile() || !entry.name.endsWith(".out"))
+    .forEach((entry) => rmSync(join(signalDir, entry.name), { recursive: true, force: true }));
+};
+
+const cleanupState = (state: ExtensionState, options: ResolvedOptions): void => {
   state.watcher?.close();
   state.watcher = null;
   for (const poller of state.pollers.values()) clearInterval(poller.timer);
@@ -581,7 +700,7 @@ const cleanupState = (state: ExtensionState): void => {
   state.bashSignals.clear();
 
   if (state.signalDir) {
-    rmSync(state.signalDir, { recursive: true, force: true });
+    cleanupSignalDir(state.signalDir, options.preserveOutputFiles);
     state.signalDir = null;
   }
 };
@@ -595,8 +714,8 @@ const toolError = (text: string) => ({ ...toolText(text), isError: true });
 
 const attachAction = (
   params: Extract<TmuxInput, { action: "attach" }>,
-  ctx: ExtensionContext,
   session: string,
+  gitRoot: string,
   options: ResolvedOptions,
 ) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}' to attach to.`);
@@ -605,11 +724,20 @@ const attachAction = (
   if (windowIndex === "invalid")
     return toolError("Error: 'window' must be a numeric index for attach action.");
 
-  const msg = attachToSession(ctx.cwd, options.sessionNameTemplate, windowIndex);
+  const filter = filteredGitRoot(gitRoot, options);
+  const windows = getWindows(session, filter);
+  const projectWindow = windows.find((window) => window.active) ?? windows.at(0);
+  const targetWindow =
+    options.sessionScope === "shared" ? (windowIndex ?? projectWindow?.index) : windowIndex;
+  if (options.sessionScope === "shared" && targetWindow === undefined) {
+    return toolError(`No background tmux windows for ${gitRoot} in session ${session}.`);
+  }
+
+  const msg = attachToResolvedSession(session, targetWindow, filter);
   const failed = msg.startsWith("Failed") || msg.startsWith("No ");
   return {
     content: [{ type: "text" as const, text: msg }],
-    details: { session, ...(windowIndex !== undefined ? { windowIndex } : {}) },
+    details: { session, ...(targetWindow !== undefined ? { windowIndex: targetWindow } : {}) },
     ...(failed ? { isError: true } : {}),
   };
 };
@@ -617,6 +745,7 @@ const attachAction = (
 const peekAction = (
   params: Extract<TmuxInput, { action: "peek" }>,
   session: string,
+  gitRoot: string,
   options: ResolvedOptions,
 ) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}'.`);
@@ -626,66 +755,96 @@ const peekAction = (
       ? "all"
       : resolveWindowIndex(params.window);
   const target = windowIndex === "invalid" || windowIndex === undefined ? "all" : windowIndex;
-  const output = formatOutput(capturePanes(session, target, options.captureLines));
+  const output = formatOutput(
+    capturePanes(session, target, options.captureLines, filteredGitRoot(gitRoot, options)),
+  );
   return {
     content: [{ type: "text" as const, text: output.text }],
     details: { session, ...output.details },
   };
 };
 
-const listAction = (session: string) => {
+const listAction = (session: string, gitRoot: string, options: ResolvedOptions) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}'.`);
 
-  const windows = getWindows(session);
+  const filtered = options.sessionScope === "shared";
+  const windows = getWindows(session, filteredGitRoot(gitRoot, options));
   const lines = formatWindowLines(windows);
   return {
     content: [
       {
         type: "text" as const,
-        text: `Background session ${session} — ${windows.length} window(s)\n${lines.join("\n")}`,
+        text: `Background session ${session} — ${windows.length} ${filtered ? "project " : ""}window(s)\n${lines.join("\n")}`,
       },
     ],
     details: { session, windows },
   };
 };
 
-const killAction = (session: string) => {
+const killAction = (session: string, gitRoot: string, options: ResolvedOptions) => {
   if (!sessionExists(session)) return toolText(`No background session '${session}' to kill.`);
+  if (options.sessionScope !== "shared") {
+    exec(`tmux kill-session -t ${shellQuote(session)}`);
+    return toolText(`Killed background session ${session}.`);
+  }
 
-  exec(`tmux kill-session -t ${shellQuote(session)}`);
-  return toolText(`Killed background session ${session}.`);
+  const windows = getWindows(session, gitRoot);
+  windows.forEach((window) =>
+    execSafe(`tmux kill-window -t ${shellQuote(`${session}:${window.index}`)}`),
+  );
+  return toolText(`Killed ${windows.length} background window(s) for ${gitRoot} in ${session}.`);
 };
 
 const pollAction = (
   params: Extract<TmuxInput, { action: "poll" }>,
   session: string,
+  gitRoot: string,
   state: ExtensionState,
   pi: ExtensionAPI,
+  options: ResolvedOptions,
 ) => {
   const windowIndex = resolveWindowIndex(params.window);
   if (windowIndex === undefined || windowIndex === "invalid") {
     return toolError("Error: 'window' (index) required for poll action.");
   }
 
-  const window = getWindows(session).find((item) => item.index === windowIndex);
+  const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
+    (item) => item.index === windowIndex,
+  );
   if (!window) return toolError(`No tmux window :${windowIndex} in session ${session}.`);
 
   if (params.pollInterval <= 0)
     return toolError("Error: pollInterval must be greater than 0 for poll action.");
 
-  startPoller(pi, state, session, windowIndex, params.pollInterval, params.pollLines);
+  startPoller(
+    pi,
+    state,
+    session,
+    windowIndex,
+    params.pollInterval,
+    params.pollLines,
+    options,
+    gitRoot,
+  );
   return toolText(`Polling "${window.title}" (:${windowIndex}) every ${params.pollInterval}s.`);
 };
 
 const unpollAction = (
   params: Extract<TmuxInput, { action: "unpoll" }>,
   session: string,
+  gitRoot: string,
   state: ExtensionState,
+  options: ResolvedOptions,
 ) => {
   const windowIndex = resolveWindowIndex(params.window);
   if (windowIndex === undefined || windowIndex === "invalid") {
     return toolError("Error: 'window' (index) required for unpoll action.");
   }
+
+  const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
+    (item) => item.index === windowIndex,
+  );
+  if (!window) return toolError(`No tmux window :${windowIndex} in session ${session}.`);
 
   return toolText(
     stopPoller(state, session, windowIndex)
@@ -694,15 +853,23 @@ const unpollAction = (
   );
 };
 
-const listPollsAction = (session: string, state: ExtensionState) => {
-  const pollers = [...state.pollers.values()].filter((poller) => poller.session === session);
+const listPollsAction = (
+  session: string,
+  gitRoot: string,
+  state: ExtensionState,
+  options: ResolvedOptions,
+) => {
+  const pollers = [...state.pollers.values()]
+    .filter((poller) => poller.session === session)
+    .filter((poller) => options.sessionScope !== "shared" || poller.gitRoot === gitRoot);
   if (pollers.length === 0) return toolText("No active pollers.");
 
+  const details = pollers.map(pollerDetails);
   return toolText(
-    `Active pollers:\n${pollers
+    `Active pollers:\n${details
       .map((poller) => `  :${poller.windowIndex} every ${poller.interval}s (${poller.lines} lines)`)
       .join("\n")}`,
-    { pollers },
+    { pollers: details },
   );
 };
 
@@ -716,14 +883,14 @@ const executeTool = (
   const gitRoot = getGitRoot(ctx.cwd);
   if (!gitRoot) return toolError("Error: not in a git repository.");
 
-  const session = backgroundSessionName(gitRoot, options.sessionNameTemplate);
-  if (params.action === "attach") return attachAction(params, ctx, session, options);
-  if (params.action === "peek") return peekAction(params, session, options);
-  if (params.action === "list") return listAction(session);
-  if (params.action === "kill") return killAction(session);
-  if (params.action === "poll") return pollAction(params, session, state, pi);
-  if (params.action === "unpoll") return unpollAction(params, session, state);
-  return listPollsAction(session, state);
+  const session = sessionNameForGitRoot(gitRoot, options);
+  if (params.action === "attach") return attachAction(params, session, gitRoot, options);
+  if (params.action === "peek") return peekAction(params, session, gitRoot, options);
+  if (params.action === "list") return listAction(session, gitRoot, options);
+  if (params.action === "kill") return killAction(session, gitRoot, options);
+  if (params.action === "poll") return pollAction(params, session, gitRoot, state, pi, options);
+  if (params.action === "unpoll") return unpollAction(params, session, gitRoot, state, options);
+  return listPollsAction(session, gitRoot, state, options);
 };
 
 const runBashInTmux = async (
@@ -738,9 +905,9 @@ const runBashInTmux = async (
   if (!gitRoot) return toolError("Error: not in a git repository.");
 
   startWatching(state, pi, options);
-  const session = backgroundSessionName(gitRoot, options.sessionNameTemplate);
+  const session = sessionNameForGitRoot(gitRoot, options);
   const exists = sessionExists(session);
-  const signalDir = getSignalDir(state);
+  const signalDir = getSignalDir(state, options);
   const result = exists
     ? addBashWindow(signalDir, session, gitRoot, params.command, params.name, options)
     : createBashSessionWindow(signalDir, session, gitRoot, params.command, params.name, options);
@@ -752,6 +919,7 @@ const runBashInTmux = async (
   };
   const signalFilename = `${session}.${result.index}.${result.id}`;
   state.activeSession = session;
+  state.activeGitRoot = gitRoot;
 
   if (params.background === true) {
     if (params.pollInterval > 0) state.bashSignals.add(signalFilename);
@@ -763,6 +931,8 @@ const runBashInTmux = async (
         result.index,
         params.pollInterval,
         params.pollLines,
+        options,
+        gitRoot,
         signalInfo,
       );
     return {
@@ -782,6 +952,7 @@ const runBashInTmux = async (
   const output = formatTrimmedOutput(
     commandOutput(session, result.index, options.captureLines, result.outputFile),
     result.outputFile,
+    shouldShowOutputPath(options),
   );
   const text = output.text;
 
@@ -817,6 +988,8 @@ const runBashInTmux = async (
         result.index,
         params.pollInterval,
         params.pollLines,
+        options,
+        gitRoot,
         signalInfo,
       );
     return {
@@ -830,6 +1003,8 @@ const runBashInTmux = async (
     };
   }
 
+  closeWindowOnCompletion(session, result.index, options);
+
   if (exitCode !== 0) {
     return {
       content: [{ type: "text" as const, text: `${text}\n\nCommand exited with code ${exitCode}` }],
@@ -841,18 +1016,19 @@ const runBashInTmux = async (
   return { content: [{ type: "text" as const, text }], details: output.details };
 };
 
-const clearIdleWindows = (session: string): number | "missing" => {
+const clearIdleWindows = (session: string, gitRoot?: string): number | "missing" => {
   const raw = execSafe(
-    `tmux list-windows -t ${shellQuote(session)} -F '#{window_index}|||#{window_name}|||#{pane_current_command}|||#{pane_pid}'`,
+    `tmux list-windows -t ${shellQuote(session)} -F '#{window_index}|||#{window_name}|||#{pane_current_command}|||#{pane_pid}|||#{@pi-tmux-bash-git-root}'`,
   );
   if (!raw) return "missing";
 
   const idle = raw
     .split("\n")
     .map((line) => {
-      const [index = "0", name = "", cmd = "", pid = ""] = line.split("|||");
-      return { index: parseInt(index), name, cmd, pid };
+      const [index = "0", name = "", cmd = "", pid = "", windowGitRoot = ""] = line.split("|||");
+      return { index: parseInt(index), name, cmd, pid, gitRoot: windowGitRoot };
     })
+    .filter((window) => gitRoot === undefined || window.gitRoot === gitRoot)
     .filter((window) => ["bash", "zsh", "sh", "fish", "dash"].includes(window.cmd))
     .filter((window) => !execSafe(`pgrep -P ${shellQuote(window.pid)}`));
 
@@ -862,11 +1038,24 @@ const clearIdleWindows = (session: string): number | "missing" => {
   return idle.length;
 };
 
+const attachToProjectSession = (cwd: string, options: ResolvedOptions): string => {
+  const gitRoot = getGitRoot(cwd);
+  if (!gitRoot) return "Not in a git repository.";
+
+  const session = sessionNameForGitRoot(gitRoot, options);
+  if (options.sessionScope !== "shared") return attachToResolvedSession(session);
+
+  const windows = getWindows(session, gitRoot);
+  const projectWindow = windows.find((window) => window.active) ?? windows.at(0);
+  if (!projectWindow) return "No background tmux session for this project.";
+  return attachToResolvedSession(session, projectWindow.index, gitRoot);
+};
+
 const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
   pi.registerCommand(options.commandPrefix, {
     description: "Open a terminal tab attached to this project's background tmux session",
     handler: async (_args, ctx) => {
-      const msg = attachToSession(ctx.cwd, options.sessionNameTemplate);
+      const msg = attachToProjectSession(ctx.cwd, options);
       ctx.ui.notify(
         msg,
         msg.startsWith("Failed") || msg.startsWith("No") || msg.startsWith("Not")
@@ -885,13 +1074,13 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const session = backgroundSessionName(gitRoot, options.sessionNameTemplate);
+      const session = sessionNameForGitRoot(gitRoot, options);
       if (!sessionExists(session)) {
         ctx.ui.notify("No background tmux session for this project.", "error");
         return;
       }
 
-      const windows = getWindows(session);
+      const windows = getWindows(session, filteredGitRoot(gitRoot, options));
       const choices = [
         "all windows",
         ...windows.map((item) => `:${item.index}  ${item.title}${item.active ? "  (active)" : ""}`),
@@ -906,7 +1095,9 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const output = formatOutput(capturePanes(session, target, options.captureLines));
+      const output = formatOutput(
+        capturePanes(session, target, options.captureLines, filteredGitRoot(gitRoot, options)),
+      );
       pi.sendUserMessage(`Here is the background tmux output:\n\n\`\`\`\n${output.text}\n\`\`\``, {
         deliverAs: "followUp",
       });
@@ -922,8 +1113,8 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const session = backgroundSessionName(gitRoot, options.sessionNameTemplate);
-      const count = clearIdleWindows(session);
+      const session = sessionNameForGitRoot(gitRoot, options);
+      const count = clearIdleWindows(session, filteredGitRoot(gitRoot, options));
       if (count === "missing") {
         ctx.ui.notify("No background tmux session for this project.", "error");
         return;
@@ -1054,20 +1245,28 @@ export const tmuxBash = (input: TmuxBashOptions = {}) => {
     const state = createState();
 
     pi.on("session_start", async (_event, ctx) => {
-      resetSignalDir(state, ctx.sessionManager.getSessionFile() ?? undefined);
+      resetSignalDir(state, options, ctx.sessionManager.getSessionFile() ?? undefined);
       const gitRoot = getGitRoot(ctx.cwd);
-      state.activeSession = gitRoot
-        ? backgroundSessionName(gitRoot, options.sessionNameTemplate)
-        : null;
+      state.activeGitRoot = gitRoot;
+      state.activeSession = gitRoot ? sessionNameForGitRoot(gitRoot, options) : null;
       if (state.activeSession && options.autoKillIdleOnStartup)
-        clearIdleWindows(state.activeSession);
+        clearIdleWindows(
+          state.activeSession,
+          gitRoot ? filteredGitRoot(gitRoot, options) : undefined,
+        );
     });
 
     pi.on("session_shutdown", async () => {
       if (state.activeSession && options.killSessionOnShutdown) {
-        execSafe(`tmux kill-session -t ${shellQuote(state.activeSession)}`);
+        if (options.sessionScope === "shared" && state.activeGitRoot) {
+          getWindows(state.activeSession, state.activeGitRoot).forEach((window) =>
+            execSafe(`tmux kill-window -t ${shellQuote(`${state.activeSession}:${window.index}`)}`),
+          );
+        } else {
+          execSafe(`tmux kill-session -t ${shellQuote(state.activeSession)}`);
+        }
       }
-      cleanupState(state);
+      cleanupState(state, options);
     });
 
     registerCommands(pi, options);

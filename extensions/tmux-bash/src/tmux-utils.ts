@@ -5,6 +5,7 @@ export type TmuxWindow = {
   index: number;
   title: string;
   active: boolean;
+  gitRoot?: string;
 };
 
 export const exec = (cmd: string): string =>
@@ -48,16 +49,23 @@ export const backgroundSessionName = (
 export const sessionExists = (name: string): boolean =>
   execSafe(`tmux has-session -t ${shellQuote(name)} 2>/dev/null && echo yes`) === "yes";
 
-export const getWindows = (name: string): TmuxWindow[] => {
+export const getWindows = (name: string, gitRoot?: string): TmuxWindow[] => {
   const raw = execSafe(
-    `tmux list-windows -t ${shellQuote(name)} -F '#{window_index}|||#{window_name}|||#{window_active}'`,
+    `tmux list-windows -t ${shellQuote(name)} -F '#{window_index}|||#{window_name}|||#{window_active}|||#{@pi-tmux-bash-git-root}'`,
   );
   if (!raw) return [];
 
-  return raw.split("\n").map((line) => {
-    const [index = "0", title = "", active = "0"] = line.split("|||");
-    return { index: parseInt(index), title, active: active === "1" };
+  const windows = raw.split("\n").map((line) => {
+    const [index = "0", title = "", active = "0", windowGitRoot = ""] = line.split("|||");
+    return {
+      index: parseInt(index),
+      title,
+      active: active === "1",
+      ...(windowGitRoot ? { gitRoot: windowGitRoot } : {}),
+    };
   });
+
+  return gitRoot === undefined ? windows : windows.filter((window) => window.gitRoot === gitRoot);
 };
 
 export const formatWindowLines = (windows: TmuxWindow[]): string[] =>
@@ -65,8 +73,13 @@ export const formatWindowLines = (windows: TmuxWindow[]): string[] =>
     (window) => `  :${window.index}  ${window.title}${window.active ? "  (active)" : ""}`,
   );
 
-export const capturePanes = (name: string, window: number | "all", lines = 50): string => {
-  const windows = getWindows(name);
+export const capturePanes = (
+  name: string,
+  window: number | "all",
+  lines = 50,
+  gitRoot?: string,
+): string => {
+  const windows = getWindows(name, gitRoot);
   const targets = window === "all" ? windows : windows.filter((item) => item.index === window);
 
   if (targets.length === 0) return "No matching windows.";
@@ -135,16 +148,16 @@ const openTerminalTab = (session: string, window?: number): string => {
   return `No supported terminal detected. Run manually:\n  ${attachCmd}`;
 };
 
-export const attachToSession = (cwd: string, template: string, window?: number): string => {
-  const gitRoot = getGitRoot(cwd);
-  if (!gitRoot) return "Not in a git repository.";
-
-  const session = backgroundSessionName(gitRoot, template);
+export const attachToResolvedSession = (
+  session: string,
+  window?: number,
+  gitRoot?: string,
+): string => {
   const target = window === undefined ? session : `${session}:${window}`;
   if (!sessionExists(session)) return "No background tmux session for this project.";
 
   if (window !== undefined) {
-    const windows = getWindows(session);
+    const windows = getWindows(session, gitRoot);
     const match = windows.find((item) => item.index === window);
     if (!match) {
       const available = formatWindowLines(windows);

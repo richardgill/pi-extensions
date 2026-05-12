@@ -4,7 +4,10 @@ import { tmuxBash, DEFAULT_OPTIONS } from "./extension.js";
 
 const ConfigSchema = z
   .object({
+    projectSessionNameTemplate: z.string().includes("{{}}").optional(),
     sessionNameTemplate: z.string().includes("{{}}").optional(),
+    sessionScope: z.enum(["project", "shared"]).optional(),
+    sharedSessionName: z.string().min(1).optional(),
     toolName: z.string().min(1).optional(),
     commandPrefix: z.string().min(1).optional(),
     captureLines: z.number().int().positive().optional(),
@@ -13,6 +16,10 @@ const ConfigSchema = z
     windowNameTemplate: z.string().optional(),
     maxWindowNameLength: z.number().int().positive().optional(),
     autoKillIdleOnStartup: z.boolean().optional(),
+    autoCloseWindowsOnCompletion: z.boolean().optional(),
+    alwaysShowOutputFilePath: z.boolean().optional(),
+    preserveOutputFiles: z.boolean().optional(),
+    outputDir: z.string().min(1).optional(),
     killSessionOnShutdown: z.boolean().optional(),
     replaceBashTool: z.boolean().optional(),
     defaultTimeoutSeconds: z.number().int().positive().optional(),
