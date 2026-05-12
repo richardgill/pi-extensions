@@ -45,7 +45,7 @@ type BashInTmuxInput =
 
 ## Commands
 
-- `/tmux` — attach to the background session
+- `/tmux` — open a fullscreen fzf picker for this pi session's sidecar tmux windows
 - `/tmux:cat` — bring background tmux output into the conversation
 - `/tmux:clear` — kill idle background windows
 

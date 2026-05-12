@@ -1,6 +1,11 @@
 import { DEFAULT_MAX_BYTES } from "@mariozechner/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_OPTIONS, formatTmuxOutputForContext, resolveOptions } from "../src/extension.js";
+import {
+  DEFAULT_OPTIONS,
+  formatCompletionSummary,
+  formatTmuxOutputForContext,
+  resolveOptions,
+} from "../src/extension.js";
 
 describe("tmux-bash output truncation", () => {
   it("truncates oversized output before returning it to model context", () => {
@@ -44,5 +49,17 @@ describe("tmux-bash output truncation", () => {
     const result = resolveOptions({ sessionNameTemplate: "legacy-{{}}" });
 
     expect(result.projectSessionNameTemplate).toBe("legacy-{{}}");
+  });
+
+  it("formats background completion summaries name first", () => {
+    const result = formatCompletionSummary("sleep-90-hello", 5, 0);
+
+    expect(result).toBe("sleep-90-hello completed successfully in tmux window :5");
+  });
+
+  it("formats background failure summaries name first", () => {
+    const result = formatCompletionSummary("local-ci", 7, 2);
+
+    expect(result).toBe("local-ci exited with code 2 in tmux window :7");
   });
 });

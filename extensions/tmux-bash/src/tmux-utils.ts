@@ -2,10 +2,17 @@ import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
 export type TmuxWindow = {
+  id: string;
   index: number;
   title: string;
   active: boolean;
   gitRoot?: string;
+  piSessionId?: string;
+};
+
+export type TmuxWindowFilters = {
+  gitRoot?: string;
+  piSessionId?: string;
 };
 
 export const exec = (cmd: string): string =>
@@ -49,23 +56,35 @@ export const backgroundSessionName = (
 export const sessionExists = (name: string): boolean =>
   execSafe(`tmux has-session -t ${shellQuote(name)} 2>/dev/null && echo yes`) === "yes";
 
-export const getWindows = (name: string, gitRoot?: string): TmuxWindow[] => {
+const normalizeWindowFilters = (filters?: string | TmuxWindowFilters): TmuxWindowFilters =>
+  typeof filters === "string" ? { gitRoot: filters } : (filters ?? {});
+
+const matchesWindowFilters = (window: TmuxWindow, filters: TmuxWindowFilters): boolean =>
+  (filters.gitRoot === undefined || window.gitRoot === filters.gitRoot) &&
+  (filters.piSessionId === undefined || window.piSessionId === filters.piSessionId);
+
+export const getWindows = (name: string, filters?: string | TmuxWindowFilters): TmuxWindow[] => {
   const raw = execSafe(
-    `tmux list-windows -t ${shellQuote(name)} -F '#{window_index}|||#{window_name}|||#{window_active}|||#{@pi-tmux-bash-git-root}'`,
+    `tmux list-windows -t ${shellQuote(name)} -F '#{window_id}|||#{window_index}|||#{window_name}|||#{window_active}|||#{@pi-tmux-bash-git-root}|||#{@pi-tmux-bash-pi-session-id}'`,
   );
   if (!raw) return [];
 
-  const windows = raw.split("\n").map((line) => {
-    const [index = "0", title = "", active = "0", windowGitRoot = ""] = line.split("|||");
-    return {
-      index: parseInt(index),
-      title,
-      active: active === "1",
-      ...(windowGitRoot ? { gitRoot: windowGitRoot } : {}),
-    };
-  });
-
-  return gitRoot === undefined ? windows : windows.filter((window) => window.gitRoot === gitRoot);
+  const windowFilters = normalizeWindowFilters(filters);
+  return raw
+    .split("\n")
+    .map((line) => {
+      const [id = "", index = "0", title = "", active = "0", windowGitRoot = "", piSessionId = ""] =
+        line.split("|||");
+      return {
+        id,
+        index: parseInt(index),
+        title,
+        active: active === "1",
+        ...(windowGitRoot ? { gitRoot: windowGitRoot } : {}),
+        ...(piSessionId ? { piSessionId } : {}),
+      };
+    })
+    .filter((window) => matchesWindowFilters(window, windowFilters));
 };
 
 export const formatWindowLines = (windows: TmuxWindow[]): string[] =>
