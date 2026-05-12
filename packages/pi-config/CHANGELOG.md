@@ -1,5 +1,11 @@
 # @richardgill/pi-config
 
+## 0.0.6
+
+### Patch Changes
+
+- [#20](https://github.com/richardgill/pi-extensions/pull/20) [`0e50928`](https://github.com/richardgill/pi-extensions/commit/0e50928c33d05bb5f326a0fa35fce3b4692bd677) Thanks [@richardgill](https://github.com/richardgill)! - Add `PI_EXTENSION_CONFIG_DIR` as an extension config folder override before Pi's agent directory.
+
 ## 0.0.5
 
 ### Patch Changes
