@@ -6,27 +6,41 @@ It is based on `@romansix/pi-tmux`, but runs agent commands in a project-specifi
 
 ## Tools
 
-- `bash` — run every bash command inside a background tmux window
-- `tmux run` — run a command in a background tmux window and notify pi when it exits
+- `bash` — run every bash command inside a background tmux window; use `background: true` for long-running commands
 - `tmux peek` — capture output from one or all background windows
 - `tmux list` — list background windows
 - `tmux attach` — attach to the background session when you do want to inspect it
 - `tmux kill` — kill the background session
-- `tmux poll` — start periodic output check-ins for a window
+- `tmux poll` — start periodic output check-ins for an existing window
 - `tmux unpoll` — stop periodic output check-ins for a window
 
 ## Bash tool parameters
 
 ```ts
-type BashInTmuxInput = {
-  command: string;
-  name?: string;
-  timeout?: number;
-  timeoutAction?: "kill" | "background";
-  background?: boolean;
-  pollInterval?: number;
-  pollLines?: number;
-};
+type BashInTmuxInput =
+  | {
+      command: string;
+      name?: string;
+      background: true;
+      pollInterval?: number;
+      pollLines?: number;
+    }
+  | {
+      command: string;
+      name?: string;
+      background?: false;
+      timeout?: number;
+      timeoutAction: "background";
+      pollInterval?: number;
+      pollLines?: number;
+    }
+  | {
+      command: string;
+      name?: string;
+      background?: false;
+      timeout?: number;
+      timeoutAction?: "kill";
+    };
 ```
 
 ## Commands
