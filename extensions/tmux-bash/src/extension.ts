@@ -99,38 +99,50 @@ const TmuxParams = Type.Object({
 const buildBashInputSchema = (options: ResolvedOptions) => {
   const command = z.string().min(1);
   const name = z.string().optional();
+  const backgroundFalse = z.literal(false).optional();
   const timeout = z
     .number()
     .int()
     .positive()
     .max(options.maxTimeoutSeconds)
     .default(options.defaultTimeoutSeconds);
+  const timeoutAction = z.enum(["kill", "background"]).optional();
   const pollInterval = z.number().int().nonnegative().default(options.defaultPollInterval);
   const pollLines = z.number().int().positive().default(options.defaultPollLines);
 
-  return z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("background"), command, name, pollInterval, pollLines }),
+  const nonBackground = z.discriminatedUnion("timeoutAction", [
     z.object({
-      mode: z.literal("background-on-timeout"),
       command,
       name,
+      background: backgroundFalse,
       timeout,
+      timeoutAction: z.literal("background"),
       pollInterval,
       pollLines,
     }),
-    z.object({ mode: z.literal("foreground"), command, name, timeout }),
+    z.object({
+      command,
+      name,
+      background: backgroundFalse,
+      timeout,
+      timeoutAction: z.literal("kill").optional(),
+      pollInterval,
+      pollLines,
+    }),
   ]);
-};
 
-const toBashInputMode = (raw: Record<string, unknown>): Record<string, unknown> => {
-  const { background, timeoutAction, pollInterval, pollLines, timeout, ...rest } = raw;
-  if (background === true) {
-    return { ...rest, mode: "background", pollInterval, pollLines };
-  }
-  if (timeoutAction === "background") {
-    return { ...rest, mode: "background-on-timeout", timeout, pollInterval, pollLines };
-  }
-  return { ...rest, mode: "foreground", timeout };
+  return z.discriminatedUnion("background", [
+    z.object({
+      command,
+      name,
+      background: z.literal(true),
+      timeout,
+      timeoutAction,
+      pollInterval,
+      pollLines,
+    }),
+    nonBackground,
+  ]);
 };
 
 const TmuxWindowZ = z.union([z.number().int(), z.string().min(1)]);
@@ -865,7 +877,7 @@ const runBashInTmux = async (
   const signalFilename = `${session}.${result.index}.${result.id}`;
   state.activeSession = session;
 
-  if (params.mode === "background") {
+  if (params.background === true) {
     if (params.pollInterval > 0) state.bashSignals.add(signalFilename);
     if (params.pollInterval > 0)
       startPoller(
@@ -907,7 +919,7 @@ const runBashInTmux = async (
   }
 
   if (exitCode === "timeout") {
-    if (params.mode === "foreground") {
+    if (params.timeoutAction !== "background") {
       execSafe(`tmux kill-window -t ${shellQuote(`${session}:${result.index}`)}`);
       return {
         content: [
@@ -1072,7 +1084,7 @@ const registerBashTool = (
     ],
     parameters: BashInTmuxParams,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const parsed = bashInputSchema.safeParse(toBashInputMode(params as Record<string, unknown>));
+      const parsed = bashInputSchema.safeParse(params);
       if (!parsed.success) {
         return toolError(
           `Invalid bash input: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
