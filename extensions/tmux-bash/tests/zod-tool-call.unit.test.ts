@@ -42,7 +42,17 @@ describe("zod tool call schema generation", () => {
 
     expect(schema.properties.command.description).toContain("Bash command");
     expect(schema.properties.timeout.default).toBe(30);
+    expect(schema.properties.timeoutAction.default).toBe("background");
     expect(schema.properties.pollLines.default).toBe(30);
+  });
+
+  it("defaults omitted timeoutAction to background", async () => {
+    const result = await bashToolCallSchema().handleInput(
+      { command: "sleep 10" },
+      (input) => input,
+    );
+
+    expect(result).toMatchObject({ timeoutAction: "background" });
   });
 
   it("handleInput returns invalidInput result on zod failure", async () => {

@@ -155,6 +155,7 @@ describe("loadConfigOrDefault", () => {
 
   it("defaults to the pi agent folder", () => {
     const folder = createTempDir();
+    delete process.env.PI_EXTENSION_CONFIG_DIR;
     process.env.PI_CODING_AGENT_DIR = folder;
     const schema = z.object({ value: z.string() });
     writeConfig(folder, "default.json", '{ "value": "from-agent-dir" }');

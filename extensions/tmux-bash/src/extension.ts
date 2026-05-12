@@ -949,11 +949,10 @@ const registerBashTool = (
   pi.registerTool({
     name: "bash",
     label: "bash",
-    description: `Execute a bash command in a background tmux window in the current working directory. Returns captured tmux output truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Timeout defaults to ${options.defaultTimeoutSeconds}s and is clamped to ${options.maxTimeoutSeconds}s. Use background to return immediately. Use pollInterval with background true or timeoutAction "background" for periodic check-ins. If timeoutAction is "background", the command keeps running in tmux after timeout. If timeoutAction is "kill" or omitted, the tmux window is killed on timeout.`,
-    promptSnippet: `Execute bash commands in background tmux windows; output is truncated like Pi's built-in bash; default timeout ${options.defaultTimeoutSeconds}s, max timeout ${options.maxTimeoutSeconds}s. Use background or timeoutAction "background" for servers/watchers. Use pollInterval for background check-ins.`,
+    description: `Execute a bash command in a background tmux window. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB. Defaults to a ${options.defaultTimeoutSeconds}s timeout, max ${options.maxTimeoutSeconds}s; timeoutAction defaults to "background". Use background for long-running commands.`,
+    promptSnippet: "Execute bash commands in background tmux windows",
     promptGuidelines: [
-      `Bash commands run in tmux. Bash timeout values default to ${options.defaultTimeoutSeconds}s and are clamped to ${options.maxTimeoutSeconds}s.`,
-      "Use bash with background true or timeoutAction 'background' for servers, file watchers, REPLs, interactive prompts, background jobs, or commands expected to run longer than the timeout.",
+      "Use bash with background true or timeoutAction 'background' for servers, file watchers, REPLs, interactive prompts, background jobs.",
       "Use pollInterval with background true or timeoutAction 'background' when a backgrounded command should check in periodically.",
       `Use ${options.toolName} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.`,
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
@@ -994,24 +993,10 @@ const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: Resolved
   pi.registerTool({
     name: options.toolName,
     label: options.toolName,
-    description: `Manage a background tmux session for the current project (one sidecar session per git root).
-
-WHEN TO USE: Use this to inspect or control commands that were started with bash background:true or timeoutAction:"background". Use bash, not tmux, to start commands.
-
-Actions:
-- attach: Open a terminal tab attached to the background session.
-- peek: Capture recent output from background tmux windows. Use window param to target a specific window, or omit for all. Captured output is truncated to stay within model context.
-- list: List background tmux windows.
-- kill: Kill the background tmux session.
-- poll: Start periodic output check-ins for a window.
-- unpoll: Stop periodic output check-ins for a window.
-- list-polls: List active pollers.`,
-    promptSnippet:
-      "Inspect and control the background tmux session used by bash background:true calls.",
+    description: "Inspect and control background tmux windows created by bash.",
+    promptSnippet: "Inspect and control the background tmux sessions created by bash tool",
     promptGuidelines: [
-      "Use bash with background:true or timeoutAction:'background' to start long-running commands; use tmux to inspect or control them after they start.",
-      "Use tmux poll/unpoll to start or stop periodic check-ins for an existing background window.",
-      "The tmux tool uses a background sidecar session so agent-run windows do not clutter the user's normal tmux session.",
+      `Use ${options.toolName} poll/unpoll to start or stop periodic check-ins for an existing background window.`,
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
     parameters: tmuxToolCallSchema.typeBoxSchema,

@@ -10,21 +10,27 @@ type SchemaOptions = {
 
 type InvalidInput<TInvalidResult> = (message: string) => TInvalidResult;
 
-const command = z.string().min(1).describe("Bash command to run in a background tmux window.");
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const withDefaultTimeoutAction = (input: unknown): unknown => {
+  if (!isRecord(input)) return input;
+  if (input.background === true) return input;
+  if (input.timeoutAction !== undefined) return input;
+  return { ...input, timeoutAction: "background" };
+};
+
+const command = z.string().min(1).describe("Bash command to execute.");
 const name = z.string().optional().describe("Optional tmux window name.");
 const backgroundFalse = z.literal(false).optional();
 const tmuxWindow = z
   .union([z.number().int(), z.string().min(1)])
-  .describe(
-    "Window index, name, or 'all' (peek only). Required for poll/unpoll. Optional for attach/peek.",
-  );
+  .describe("Window index/name. Required for poll/unpoll; optional for attach/peek.");
 const tmuxPeekWindow = z
   .union([z.literal("all"), z.number().int(), z.string().min(1)])
-  .describe(
-    "Window index, name, or 'all' (peek only). Required for poll/unpoll. Optional for attach/peek.",
-  );
+  .describe('Window index/name, or "all" for peek.');
 const tmuxAction = <TAction extends string>(action: TAction) =>
-  z.literal(action).describe("Which tmux action to perform.");
+  z.literal(action).describe("tmux action.");
 
 const timeout = (options: SchemaOptions) =>
   z
@@ -33,9 +39,7 @@ const timeout = (options: SchemaOptions) =>
     .positive()
     .max(options.maxTimeoutSeconds)
     .default(options.defaultTimeoutSeconds)
-    .describe(
-      "Seconds to wait before applying timeoutAction. Ignored when background is true. Defaults/clamps according to extension config.",
-    );
+    .describe("Seconds before timeoutAction.");
 
 const pollInterval = (options: SchemaOptions) =>
   z
@@ -43,9 +47,7 @@ const pollInterval = (options: SchemaOptions) =>
     .int()
     .nonnegative()
     .default(options.defaultPollInterval)
-    .describe(
-      "Seconds between automatic output check-ins. Only used with background:true or timeoutAction:'background'.",
-    );
+    .describe("Seconds between background check-ins.");
 
 const pollLines = (options: SchemaOptions) =>
   z
@@ -53,20 +55,14 @@ const pollLines = (options: SchemaOptions) =>
     .int()
     .positive()
     .default(options.defaultPollLines)
-    .describe("Scrollback lines captured per poll.");
+    .describe("Lines captured per check-in.");
 
 const timeoutAction = z
   .enum(["kill", "background"])
   .optional()
-  .describe(
-    "What to do when the timeout is reached. 'kill' (default) kills the tmux window; 'background' leaves the command running in tmux. Use 'background' with pollInterval to keep getting check-ins after the timeout.",
-  );
+  .describe('"kill" or "background" on timeout.');
 
-const background = z
-  .literal(true)
-  .describe(
-    "If true, start the command in tmux and return immediately. Use for servers, watchers, REPLs, or anything expected to run longer than the timeout. timeout/timeoutAction are ignored when true. Pair with pollInterval for check-ins.",
-  );
+const background = z.literal(true).describe("Return immediately and keep running in tmux.");
 
 export const buildBashInputSchema = (options: SchemaOptions) => {
   const nonBackground = z.discriminatedUnion("timeoutAction", [
@@ -75,7 +71,7 @@ export const buildBashInputSchema = (options: SchemaOptions) => {
       name,
       background: backgroundFalse,
       timeout: timeout(options),
-      timeoutAction: z.literal("background"),
+      timeoutAction: z.literal("background").default("background"),
       pollInterval: pollInterval(options),
       pollLines: pollLines(options),
     }),
@@ -84,24 +80,27 @@ export const buildBashInputSchema = (options: SchemaOptions) => {
       name,
       background: backgroundFalse,
       timeout: timeout(options),
-      timeoutAction: z.literal("kill").optional(),
+      timeoutAction: z.literal("kill"),
       pollInterval: pollInterval(options),
       pollLines: pollLines(options),
     }),
   ]);
 
-  return z.discriminatedUnion("background", [
-    z.object({
-      command,
-      name,
-      background,
-      timeout: timeout(options),
-      timeoutAction,
-      pollInterval: pollInterval(options),
-      pollLines: pollLines(options),
-    }),
-    nonBackground,
-  ]);
+  return z.preprocess(
+    withDefaultTimeoutAction,
+    z.discriminatedUnion("background", [
+      z.object({
+        command,
+        name,
+        background,
+        timeout: timeout(options),
+        timeoutAction,
+        pollInterval: pollInterval(options),
+        pollLines: pollLines(options),
+      }),
+      nonBackground,
+    ]),
+  );
 };
 
 export const buildTmuxInputSchema = (options: SchemaOptions) =>
@@ -119,13 +118,13 @@ export const buildTmuxInputSchema = (options: SchemaOptions) =>
         .int()
         .nonnegative()
         .default(options.defaultPollInterval)
-        .describe("Seconds between automatic output check-ins (poll action)."),
+        .describe("Seconds between check-ins."),
       pollLines: z
         .number()
         .int()
         .positive()
         .default(options.defaultPollLines)
-        .describe("Scrollback lines captured per poll (poll action)."),
+        .describe("Lines captured per check-in."),
     }),
     z.object({ action: tmuxAction("unpoll"), window: tmuxWindow }),
   ]);
