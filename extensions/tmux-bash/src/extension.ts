@@ -77,15 +77,6 @@ export type TmuxBashOptions = {
 type FullscreenCommandResult = { ok: true } | { ok: false; message: string };
 
 type ResolvedOptions = Required<Omit<TmuxBashOptions, "sessionNameTemplate">>;
-type RawBashInput = {
-  command: string;
-  name?: string;
-  background?: boolean;
-  timeout?: number;
-  timeoutAction?: "kill" | "background";
-  pollInterval?: number;
-  pollLines?: number;
-};
 type SignalInfo = {
   session: string;
   windowId: string;
@@ -401,6 +392,61 @@ export const formatCompletionSummary = (
 ): string => {
   const status = exitCode === 0 ? "completed successfully" : `exited with code ${exitCode}`;
   return `${windowTitle} ${status} in tmux window :${windowIndex}`;
+};
+
+const isFullOutputNoticeLine = (line: string): boolean => /^\[Full output: .+\]$/.test(line.trim());
+
+const truncateText = (text: string, maxLength: number): string =>
+  text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+
+const stripTrailingPeriod = (text: string): string =>
+  text.endsWith(".") ? text.slice(0, -1) : text;
+
+const legacyCompletionSummaryMatch = (summary: string): RegExpMatchArray | null =>
+  stripTrailingPeriod(summary).match(/^tmux window "(.+)" \(:([0-9]+)\) (.+)$/);
+
+const compactCompletionSummary = (summary: string): string => {
+  const legacy = legacyCompletionSummaryMatch(summary);
+  if (legacy) {
+    const [, windowTitle = "", windowIndex = "", status = ""] = legacy;
+    const compactStatus = status === "completed successfully" ? "completed" : status;
+    return `${windowTitle} ${compactStatus} in tmux window :${windowIndex}`;
+  }
+
+  return stripTrailingPeriod(summary).replace(
+    " completed successfully in tmux window ",
+    " completed in tmux window ",
+  );
+};
+
+const visibleOutputLines = (lines: string[]): string[] =>
+  lines
+    .filter((line) => line.trim() !== "```")
+    .filter((line) => !isFullOutputNoticeLine(line))
+    .filter((line) => line.trim() !== "");
+
+export const formatRenderedBashCall = (args: Partial<BashInput>): string => {
+  const command = truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
+  const metadata = [
+    args.background === true ? "bg" : undefined,
+    args.timeout !== undefined ? `timeout ${args.timeout}s` : undefined,
+  ].filter((item) => item !== undefined);
+
+  return [`$ ${command}`, ...metadata].join("  ");
+};
+
+export const formatRenderedBashResult = (raw: string, expanded: boolean): string => {
+  if (expanded) return raw;
+
+  const [summary = "", ...detail] = raw.split("\n").filter((line) => !isFullOutputNoticeLine(line));
+  return [summary, ...detail.slice(-5)].join("\n").trimEnd();
+};
+
+export const formatRenderedCompletionMessage = (raw: string, expanded: boolean): string => {
+  if (expanded) return raw;
+
+  const [summary = "", ...detail] = raw.split("\n");
+  return [compactCompletionSummary(summary), ...visibleOutputLines(detail).slice(0, 5)].join("\n");
 };
 
 const signalFilename = ({ session, windowId, id }: SignalInfo): string =>
@@ -1394,15 +1440,8 @@ const registerBashTool = (
       );
     },
     renderCall(args, theme) {
-      const bashArgs = args as Partial<RawBashInput>;
-      const timeout = bashArgs.timeout ? theme.fg("muted", ` (timeout ${bashArgs.timeout}s)`) : "";
-      const timeoutAction = bashArgs.timeoutAction
-        ? theme.fg("muted", ` ${bashArgs.timeoutAction}`)
-        : "";
       return new Text(
-        theme.fg("toolTitle", theme.bold(`$ ${bashArgs.command ?? "..."}`)) +
-          timeout +
-          timeoutAction,
+        theme.fg("toolTitle", theme.bold(formatRenderedBashCall(args as Partial<BashInput>))),
         0,
         0,
       );
@@ -1410,9 +1449,7 @@ const registerBashTool = (
     renderResult(result, { expanded }, theme) {
       const content = result.content?.[0];
       const raw = content?.type === "text" ? content.text : "";
-      const [summary = "", ...detail] = raw.split("\n");
-      const body = expanded ? raw : [summary, ...detail.slice(-5)].join("\n");
-      return new Text(theme.fg("toolOutput", body), 0, 0);
+      return new Text(theme.fg("toolOutput", formatRenderedBashResult(raw, expanded)), 0, 0);
     },
   });
 };
@@ -1466,12 +1503,13 @@ const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: Resolved
 const registerRenderers = (pi: ExtensionAPI): void => {
   pi.registerMessageRenderer("tmux-bash-completion", (message, { expanded }, theme) => {
     const content = typeof message.content === "string" ? message.content : "";
-    const [summary = "", ...detail] = content.split("\n");
-    const icon = summary.includes("successfully")
+    const rendered = formatRenderedCompletionMessage(content, expanded);
+    const [summary = "", ...detail] = rendered.split("\n");
+    const icon = content.split("\n")[0]?.includes("successfully")
       ? theme.fg("success", "✓")
       : theme.fg("error", "✗");
     return new Text(
-      `${icon} ${summary}${expanded && detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
+      `${icon} ${summary}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
       0,
       0,
     );
