@@ -9,8 +9,6 @@ import {
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
-import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
@@ -36,124 +34,14 @@ import {
   shellQuote,
   sessionExists,
 } from "./tmux-utils.js";
+import {
+  buildBashToolCallSchema,
+  buildTmuxToolCallSchema,
+  type BashInput,
+  type TmuxInput,
+} from "./tool-call-schemas.js";
 
 const SIGNAL_BASE = "/tmp/pi-tmux-bash";
-
-const BashInTmuxParams = Type.Object({
-  command: Type.String({ description: "Bash command to run in a background tmux window." }),
-  name: Type.Optional(Type.String({ description: "Optional tmux window name." })),
-  background: Type.Optional(
-    Type.Boolean({
-      description:
-        "If true, start the command in tmux and return immediately. Use for servers, watchers, REPLs, or anything expected to run longer than the timeout. timeout/timeoutAction are ignored when true. Pair with pollInterval for check-ins.",
-    }),
-  ),
-  timeout: Type.Optional(
-    Type.Number({
-      description:
-        "Seconds to wait before applying timeoutAction. Ignored when background is true. Defaults/clamps according to extension config.",
-    }),
-  ),
-  timeoutAction: Type.Optional(
-    Type.Union([Type.Literal("kill"), Type.Literal("background")], {
-      description:
-        "What to do when the timeout is reached. 'kill' (default) kills the tmux window; 'background' leaves the command running in tmux. Use 'background' with pollInterval to keep getting check-ins after the timeout.",
-    }),
-  ),
-  pollInterval: Type.Optional(
-    Type.Number({
-      description:
-        "Seconds between automatic output check-ins. Only used with background:true or timeoutAction:'background'.",
-    }),
-  ),
-  pollLines: Type.Optional(Type.Number({ description: "Scrollback lines captured per poll." })),
-});
-
-const TmuxParams = Type.Object({
-  action: Type.Union(
-    [
-      Type.Literal("list"),
-      Type.Literal("kill"),
-      Type.Literal("list-polls"),
-      Type.Literal("attach"),
-      Type.Literal("peek"),
-      Type.Literal("poll"),
-      Type.Literal("unpoll"),
-    ],
-    { description: "Which tmux action to perform." },
-  ),
-  window: Type.Optional(
-    Type.Union([Type.Number(), Type.String(), Type.Literal("all")], {
-      description:
-        "Window index, name, or 'all' (peek only). Required for poll/unpoll. Optional for attach/peek.",
-    }),
-  ),
-  pollInterval: Type.Optional(
-    Type.Number({ description: "Seconds between automatic output check-ins (poll action)." }),
-  ),
-  pollLines: Type.Optional(
-    Type.Number({ description: "Scrollback lines captured per poll (poll action)." }),
-  ),
-});
-
-const buildBashInputSchema = (options: ResolvedOptions) => {
-  const command = z.string().min(1);
-  const name = z.string().optional();
-  const timeout = z
-    .number()
-    .int()
-    .positive()
-    .max(options.maxTimeoutSeconds)
-    .default(options.defaultTimeoutSeconds);
-  const pollInterval = z.number().int().nonnegative().default(options.defaultPollInterval);
-  const pollLines = z.number().int().positive().default(options.defaultPollLines);
-
-  return z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("background"), command, name, pollInterval, pollLines }),
-    z.object({
-      mode: z.literal("background-on-timeout"),
-      command,
-      name,
-      timeout,
-      pollInterval,
-      pollLines,
-    }),
-    z.object({ mode: z.literal("foreground"), command, name, timeout }),
-  ]);
-};
-
-const toBashInputMode = (raw: Record<string, unknown>): Record<string, unknown> => {
-  const { background, timeoutAction, pollInterval, pollLines, timeout, ...rest } = raw;
-  if (background === true) {
-    return { ...rest, mode: "background", pollInterval, pollLines };
-  }
-  if (timeoutAction === "background") {
-    return { ...rest, mode: "background-on-timeout", timeout, pollInterval, pollLines };
-  }
-  return { ...rest, mode: "foreground", timeout };
-};
-
-const TmuxWindowZ = z.union([z.number().int(), z.string().min(1)]);
-const TmuxPeekWindowZ = z.union([z.literal("all"), z.number().int(), z.string().min(1)]);
-
-const buildTmuxInputSchema = (options: ResolvedOptions) =>
-  z.discriminatedUnion("action", [
-    z.object({ action: z.literal("list") }),
-    z.object({ action: z.literal("kill") }),
-    z.object({ action: z.literal("list-polls") }),
-    z.object({ action: z.literal("attach"), window: TmuxWindowZ.optional() }),
-    z.object({ action: z.literal("peek"), window: TmuxPeekWindowZ.optional() }),
-    z.object({
-      action: z.literal("poll"),
-      window: TmuxWindowZ,
-      pollInterval: z.number().int().nonnegative().default(options.defaultPollInterval),
-      pollLines: z.number().int().positive().default(options.defaultPollLines),
-    }),
-    z.object({ action: z.literal("unpoll"), window: TmuxWindowZ }),
-  ]);
-
-type BashInput = z.infer<ReturnType<typeof buildBashInputSchema>>;
-type TmuxInput = z.infer<ReturnType<typeof buildTmuxInputSchema>>;
 
 export type TmuxBashOptions = {
   sessionNameTemplate?: string;
@@ -865,7 +753,7 @@ const runBashInTmux = async (
   const signalFilename = `${session}.${result.index}.${result.id}`;
   state.activeSession = session;
 
-  if (params.mode === "background") {
+  if (params.background === true) {
     if (params.pollInterval > 0) state.bashSignals.add(signalFilename);
     if (params.pollInterval > 0)
       startPoller(
@@ -907,7 +795,7 @@ const runBashInTmux = async (
   }
 
   if (exitCode === "timeout") {
-    if (params.mode === "foreground") {
+    if (params.timeoutAction !== "background") {
       execSafe(`tmux kill-window -t ${shellQuote(`${session}:${result.index}`)}`);
       return {
         content: [
@@ -1056,7 +944,7 @@ const registerBashTool = (
 ): void => {
   if (!options.replaceBashTool) return;
 
-  const bashInputSchema = buildBashInputSchema(options);
+  const bashToolCallSchema = buildBashToolCallSchema(options, toolError);
 
   pi.registerTool({
     name: "bash",
@@ -1070,15 +958,11 @@ const registerBashTool = (
       `Use ${options.toolName} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.`,
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
-    parameters: BashInTmuxParams,
+    parameters: bashToolCallSchema.typeBoxSchema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const parsed = bashInputSchema.safeParse(toBashInputMode(params as Record<string, unknown>));
-      if (!parsed.success) {
-        return toolError(
-          `Invalid bash input: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
-        );
-      }
-      return runBashInTmux(parsed.data, signal, pi, ctx, state, options);
+      return bashToolCallSchema.handleInput(params, (input) =>
+        runBashInTmux(input, signal, pi, ctx, state, options),
+      );
     },
     renderCall(args, theme) {
       const bashArgs = args as Partial<RawBashInput>;
@@ -1105,7 +989,7 @@ const registerBashTool = (
 };
 
 const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: ResolvedOptions): void => {
-  const tmuxInputSchema = buildTmuxInputSchema(options);
+  const tmuxToolCallSchema = buildTmuxToolCallSchema(options, toolError);
 
   pi.registerTool({
     name: options.toolName,
@@ -1130,15 +1014,11 @@ Actions:
       "The tmux tool uses a background sidecar session so agent-run windows do not clutter the user's normal tmux session.",
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
-    parameters: TmuxParams,
+    parameters: tmuxToolCallSchema.typeBoxSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const parsed = tmuxInputSchema.safeParse(params);
-      if (!parsed.success) {
-        return toolError(
-          `Invalid tmux input: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
-        );
-      }
-      return executeTool(parsed.data, ctx, state, pi, options);
+      return tmuxToolCallSchema.handleInput(params, (input) =>
+        executeTool(input, ctx, state, pi, options),
+      );
     },
     renderCall(args, theme) {
       const tmuxArgs = args as Partial<{

@@ -60,24 +60,6 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
 
-  extensions/tmux-bash:
-    dependencies:
-      '@mariozechner/pi-coding-agent':
-        specifier: '*'
-        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
-      '@mariozechner/pi-tui':
-        specifier: '*'
-        version: 0.70.6
-      '@richardgill/pi-config':
-        specifier: workspace:*
-        version: link:../../packages/pi-config
-      '@sinclair/typebox':
-        specifier: '*'
-        version: 0.34.49
-      zod:
-        specifier: 4.3.6
-        version: 4.3.6
-
   extensions/extra-context-files:
     dependencies:
       '@mariozechner/pi-coding-agent':
@@ -189,6 +171,27 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
 
+  extensions/tmux-bash:
+    dependencies:
+      '@mariozechner/pi-coding-agent':
+        specifier: '*'
+        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      '@mariozechner/pi-tui':
+        specifier: '*'
+        version: 0.70.6
+      '@richardgill/pi-config':
+        specifier: workspace:*
+        version: link:../../packages/pi-config
+      '@richardgill/pi-zod-tool-call':
+        specifier: workspace:*
+        version: link:../../packages/pi-zod-tool-call
+      '@sinclair/typebox':
+        specifier: '*'
+        version: 0.34.49
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+
   packages/pi-config:
     dependencies:
       jsonc-parser:
@@ -198,6 +201,15 @@ importers:
       '@mariozechner/pi-coding-agent':
         specifier: 0.70.6
         version: 0.70.6(ws@8.20.0)(zod@4.3.6)
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+
+  packages/pi-zod-tool-call:
+    devDependencies:
+      '@sinclair/typebox':
+        specifier: 0.34.49
+        version: 0.34.49
       zod:
         specifier: 4.3.6
         version: 4.3.6

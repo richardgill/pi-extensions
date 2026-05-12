@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@richardgill/pi-config": "workspace:*",
+    "@richardgill/pi-zod-tool-call": "workspace:*",
     "zod": "4.3.6"
   },
   "peerDependencies": {
