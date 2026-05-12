@@ -25,7 +25,7 @@ export const config = loadConfigOrDefault({
 
 ## User config files
 
-By default, config files are loaded from Pi's agent directory, usually `~/.pi/agent`.
+By default, config files are loaded from `PI_EXTENSION_CONFIG_DIR` when set, otherwise Pi's agent directory, usually `~/.pi/agent`.
 
 For the example above, the end user can create:
 
@@ -41,6 +41,8 @@ For the example above, the end user can create:
 The loader merges this file over the extension defaults, renders tagged string templates, then validates the final result with Zod.
 
 If the file is missing, `loadConfigOrDefault` uses the defaults.
+
+Config directory precedence is: explicit `folder`, `PI_EXTENSION_CONFIG_DIR`, then Pi's agent directory.
 
 ## Templates
 
