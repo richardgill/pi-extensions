@@ -4,13 +4,13 @@ import {
   formatSize,
   truncateTail,
   type BashToolDetails,
-  type BashToolInput,
   type ExtensionAPI,
   type ExtensionContext,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
@@ -39,105 +39,121 @@ import {
 
 const SIGNAL_BASE = "/tmp/pi-tmux-bash";
 
-const actionValues = ["attach", "peek", "list", "kill", "poll", "unpoll", "list-polls"] as const;
-type TmuxAction = (typeof actionValues)[number];
-
-const BashBaseParams = Type.Object({
+const BashInTmuxParams = Type.Object({
   command: Type.String({ description: "Bash command to run in a background tmux window." }),
   name: Type.Optional(Type.String({ description: "Optional tmux window name." })),
-});
-
-const BashTimeoutParams = Type.Object({
+  background: Type.Optional(
+    Type.Boolean({
+      description:
+        "If true, start the command in tmux and return immediately. Use for servers, watchers, REPLs, or anything expected to run longer than the timeout. timeout/timeoutAction are ignored when true. Pair with pollInterval for check-ins.",
+    }),
+  ),
   timeout: Type.Optional(
     Type.Number({
       description:
-        "Seconds to wait before applying timeoutAction. Defaults/clamps according to extension config.",
+        "Seconds to wait before applying timeoutAction. Ignored when background is true. Defaults/clamps according to extension config.",
     }),
   ),
-});
-
-const PollParams = Type.Object({
+  timeoutAction: Type.Optional(
+    Type.Union([Type.Literal("kill"), Type.Literal("background")], {
+      description:
+        "What to do when the timeout is reached. 'kill' (default) kills the tmux window; 'background' leaves the command running in tmux. Use 'background' with pollInterval to keep getting check-ins after the timeout.",
+    }),
+  ),
   pollInterval: Type.Optional(
-    Type.Number({ description: "Seconds between automatic output check-ins." }),
+    Type.Number({
+      description:
+        "Seconds between automatic output check-ins. Only used with background:true or timeoutAction:'background'.",
+    }),
   ),
   pollLines: Type.Optional(Type.Number({ description: "Scrollback lines captured per poll." })),
 });
 
-const BashInTmuxParams = Type.Union(
-  [
-    Type.Intersect([
-      BashBaseParams,
-      PollParams,
-      Type.Object({
-        background: Type.Literal(true, {
-          description: "Return immediately after starting the command in tmux.",
-        }),
-      }),
-    ]),
-    Type.Intersect([
-      BashBaseParams,
-      BashTimeoutParams,
-      PollParams,
-      Type.Object({
-        background: Type.Optional(Type.Literal(false)),
-        timeoutAction: Type.Literal("background", {
-          description: "Leave the command running in tmux if the timeout is reached.",
-        }),
-      }),
-    ]),
-    Type.Intersect([
-      BashBaseParams,
-      BashTimeoutParams,
-      Type.Object({
-        background: Type.Optional(Type.Literal(false)),
-        timeoutAction: Type.Optional(
-          Type.Literal("kill", {
-            description: "Kill the tmux window if the timeout is reached.",
-          }),
-        ),
-      }),
-    ]),
-  ],
-  { type: "object" },
-);
-
-const WindowParam = Type.Union([Type.Number(), Type.String()]);
-const PeekWindowParam = Type.Union([Type.Literal("all"), Type.Number(), Type.String()]);
-
-const TmuxParams = Type.Union(
-  [
-    Type.Object({ action: Type.Literal("list") }),
-    Type.Object({ action: Type.Literal("kill") }),
-    Type.Object({ action: Type.Literal("list-polls") }),
-    Type.Object({
-      action: Type.Literal("attach"),
-      window: Type.Optional(WindowParam),
+const TmuxParams = Type.Object({
+  action: Type.Union(
+    [
+      Type.Literal("list"),
+      Type.Literal("kill"),
+      Type.Literal("list-polls"),
+      Type.Literal("attach"),
+      Type.Literal("peek"),
+      Type.Literal("poll"),
+      Type.Literal("unpoll"),
+    ],
+    { description: "Which tmux action to perform." },
+  ),
+  window: Type.Optional(
+    Type.Union([Type.Number(), Type.String(), Type.Literal("all")], {
+      description:
+        "Window index, name, or 'all' (peek only). Required for poll/unpoll. Optional for attach/peek.",
     }),
-    Type.Object({
-      action: Type.Literal("peek"),
-      window: Type.Optional(PeekWindowParam),
-    }),
-    Type.Intersect([
-      PollParams,
-      Type.Object({
-        action: Type.Literal("poll"),
-        window: WindowParam,
-      }),
-    ]),
-    Type.Object({
-      action: Type.Literal("unpoll"),
-      window: WindowParam,
-    }),
-  ],
-  { type: "object" },
-);
+  ),
+  pollInterval: Type.Optional(
+    Type.Number({ description: "Seconds between automatic output check-ins (poll action)." }),
+  ),
+  pollLines: Type.Optional(
+    Type.Number({ description: "Scrollback lines captured per poll (poll action)." }),
+  ),
+});
 
-type TmuxInput = {
-  action: TmuxAction;
-  window?: number | string;
-  pollInterval?: number;
-  pollLines?: number;
+const buildBashInputSchema = (options: ResolvedOptions) => {
+  const command = z.string().min(1);
+  const name = z.string().optional();
+  const timeout = z
+    .number()
+    .int()
+    .positive()
+    .max(options.maxTimeoutSeconds)
+    .default(options.defaultTimeoutSeconds);
+  const pollInterval = z.number().int().nonnegative().default(options.defaultPollInterval);
+  const pollLines = z.number().int().positive().default(options.defaultPollLines);
+
+  return z.discriminatedUnion("mode", [
+    z.object({ mode: z.literal("background"), command, name, pollInterval, pollLines }),
+    z.object({
+      mode: z.literal("background-on-timeout"),
+      command,
+      name,
+      timeout,
+      pollInterval,
+      pollLines,
+    }),
+    z.object({ mode: z.literal("foreground"), command, name, timeout }),
+  ]);
 };
+
+const toBashInputMode = (raw: Record<string, unknown>): Record<string, unknown> => {
+  const { background, timeoutAction, pollInterval, pollLines, timeout, ...rest } = raw;
+  if (background === true) {
+    return { ...rest, mode: "background", pollInterval, pollLines };
+  }
+  if (timeoutAction === "background") {
+    return { ...rest, mode: "background-on-timeout", timeout, pollInterval, pollLines };
+  }
+  return { ...rest, mode: "foreground", timeout };
+};
+
+const TmuxWindowZ = z.union([z.number().int(), z.string().min(1)]);
+const TmuxPeekWindowZ = z.union([z.literal("all"), z.number().int(), z.string().min(1)]);
+
+const buildTmuxInputSchema = (options: ResolvedOptions) =>
+  z.discriminatedUnion("action", [
+    z.object({ action: z.literal("list") }),
+    z.object({ action: z.literal("kill") }),
+    z.object({ action: z.literal("list-polls") }),
+    z.object({ action: z.literal("attach"), window: TmuxWindowZ.optional() }),
+    z.object({ action: z.literal("peek"), window: TmuxPeekWindowZ.optional() }),
+    z.object({
+      action: z.literal("poll"),
+      window: TmuxWindowZ,
+      pollInterval: z.number().int().nonnegative().default(options.defaultPollInterval),
+      pollLines: z.number().int().positive().default(options.defaultPollLines),
+    }),
+    z.object({ action: z.literal("unpoll"), window: TmuxWindowZ }),
+  ]);
+
+type BashInput = z.infer<ReturnType<typeof buildBashInputSchema>>;
+type TmuxInput = z.infer<ReturnType<typeof buildTmuxInputSchema>>;
 
 export type TmuxBashOptions = {
   sessionNameTemplate?: string;
@@ -159,23 +175,15 @@ export type TmuxBashOptions = {
 };
 
 type ResolvedOptions = Required<TmuxBashOptions>;
-type TimeoutAction = "kill" | "background";
-type BashExecutionMode = "foreground" | "background" | "background-on-timeout";
-type BashInTmuxInput = BashToolInput & {
-  timeoutAction?: TimeoutAction;
+type RawBashInput = {
+  command: string;
   name?: string;
   background?: boolean;
+  timeout?: number;
+  timeoutAction?: "kill" | "background";
   pollInterval?: number;
   pollLines?: number;
 };
-type ResolvedBashCall = {
-  mode: BashExecutionMode;
-  timeout: number;
-  timeoutAction: TimeoutAction;
-  pollInterval: number;
-  pollLines: number;
-};
-type ResolvedPollCall = { interval: number; lines: number };
 type SignalInfo = { session: string; winIdx: number; id: string; outputFile?: string };
 type Poller = {
   timer: NodeJS.Timeout;
@@ -489,19 +497,15 @@ const createBashSessionWindow = (
   };
 };
 
-const resolveWindowIndex = (window: TmuxInput["window"]): number | undefined | "invalid" => {
+const resolveWindowIndex = (
+  window: number | string | "all" | undefined,
+): number | undefined | "invalid" => {
   if (window === undefined) return undefined;
   if (window === "all") return "invalid";
 
   const index = typeof window === "number" ? window : parseInt(window);
   return Number.isNaN(index) ? "invalid" : index;
 };
-
-const normalizeBashTimeout = (timeout: number | undefined, options: ResolvedOptions): number =>
-  Math.min(
-    positiveInteger("bash timeout", timeout ?? options.defaultTimeoutSeconds),
-    options.maxTimeoutSeconds,
-  );
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -537,39 +541,6 @@ const commandOutput = (
 ): string => readOutputFile(outputFile) ?? captureWindowOutput(session, windowIndex, lines);
 
 const pollerKey = (session: string, windowIndex: number): string => `${session}:${windowIndex}`;
-
-const resolvePollInterval = (params: { pollInterval?: number }, options: ResolvedOptions): number =>
-  nonNegativeInteger("pollInterval", params.pollInterval ?? options.defaultPollInterval);
-
-const resolvePollLines = (params: { pollLines?: number }, options: ResolvedOptions): number =>
-  positiveInteger("pollLines", params.pollLines ?? options.defaultPollLines);
-
-const resolvePollCall = (
-  params: { pollInterval?: number; pollLines?: number },
-  options: ResolvedOptions,
-): ResolvedPollCall => ({
-  interval: resolvePollInterval(params, options),
-  lines: resolvePollLines(params, options),
-});
-
-const resolveBashMode = (params: BashInTmuxInput): BashExecutionMode => {
-  if (params.background) return "background";
-  if (params.timeoutAction === "background") return "background-on-timeout";
-  return "foreground";
-};
-
-const resolveBashCall = (params: BashInTmuxInput, options: ResolvedOptions): ResolvedBashCall => {
-  const mode = resolveBashMode(params);
-  const canPoll = mode !== "foreground";
-
-  return {
-    mode,
-    timeout: normalizeBashTimeout(params.timeout, options),
-    timeoutAction: mode === "background-on-timeout" ? "background" : "kill",
-    pollInterval: canPoll ? resolvePollInterval(params, options) : 0,
-    pollLines: canPoll ? resolvePollLines(params, options) : options.defaultPollLines,
-  };
-};
 
 const readSignalExitCode = (state: ExtensionState, signalInfo?: SignalInfo): number | undefined => {
   if (!signalInfo || !state.signalDir) return undefined;
@@ -735,7 +706,7 @@ const toolText = (text: string, details: unknown = {}) => ({
 const toolError = (text: string) => ({ ...toolText(text), isError: true });
 
 const attachAction = (
-  params: TmuxInput,
+  params: Extract<TmuxInput, { action: "attach" }>,
   ctx: ExtensionContext,
   session: string,
   options: ResolvedOptions,
@@ -755,7 +726,11 @@ const attachAction = (
   };
 };
 
-const peekAction = (params: TmuxInput, session: string, options: ResolvedOptions) => {
+const peekAction = (
+  params: Extract<TmuxInput, { action: "peek" }>,
+  session: string,
+  options: ResolvedOptions,
+) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}'.`);
 
   const windowIndex =
@@ -794,11 +769,10 @@ const killAction = (session: string) => {
 };
 
 const pollAction = (
-  params: TmuxInput,
+  params: Extract<TmuxInput, { action: "poll" }>,
   session: string,
   state: ExtensionState,
   pi: ExtensionAPI,
-  options: ResolvedOptions,
 ) => {
   const windowIndex = resolveWindowIndex(params.window);
   if (windowIndex === undefined || windowIndex === "invalid") {
@@ -808,15 +782,18 @@ const pollAction = (
   const window = getWindows(session).find((item) => item.index === windowIndex);
   if (!window) return toolError(`No tmux window :${windowIndex} in session ${session}.`);
 
-  const poll = resolvePollCall(params, options);
-  if (poll.interval <= 0)
+  if (params.pollInterval <= 0)
     return toolError("Error: pollInterval must be greater than 0 for poll action.");
 
-  startPoller(pi, state, session, windowIndex, poll.interval, poll.lines);
-  return toolText(`Polling "${window.title}" (:${windowIndex}) every ${poll.interval}s.`);
+  startPoller(pi, state, session, windowIndex, params.pollInterval, params.pollLines);
+  return toolText(`Polling "${window.title}" (:${windowIndex}) every ${params.pollInterval}s.`);
 };
 
-const unpollAction = (params: TmuxInput, session: string, state: ExtensionState) => {
+const unpollAction = (
+  params: Extract<TmuxInput, { action: "unpoll" }>,
+  session: string,
+  state: ExtensionState,
+) => {
   const windowIndex = resolveWindowIndex(params.window);
   if (windowIndex === undefined || windowIndex === "invalid") {
     return toolError("Error: 'window' (index) required for unpoll action.");
@@ -856,22 +833,14 @@ const executeTool = (
   if (params.action === "peek") return peekAction(params, session, options);
   if (params.action === "list") return listAction(session);
   if (params.action === "kill") return killAction(session);
-  if (params.action === "poll") return pollAction(params, session, state, pi, options);
+  if (params.action === "poll") return pollAction(params, session, state, pi);
   if (params.action === "unpoll") return unpollAction(params, session, state);
-  if (params.action === "list-polls") return listPollsAction(session, state);
-
-  return toolError(`Unknown action: ${params.action}`);
+  return listPollsAction(session, state);
 };
 
 const runBashInTmux = async (
-  params: BashInTmuxInput,
+  params: BashInput,
   signal: AbortSignal | undefined,
-  _onUpdate:
-    | ((result: {
-        content: Array<{ type: "text"; text: string }>;
-        details: BashToolDetails | undefined;
-      }) => void)
-    | undefined,
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   state: ExtensionState,
@@ -883,7 +852,6 @@ const runBashInTmux = async (
   startWatching(state, pi, options);
   const session = backgroundSessionName(gitRoot, options.sessionNameTemplate);
   const exists = sessionExists(session);
-  const call = resolveBashCall(params, options);
   const signalDir = getSignalDir(state);
   const result = exists
     ? addBashWindow(signalDir, session, gitRoot, params.command, params.name, options)
@@ -895,31 +863,40 @@ const runBashInTmux = async (
     outputFile: result.outputFile,
   };
   const signalFilename = `${session}.${result.index}.${result.id}`;
-
   state.activeSession = session;
-  if (call.mode !== "background" || call.pollInterval > 0) state.bashSignals.add(signalFilename);
 
-  if (call.mode === "background") {
-    if (call.pollInterval > 0)
-      startPoller(pi, state, session, result.index, call.pollInterval, call.pollLines, signalInfo);
+  if (params.mode === "background") {
+    if (params.pollInterval > 0) state.bashSignals.add(signalFilename);
+    if (params.pollInterval > 0)
+      startPoller(
+        pi,
+        state,
+        session,
+        result.index,
+        params.pollInterval,
+        params.pollLines,
+        signalInfo,
+      );
     return {
       content: [
         {
           type: "text" as const,
-          text: `Started in tmux window${call.pollInterval > 0 ? ` and polling every ${call.pollInterval}s` : ""}.`,
+          text: `Started in tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}.`,
         },
       ],
       details: undefined,
     };
   }
 
-  const exitCode = await waitForExitCode(signalDir, signal, signalInfo, call.timeout);
+  state.bashSignals.add(signalFilename);
+  const exitCode = await waitForExitCode(signalDir, signal, signalInfo, params.timeout);
   state.bashSignals.delete(signalFilename);
   const output = formatTrimmedOutput(
     commandOutput(session, result.index, options.captureLines, result.outputFile),
     result.outputFile,
   );
   const text = output.text;
+
   if (exitCode === "aborted") {
     execSafe(`tmux kill-window -t ${shellQuote(`${session}:${result.index}`)}`);
     return {
@@ -930,13 +907,13 @@ const runBashInTmux = async (
   }
 
   if (exitCode === "timeout") {
-    if (call.timeoutAction === "kill") {
+    if (params.mode === "foreground") {
       execSafe(`tmux kill-window -t ${shellQuote(`${session}:${result.index}`)}`);
       return {
         content: [
           {
             type: "text" as const,
-            text: `${text}\n\nCommand timed out after ${call.timeout} seconds and tmux window :${result.index} was killed.`,
+            text: `${text}\n\nCommand timed out after ${params.timeout} seconds and tmux window :${result.index} was killed.`,
           },
         ],
         details: output.details,
@@ -944,13 +921,21 @@ const runBashInTmux = async (
       };
     }
 
-    if (call.pollInterval > 0)
-      startPoller(pi, state, session, result.index, call.pollInterval, call.pollLines, signalInfo);
+    if (params.pollInterval > 0)
+      startPoller(
+        pi,
+        state,
+        session,
+        result.index,
+        params.pollInterval,
+        params.pollLines,
+        signalInfo,
+      );
     return {
       content: [
         {
           type: "text" as const,
-          text: `${text}\n\nCommand is still running after ${call.timeout} seconds in tmux window :${result.index}${call.pollInterval > 0 ? ` and polling every ${call.pollInterval}s` : ""}. Use ${options.toolName} peek/list/kill to inspect or stop it.`,
+          text: `${text}\n\nCommand is still running after ${params.timeout} seconds in tmux window :${result.index}${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Use ${options.toolName} peek/list/kill to inspect or stop it.`,
         },
       ],
       details: output.details,
@@ -1071,6 +1056,8 @@ const registerBashTool = (
 ): void => {
   if (!options.replaceBashTool) return;
 
+  const bashInputSchema = buildBashInputSchema(options);
+
   pi.registerTool({
     name: "bash",
     label: "bash",
@@ -1084,11 +1071,17 @@ const registerBashTool = (
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
     parameters: BashInTmuxParams,
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      return runBashInTmux(params as BashInTmuxInput, signal, onUpdate, pi, ctx, state, options);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const parsed = bashInputSchema.safeParse(toBashInputMode(params as Record<string, unknown>));
+      if (!parsed.success) {
+        return toolError(
+          `Invalid bash input: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      return runBashInTmux(parsed.data, signal, pi, ctx, state, options);
     },
     renderCall(args, theme) {
-      const bashArgs = args as Partial<BashInTmuxInput>;
+      const bashArgs = args as Partial<RawBashInput>;
       const timeout = bashArgs.timeout ? theme.fg("muted", ` (timeout ${bashArgs.timeout}s)`) : "";
       const timeoutAction = bashArgs.timeoutAction
         ? theme.fg("muted", ` ${bashArgs.timeoutAction}`)
@@ -1112,6 +1105,8 @@ const registerBashTool = (
 };
 
 const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: ResolvedOptions): void => {
+  const tmuxInputSchema = buildTmuxInputSchema(options);
+
   pi.registerTool({
     name: options.toolName,
     label: options.toolName,
@@ -1137,10 +1132,19 @@ Actions:
     ],
     parameters: TmuxParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      return executeTool(params as TmuxInput, ctx, state, pi, options);
+      const parsed = tmuxInputSchema.safeParse(params);
+      if (!parsed.success) {
+        return toolError(
+          `Invalid tmux input: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      return executeTool(parsed.data, ctx, state, pi, options);
     },
     renderCall(args, theme) {
-      const tmuxArgs = args as Partial<TmuxInput>;
+      const tmuxArgs = args as Partial<{
+        action: string;
+        window: number | string | "all";
+      }>;
       const action = tmuxArgs.action ?? options.toolName;
       const windowLabel =
         (action === "attach" || action === "peek" || action === "poll" || action === "unpoll") &&
