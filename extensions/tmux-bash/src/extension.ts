@@ -1,8 +1,13 @@
-import type {
-  BashToolDetails,
-  BashToolInput,
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  truncateTail,
+  type BashToolDetails,
+  type BashToolInput,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
@@ -150,6 +155,7 @@ type ExtensionState = {
 };
 
 type RunWindowResult = { index: number; id: string; outputFile?: string };
+type FormattedOutput = { text: string; details: BashToolDetails | undefined };
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
   sessionNameTemplate: DEFAULT_SESSION_NAME_TEMPLATE,
@@ -310,6 +316,53 @@ const trimOutput = (output: string | null, tailLines: number): string =>
     .filter((line) => line.trim())
     .slice(-tailLines)
     .join("\n");
+
+const lastLineBytes = (content: string): number =>
+  Buffer.byteLength(content.split("\n").at(-1) ?? "", "utf-8");
+
+const fullOutputSuffix = (fullOutputPath: string | undefined): string =>
+  fullOutputPath ? `. Full output: ${fullOutputPath}` : "";
+
+const truncationNotice = (
+  content: string,
+  truncation: TruncationResult,
+  fullOutputPath: string | undefined,
+): string => {
+  const startLine = truncation.totalLines - truncation.outputLines + 1;
+  const endLine = truncation.totalLines;
+  const suffix = fullOutputSuffix(fullOutputPath);
+
+  if (truncation.lastLinePartial) {
+    const lineSize = formatSize(lastLineBytes(content));
+    return `[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lineSize})${suffix}]`;
+  }
+
+  if (truncation.truncatedBy === "lines") {
+    return `[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}${suffix}]`;
+  }
+
+  return `[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)${suffix}]`;
+};
+
+export const formatTmuxOutputForContext = (
+  content: string,
+  fullOutputPath?: string,
+  emptyText = "(no output)",
+): FormattedOutput => {
+  const text = content || emptyText;
+  const truncation = truncateTail(text);
+  if (!truncation.truncated) return { text, details: undefined };
+
+  return {
+    text: `${truncation.content}\n\n${truncationNotice(text, truncation, fullOutputPath)}`,
+    details: { truncation, fullOutputPath },
+  };
+};
+
+const formatOutput = formatTmuxOutputForContext;
+
+const formatTrimmedOutput = (content: string, fullOutputPath?: string): FormattedOutput =>
+  formatOutput(content.trim(), fullOutputPath);
 
 const outputFileForSignal = (signalDir: string, { session, winIdx, id }: SignalInfo): string =>
   join(signalDir, `${session}.${winIdx}.${id}.out`);
@@ -556,8 +609,10 @@ const startPoller = (
       return;
     }
 
-    const output =
-      commandOutput(session, windowIndex, lines, signalInfo?.outputFile).trim() || "(no output)";
+    const output = formatTrimmedOutput(
+      commandOutput(session, windowIndex, lines, signalInfo?.outputFile),
+      signalInfo?.outputFile,
+    ).text;
     const exitCode = readSignalExitCode(state, signalInfo);
     const completed = exitCode !== undefined;
     if (completed) stopPoller(state, session, windowIndex);
@@ -604,8 +659,11 @@ const startForegroundPoller = (
   if (!onUpdate || interval <= 0) return undefined;
 
   return setInterval(() => {
-    const output = commandOutput(session, windowIndex, lines, outputFile).trim() || "(no output)";
-    onUpdate({ content: [{ type: "text", text: output }], details: undefined });
+    const output = formatTrimmedOutput(
+      commandOutput(session, windowIndex, lines, outputFile),
+      outputFile,
+    );
+    onUpdate({ content: [{ type: "text", text: output.text }], details: output.details });
   }, interval * 1000);
 };
 
@@ -625,13 +683,17 @@ const handleCompletionSignal = (
 
   const win = getWindows(parsed.session).find((item) => item.index === parsed.winIdx);
   const winName = win?.title ?? `window ${parsed.winIdx}`;
-  const output = trimOutput(
-    readOutputFile(`${filepath}.out`) ??
-      execSafe(
-        `tmux capture-pane -t ${shellQuote(`${parsed.session}:${parsed.winIdx}`)} -p -S -${options.completionCaptureLines}`,
-      ),
-    options.completionTailLines,
-  );
+  const outputFile = `${filepath}.out`;
+  const fileOutput = readOutputFile(outputFile);
+  const rawOutput =
+    fileOutput ??
+    execSafe(
+      `tmux capture-pane -t ${shellQuote(`${parsed.session}:${parsed.winIdx}`)} -p -S -${options.completionCaptureLines}`,
+    );
+  const output = formatOutput(
+    trimOutput(rawOutput, options.completionTailLines),
+    fileOutput === null ? undefined : outputFile,
+  ).text;
   const code = parseInt(exitCode);
   const status = code === 0 ? "completed successfully" : `exited with code ${code}`;
 
@@ -760,9 +822,10 @@ const peekAction = (params: TmuxInput, session: string, options: ResolvedOptions
       ? "all"
       : resolveWindowIndex(params.window);
   const target = windowIndex === "invalid" || windowIndex === undefined ? "all" : windowIndex;
+  const output = formatOutput(capturePanes(session, target, options.captureLines));
   return {
-    content: [{ type: "text" as const, text: capturePanes(session, target, options.captureLines) }],
-    details: { session },
+    content: [{ type: "text" as const, text: output.text }],
+    details: { session, ...output.details },
   };
 };
 
@@ -925,18 +988,16 @@ const runBashInTmux = async (
   const exitCode = await waitForExitCode(signalDir, signal, signalInfo, timeout);
   if (foregroundPoller) clearInterval(foregroundPoller);
   state.bashSignals.delete(signalFilename);
-  const output = commandOutput(
-    session,
-    result.index,
-    options.captureLines,
+  const output = formatTrimmedOutput(
+    commandOutput(session, result.index, options.captureLines, result.outputFile),
     result.outputFile,
-  ).trim();
-  const text = output || "(no output)";
+  );
+  const text = output.text;
   if (exitCode === "aborted") {
     execSafe(`tmux kill-window -t ${shellQuote(`${session}:${result.index}`)}`);
     return {
       content: [{ type: "text" as const, text: `${text}\n\nCommand aborted` }],
-      details: undefined,
+      details: output.details,
       isError: true,
     };
   }
@@ -951,7 +1012,7 @@ const runBashInTmux = async (
             text: `${text}\n\nCommand timed out after ${timeout} seconds and tmux window :${result.index} was killed.`,
           },
         ],
-        details: undefined,
+        details: output.details,
         isError: true,
       };
     }
@@ -965,19 +1026,19 @@ const runBashInTmux = async (
           text: `${text}\n\nCommand is still running after ${timeout} seconds in tmux window :${result.index}${pollInterval > 0 ? ` and polling every ${pollInterval}s` : ""}. Use ${options.toolName} peek/list/kill to inspect or stop it.`,
         },
       ],
-      details: undefined,
+      details: output.details,
     };
   }
 
   if (exitCode !== 0) {
     return {
       content: [{ type: "text" as const, text: `${text}\n\nCommand exited with code ${exitCode}` }],
-      details: undefined,
+      details: output.details,
       isError: true,
     };
   }
 
-  return { content: [{ type: "text" as const, text }], details: undefined };
+  return { content: [{ type: "text" as const, text }], details: output.details };
 };
 
 const clearIdleWindows = (session: string): number | "missing" => {
@@ -1045,12 +1106,10 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      pi.sendUserMessage(
-        `Here is the background tmux output:\n\n\`\`\`\n${capturePanes(session, target, options.captureLines)}\n\`\`\``,
-        {
-          deliverAs: "followUp",
-        },
-      );
+      const output = formatOutput(capturePanes(session, target, options.captureLines));
+      pi.sendUserMessage(`Here is the background tmux output:\n\n\`\`\`\n${output.text}\n\`\`\``, {
+        deliverAs: "followUp",
+      });
     },
   });
 
@@ -1088,8 +1147,8 @@ const registerBashTool = (
   pi.registerTool({
     name: "bash",
     label: "bash",
-    description: `Execute a bash command in a background tmux window in the current working directory. Returns captured tmux output. Timeout defaults to ${options.defaultTimeoutSeconds}s and is clamped to ${options.maxTimeoutSeconds}s. Use background to return immediately. Use pollInterval for periodic check-ins. If timeoutAction is "background", the command keeps running in tmux after timeout. If timeoutAction is "kill" or omitted, the tmux window is killed on timeout.`,
-    promptSnippet: `Execute bash commands in background tmux windows; default timeout ${options.defaultTimeoutSeconds}s, max timeout ${options.maxTimeoutSeconds}s. Use background or timeoutAction "background" for servers/watchers. Use pollInterval for check-ins.`,
+    description: `Execute a bash command in a background tmux window in the current working directory. Returns captured tmux output truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Timeout defaults to ${options.defaultTimeoutSeconds}s and is clamped to ${options.maxTimeoutSeconds}s. Use background to return immediately. Use pollInterval for periodic check-ins. If timeoutAction is "background", the command keeps running in tmux after timeout. If timeoutAction is "kill" or omitted, the tmux window is killed on timeout.`,
+    promptSnippet: `Execute bash commands in background tmux windows; output is truncated like Pi's built-in bash; default timeout ${options.defaultTimeoutSeconds}s, max timeout ${options.maxTimeoutSeconds}s. Use background or timeoutAction "background" for servers/watchers. Use pollInterval for check-ins.`,
     promptGuidelines: [
       `Bash commands run in tmux. Bash timeout values default to ${options.defaultTimeoutSeconds}s and are clamped to ${options.maxTimeoutSeconds}s.`,
       "Use bash with background true or timeoutAction 'background' for servers, file watchers, REPLs, interactive prompts, background jobs, or commands expected to run longer than the timeout.",
@@ -1136,7 +1195,7 @@ WHEN TO USE: Prefer this over bash for long-running or background commands: dev 
 Actions:
 - run: Run a command in a new background tmux window. If the background session already exists, a new window is added to it. When the command finishes, the agent is automatically notified with the exit code and recent output.
 - attach: Open a terminal tab attached to the background session.
-- peek: Capture recent output from background tmux windows. Use window param to target a specific window, or omit for all.
+- peek: Capture recent output from background tmux windows. Use window param to target a specific window, or omit for all. Captured output is truncated to stay within model context.
 - list: List background tmux windows.
 - kill: Kill the background tmux session.
 - poll: Start periodic output check-ins for a window.
