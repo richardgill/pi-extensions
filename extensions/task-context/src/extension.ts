@@ -787,15 +787,8 @@ export const updateTaskContextJsonl = async ({
   return nextSnapshot;
 };
 
-const notifyFailure = (ctx: ExtensionContext, error: unknown): void => {
+const logFailure = (error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
-  try {
-    if (ctx.hasUI) {
-      ctx.ui.notify(`task-context update failed: ${message}`, "warning");
-      return;
-    }
-  } catch {}
-
   console.error(`task-context update failed: ${message}`);
 };
 
@@ -804,6 +797,43 @@ const createTaskContextRuntime = (ctx: ExtensionContext): TaskContextRuntime => 
   sessionFile: ctx.sessionManager.getSessionFile(),
   modelRegistry: ctx.modelRegistry,
 });
+
+type BackgroundUpdateInput = {
+  runtime: TaskContextRuntime;
+  turn: TurnEndEvent;
+  options: ResolvedOptions;
+};
+
+const updateTaskContextAfterTurn = async ({
+  runtime,
+  turn,
+  options,
+}: BackgroundUpdateInput): Promise<void> => {
+  const fileEvents = await collectFileEventsForTurnFromSessionFile(
+    runtime.sessionFile,
+    turn.turnIndex,
+    { dedupe: true },
+  );
+  await updateTaskContextJsonl({ runtime, turn, fileEvents, options });
+};
+
+const runBackgroundUpdate = async (input: BackgroundUpdateInput): Promise<void> => {
+  try {
+    await updateTaskContextAfterTurn(input);
+  } catch (error) {
+    logFailure(error);
+  }
+};
+
+const enqueueBackgroundUpdate = (
+  queue: Promise<void>,
+  input: BackgroundUpdateInput,
+  onSettled: () => void,
+): Promise<void> =>
+  queue.then(async () => {
+    await runBackgroundUpdate(input);
+    onSettled();
+  });
 
 const prepareTaskContext = async (
   ctx: ExtensionCommandContext,
@@ -861,20 +891,15 @@ export const taskContext = (input: TaskContextOptions = {}) => {
       } catch {}
     });
 
-    pi.on("turn_end", async (event, ctx) => {
-      try {
-        const runtime =
-          runtimes.get(event.turnIndex) ?? lastRuntime ?? createTaskContextRuntime(ctx);
-        const fileEvents = await collectFileEventsForTurnFromSessionFile(
-          runtime.sessionFile,
-          event.turnIndex,
-          { dedupe: true },
-        );
-        await updateTaskContextJsonl({ runtime, turn: event, fileEvents, options });
-        runtimes.delete(event.turnIndex);
-      } catch (error) {
-        notifyFailure(ctx, error);
-      }
+    let backgroundUpdateQueue: Promise<void> = Promise.resolve();
+
+    pi.on("turn_end", (event, ctx) => {
+      const runtime = runtimes.get(event.turnIndex) ?? lastRuntime ?? createTaskContextRuntime(ctx);
+      backgroundUpdateQueue = enqueueBackgroundUpdate(
+        backgroundUpdateQueue,
+        { runtime, turn: event, options },
+        () => runtimes.delete(event.turnIndex),
+      );
     });
   };
 };

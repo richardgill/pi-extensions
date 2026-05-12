@@ -715,8 +715,9 @@ describe("taskContext", () => {
 
     taskContext({ outputPath: "./task-context.jsonl" })(pi);
     await handlers.turn_start?.({ turnIndex: 7 }, ctx);
-    await handlers.turn_end?.(turnEvent(), ctx);
+    handlers.turn_end?.(turnEvent(), ctx);
 
+    await vi.waitFor(() => expect(completeSimpleMock).toHaveBeenCalled());
     const request = completeSimpleMock.mock.calls[0]?.[1];
     const evidence = JSON.parse(request.messages[0].content[0].text);
     const onCalls = (pi.on as unknown as { mock: { calls: unknown[][] } }).mock.calls;
@@ -726,23 +727,63 @@ describe("taskContext", () => {
       previousSnapshot: { title: "" },
       fileEvents: [{ path: "./a.ts", source: "read_tool" }],
     });
-    await expect(readLatestSnapshot(path.join(dir, "task-context.jsonl"))).resolves.toMatchObject({
-      title: "From Model",
+    await vi.waitFor(async () => {
+      await expect(readLatestSnapshot(path.join(dir, "task-context.jsonl"))).resolves.toMatchObject(
+        {
+          title: "From Model",
+        },
+      );
     });
   });
 
-  it("notifies UI failures without throwing from turn_end", async () => {
+  it("starts turn_end updates in the background", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
     const { pi, handlers } = createPi();
     const ctx = createContext(dir, path.join(dir, "session.jsonl"));
+    let finishModel: (() => void) | undefined;
+    completeSimpleMock.mockReset();
+    completeSimpleMock.mockReturnValue(
+      new Promise((resolve) => {
+        finishModel = () => resolve(modelResponse(snapshot("Async")));
+      }),
+    );
+
+    taskContext({ outputPath: "./task-context.jsonl" })(pi);
+    const result = handlers.turn_end?.(turnEvent(), ctx);
+
+    expect(result).toBeUndefined();
+    await vi.waitFor(() => expect(completeSimpleMock).toHaveBeenCalled());
+    await expect(readLatestSnapshot(path.join(dir, "task-context.jsonl"))).resolves.toMatchObject({
+      title: "",
+    });
+
+    finishModel?.();
+    await vi.waitFor(async () => {
+      await expect(readLatestSnapshot(path.join(dir, "task-context.jsonl"))).resolves.toMatchObject(
+        {
+          title: "Async",
+        },
+      );
+    });
+  });
+
+  it("logs background failures without throwing from turn_end", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const { pi, handlers } = createPi();
+    const ctx = createContext(dir, path.join(dir, "session.jsonl"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     completeSimpleMock.mockReset();
     completeSimpleMock.mockRejectedValue(new Error("model failed"));
 
     taskContext({ outputPath: "./task-context.jsonl" })(pi);
-    await expect(handlers.turn_end?.(turnEvent(), ctx)).resolves.toBeUndefined();
+    const result = handlers.turn_end?.(turnEvent(), ctx);
 
-    const notifyCalls = (ctx.ui.notify as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    expect(notifyCalls).toContainEqual(["task-context update failed: model failed", "warning"]);
+    expect(result).toBeUndefined();
+    await vi.waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith("task-context update failed: model failed"),
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });
 
