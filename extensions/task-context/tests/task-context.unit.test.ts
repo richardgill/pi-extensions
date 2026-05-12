@@ -543,9 +543,13 @@ describe("buildTaskContextMarkdown", () => {
     expect(markdown).toContain(
       "- `./whole.ts` — implementation: Whole file matters.\n- `./range.ts:2-3, ./range.ts:4-4` — reference: Range matters.",
     );
-    expect(markdown).not.toContain("## Loaded File Contents");
-    expect(markdown).not.toContain("export const whole = true;");
-    expect(markdown).not.toContain("two\nthree");
+    expect(markdown).toContain("## Loaded Relevant File Contents");
+    expect(markdown).toContain("### ./whole.ts");
+    expect(markdown).toContain("export const whole = true;");
+    expect(markdown).toContain("### ./range.ts:2-3");
+    expect(markdown).toContain("two\nthree");
+    expect(markdown).toContain("### ./range.ts:4-4");
+    expect(markdown).toContain("four");
     expect(markdown).toContain("- Ran `bash ./custom-command.sh` and loaded its output.");
     expect(markdown).toContain("### custom");
     expect(markdown).toContain("custom-output");
@@ -611,7 +615,30 @@ describe("buildTaskContextMarkdown", () => {
     expect(markdown).not.toContain('"title": "Current"');
   });
 
-  it("truncates custom command stdout and stderr independently", async () => {
+  it("does not truncate custom command stdout and stderr by default", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
+    const stdout = "a".repeat(20001);
+    const stderr = "b".repeat(20001);
+    const options = resolveOptions({
+      outputPath: "./task-context.jsonl",
+      customCommands: [
+        {
+          command: "bash",
+          args: ["-c", `printf ${JSON.stringify(stdout)}; printf ${JSON.stringify(stderr)} >&2`],
+          title: "full command",
+        },
+      ],
+    });
+    await writeFile(path.join(dir, "task-context.json"), `${JSON.stringify(snapshot("Full"))}\n`);
+
+    const markdown = await buildTaskContextMarkdown({ cwd: dir, options });
+
+    expect(markdown).toContain(stdout);
+    expect(markdown).toContain(stderr);
+    expect(markdown).not.toContain("[truncated");
+  });
+
+  it("truncates custom command stdout and stderr when maxOutputChars is set", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "pi-task-context-test-"));
     const options = resolveOptions({
       outputPath: "./task-context.jsonl",
