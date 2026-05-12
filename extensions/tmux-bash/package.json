@@ -1,0 +1,37 @@
+{
+  "name": "@richardgill/pi-tmux-bash",
+  "version": "0.0.1",
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/tmux-bash",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/tmux-bash"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/extension.ts"
+  },
+  "scripts": {
+    "tsc": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@richardgill/pi-config": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

@@ -1,17 +1,22 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignore": ["overlay/**"],
   "workspaces": {
     "extensions/files": {
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "extensions/extra-context-files": {
-      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "entry": ["tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "extensions/bash-timeout-guard": {
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "extensions/tmux-bash": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
     },
     "extensions/preset": {
       "entry": ["src/index.ts"],

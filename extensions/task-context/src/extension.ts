@@ -500,6 +500,9 @@ const truncateCommandOutput = (value: string, maxChars: number): string => {
   return `${value.slice(0, maxChars)}\n[truncated ${value.length - maxChars} chars]`;
 };
 
+const maybeTruncateCommandOutput = (value: string, maxChars: number | undefined): string =>
+  maxChars === undefined ? value : truncateCommandOutput(value, maxChars);
+
 const resolveCommandPath = (command: string): string =>
   command.startsWith(`~${path.sep}`) ? path.join(os.homedir(), command.slice(2)) : command;
 
@@ -512,7 +515,6 @@ const runCustomCommand = async (
   cwd: string,
   config: TaskContextCommandOptions,
 ): Promise<CustomCommandResult> => {
-  const maxOutputChars = config.maxOutputChars ?? 20000;
   try {
     const result = await execFileAsync(resolveCommandPath(config.command), config.args ?? [], {
       cwd,
@@ -521,15 +523,15 @@ const runCustomCommand = async (
     });
     return {
       config,
-      stdout: truncateCommandOutput(result.stdout, maxOutputChars),
-      stderr: truncateCommandOutput(result.stderr, maxOutputChars),
+      stdout: maybeTruncateCommandOutput(result.stdout, config.maxOutputChars),
+      stderr: maybeTruncateCommandOutput(result.stderr, config.maxOutputChars),
     };
   } catch (error) {
     const result = error as { stdout?: string; stderr?: string; message?: string };
     return {
       config,
-      stdout: truncateCommandOutput(result.stdout ?? "", maxOutputChars),
-      stderr: truncateCommandOutput(result.stderr ?? "", maxOutputChars),
+      stdout: maybeTruncateCommandOutput(result.stdout ?? "", config.maxOutputChars),
+      stderr: maybeTruncateCommandOutput(result.stderr ?? "", config.maxOutputChars),
       exitCode: getCommandErrorCode(error),
       error: result.message,
     };
@@ -593,12 +595,79 @@ const getRelevantFilesLoaded = (snapshot: TaskContextSnapshot): string => {
 const getLoadedCommandOutputs = (results: CustomCommandResult[]): string =>
   results.map(formatCustomCommandOutput).join("\n\n");
 
+const resolveRelevantFilePath = (cwd: string, filePath: string): string =>
+  path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+
+const rangeLabel = (filePath: string, range: RelevantFileRange): string =>
+  `${filePath}:${range.start}-${range.end}`;
+
+const sliceRange = (content: string, range: RelevantFileRange): string =>
+  content
+    .split("\n")
+    .slice(range.start - 1, range.end)
+    .join("\n");
+
+const formatLoadedFileBlock = (label: string, filePath: string, content: string): string =>
+  [`### ${label}`, "", formatCodeBlock(filePath, content)].join("\n");
+
+const formatReadErrorBlock = (label: string, error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  return [`### ${label}`, "", `Could not read file: ${message}`].join("\n");
+};
+
+const loadWholeRelevantFile = async (cwd: string, file: WholeRelevantFile): Promise<string> => {
+  try {
+    const content = await readFile(resolveRelevantFilePath(cwd, file.path), "utf8");
+    return formatLoadedFileBlock(file.path, file.path, content);
+  } catch (error) {
+    return formatReadErrorBlock(file.path, error);
+  }
+};
+
+const loadRangeRelevantFile = async (cwd: string, file: RangeRelevantFile): Promise<string> => {
+  try {
+    const content = await readFile(resolveRelevantFilePath(cwd, file.path), "utf8");
+    return file.ranges
+      .map((range) =>
+        formatLoadedFileBlock(rangeLabel(file.path, range), file.path, sliceRange(content, range)),
+      )
+      .join("\n\n");
+  } catch (error) {
+    return file.ranges
+      .map((range) => formatReadErrorBlock(rangeLabel(file.path, range), error))
+      .join("\n\n");
+  }
+};
+
+const loadRelevantFile = (
+  cwd: string,
+  file: TaskContextSnapshot["relevantFiles"][number],
+): Promise<string> =>
+  file.type === "whole_file" ? loadWholeRelevantFile(cwd, file) : loadRangeRelevantFile(cwd, file);
+
+const getLoadedRelevantFileContents = async (
+  cwd: string,
+  snapshot: TaskContextSnapshot,
+): Promise<string> => {
+  if (snapshot.relevantFiles.length === 0) {
+    return "- No relevant files recorded.";
+  }
+
+  const loadedFiles = await Promise.all(
+    snapshot.relevantFiles.map((file) => loadRelevantFile(cwd, file)),
+  );
+  return loadedFiles.join("\n\n");
+};
+
 export const buildTaskContextMarkdown = async ({
   cwd,
   options,
 }: TaskContextCommandInput): Promise<string> => {
   const snapshot = await readCurrentOrLatestSnapshot({ cwd, options });
-  const commandResults = await runCustomCommands(cwd, options);
+  const [commandResults, loadedRelevantFileContents] = await Promise.all([
+    runCustomCommands(cwd, options),
+    getLoadedRelevantFileContents(cwd, snapshot),
+  ]);
   return [
     "# Task Context",
     "",
@@ -615,6 +684,10 @@ export const buildTaskContextMarkdown = async ({
     "## Relevant Files Loaded",
     "",
     getRelevantFilesLoaded(snapshot),
+    "",
+    "## Loaded Relevant File Contents",
+    "",
+    loadedRelevantFileContents,
     "",
     "## Loaded Command Outputs",
     "",
