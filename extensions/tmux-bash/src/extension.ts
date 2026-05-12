@@ -32,7 +32,7 @@ import {
   sessionExists,
 } from "./tmux-utils.js";
 
-const SIGNAL_BASE = "/tmp/pi-bash-tmux-background";
+const SIGNAL_BASE = "/tmp/pi-tmux-bash";
 
 const actionValues = [
   "run",
@@ -103,7 +103,7 @@ type TmuxInput = {
   pollLines?: number;
 };
 
-export type BashTmuxBackgroundOptions = {
+export type TmuxBashOptions = {
   sessionNameTemplate?: string;
   toolName?: string;
   commandPrefix?: string;
@@ -122,7 +122,7 @@ export type BashTmuxBackgroundOptions = {
   prompt?: string;
 };
 
-type ResolvedOptions = Required<BashTmuxBackgroundOptions>;
+type ResolvedOptions = Required<TmuxBashOptions>;
 type TimeoutAction = "kill" | "background";
 type BashInTmuxInput = BashToolInput & {
   timeoutAction?: TimeoutAction;
@@ -195,7 +195,7 @@ const nonEmpty = (name: string, value: string): string => {
   return trimmed;
 };
 
-export const resolveOptions = (input: BashTmuxBackgroundOptions = {}): ResolvedOptions => {
+export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => {
   const defaultTimeoutSeconds = positiveInteger(
     "defaultTimeoutSeconds",
     input.defaultTimeoutSeconds ?? DEFAULT_OPTIONS.defaultTimeoutSeconds,
@@ -564,7 +564,7 @@ const startPoller = (
 
     pi.sendMessage(
       {
-        customType: completed ? "bash-tmux-background-completion" : "bash-tmux-background-poll",
+        customType: completed ? "tmux-bash-completion" : "tmux-bash-poll",
         content: completed
           ? `tmux window "${window.title}" (:${windowIndex}) ${exitCode === 0 ? "completed successfully" : `exited with code ${exitCode}`}.
 
@@ -637,7 +637,7 @@ const handleCompletionSignal = (
 
   pi.sendMessage(
     {
-      customType: "bash-tmux-background-completion",
+      customType: "tmux-bash-completion",
       content: `tmux window "${winName}" (:${parsed.winIdx}) ${status}.\n\n\`\`\`\n${output}\n\`\`\``,
       display: true,
     },
@@ -1184,7 +1184,7 @@ Actions:
 };
 
 const registerRenderers = (pi: ExtensionAPI, options: ResolvedOptions): void => {
-  pi.registerMessageRenderer("bash-tmux-background-completion", (message, { expanded }, theme) => {
+  pi.registerMessageRenderer("tmux-bash-completion", (message, { expanded }, theme) => {
     const [summary = "", ...detail] = String(message.content).split("\n");
     const icon = summary.includes("successfully")
       ? theme.fg("success", "✓")
@@ -1197,7 +1197,7 @@ const registerRenderers = (pi: ExtensionAPI, options: ResolvedOptions): void => 
   });
 };
 
-export const bashTmuxBackground = (input: BashTmuxBackgroundOptions = {}) => {
+export const tmuxBash = (input: TmuxBashOptions = {}) => {
   const options = resolveOptions(input);
 
   return (pi: ExtensionAPI): void => {

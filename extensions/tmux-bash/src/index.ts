@@ -1,6 +1,6 @@
 import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { z } from "zod";
-import { bashTmuxBackground, DEFAULT_OPTIONS } from "./extension.js";
+import { tmuxBash, DEFAULT_OPTIONS } from "./extension.js";
 
 const ConfigSchema = z
   .object({
@@ -30,9 +30,9 @@ const ConfigSchema = z
   );
 
 const config = loadConfigOrDefault({
-  filename: "bash-tmux-background.jsonc",
+  filename: "tmux-bash.jsonc",
   schema: ConfigSchema,
   defaults: DEFAULT_OPTIONS,
 });
 
-export default bashTmuxBackground(config);
+export default tmuxBash(config);

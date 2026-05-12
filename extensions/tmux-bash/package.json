@@ -1,14 +1,14 @@
 {
-  "name": "bash-tmux-background",
+  "name": "@richardgill/pi-tmux-bash",
   "version": "0.0.1",
   "keywords": [
     "pi-package"
   ],
-  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/bash-tmux-background",
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/tmux-bash",
   "repository": {
     "type": "git",
     "url": "https://github.com/richardgill/pi-extensions",
-    "directory": "extensions/bash-tmux-background"
+    "directory": "extensions/tmux-bash"
   },
   "files": [
     "src"

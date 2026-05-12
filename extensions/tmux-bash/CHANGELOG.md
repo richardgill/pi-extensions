@@ -1,4 +1,4 @@
-# bash-tmux-background
+# @richardgill/pi-tmux-bash
 
 ## 0.0.1
 

@@ -1,4 +1,4 @@
-# bash-tmux-background
+# @richardgill/pi-tmux-bash
 
 A pi extension that runs `bash` calls inside background tmux windows and provides a `tmux` tool for inspection.
 
@@ -37,7 +37,7 @@ type BashInTmuxInput = {
 
 ## Config
 
-Create `~/.pi/agent/bash-tmux-background.jsonc`:
+Create `~/.pi/agent/tmux-bash.jsonc`:
 
 ```jsonc
 {
