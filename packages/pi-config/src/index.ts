@@ -37,7 +37,7 @@ type TemplateMetadata = {
 };
 
 export const loadConfigOrDefault = <Schema extends z.ZodType>({
-  folder = getAgentDir(),
+  folder = getDefaultConfigFolder(),
   filename,
   schema,
   defaults,
@@ -47,6 +47,8 @@ export const loadConfigOrDefault = <Schema extends z.ZodType>({
   const value = fs.existsSync(filePath) ? readConfigValue(filePath) : {};
   return parseConfig(filePath, schema, mergeDefaults(defaults, value), renderTemplates);
 };
+
+const getDefaultConfigFolder = (): string => process.env.PI_EXTENSION_CONFIG_DIR ?? getAgentDir();
 
 export const resolveOptions = <Options extends object>(
   defaults: Options,

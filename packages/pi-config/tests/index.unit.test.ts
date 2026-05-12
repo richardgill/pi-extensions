@@ -6,6 +6,7 @@ import { z } from "zod";
 import { loadConfigOrDefault, resolveOptions, templatedString } from "../src/index.js";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalExtensionConfigDir = process.env.PI_EXTENSION_CONFIG_DIR;
 
 const createTempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-config-"));
 
@@ -14,13 +15,18 @@ const writeConfig = (folder: string, filename: string, content: string) => {
   fs.writeFileSync(path.join(folder, filename), content, "utf8");
 };
 
-afterEach(() => {
-  if (originalAgentDir === undefined) {
-    delete process.env.PI_CODING_AGENT_DIR;
+const restoreEnv = (name: string, value: string | undefined) => {
+  if (value === undefined) {
+    delete process.env[name];
     return;
   }
 
-  process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  process.env[name] = value;
+};
+
+afterEach(() => {
+  restoreEnv("PI_CODING_AGENT_DIR", originalAgentDir);
+  restoreEnv("PI_EXTENSION_CONFIG_DIR", originalExtensionConfigDir);
 });
 
 describe("resolveOptions", () => {
@@ -156,6 +162,26 @@ describe("loadConfigOrDefault", () => {
     expect(loadConfigOrDefault({ filename: "default.json", schema, defaults: {} })).toEqual({
       value: "from-agent-dir",
     });
+  });
+
+  it("resolves explicit folder over extension config env over pi agent folder", () => {
+    const explicitFolder = createTempDir();
+    const extensionFolder = createTempDir();
+    const agentFolder = createTempDir();
+    const filename = "precedence.json";
+    const schema = z.object({ value: z.string() });
+    process.env.PI_EXTENSION_CONFIG_DIR = extensionFolder;
+    process.env.PI_CODING_AGENT_DIR = agentFolder;
+    writeConfig(agentFolder, filename, '{ "value": "agent" }');
+    writeConfig(extensionFolder, filename, '{ "value": "extension" }');
+    writeConfig(explicitFolder, filename, '{ "value": "explicit" }');
+
+    expect(loadConfigOrDefault({ filename, schema, defaults: {} })).toEqual({ value: "extension" });
+    expect(loadConfigOrDefault({ folder: explicitFolder, filename, schema, defaults: {} })).toEqual(
+      {
+        value: "explicit",
+      },
+    );
   });
 
   it("throws with the config path for invalid JSONC", () => {
