@@ -1153,7 +1153,6 @@ const runBashInTmux = async (
   updateBackgroundProcessStatus(ctx, options);
 
   if (params.background === true) {
-    if (params.pollInterval > 0) state.bashSignals.add(completionSignalFilename);
     if (params.pollInterval > 0)
       startPoller(
         pi,
