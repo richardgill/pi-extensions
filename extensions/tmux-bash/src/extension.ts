@@ -71,6 +71,7 @@ export type TmuxBashOptions = {
   maxTimeoutSeconds?: number;
   defaultPollInterval?: number;
   defaultPollLines?: number;
+  displayCommandStartMarker?: string;
   prompt?: string;
 };
 
@@ -133,6 +134,7 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
   defaultPollLines: 30,
+  displayCommandStartMarker: "# SHIM_END",
   prompt: "",
 };
 
@@ -226,6 +228,8 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
       "defaultPollLines",
       input.defaultPollLines ?? DEFAULT_OPTIONS.defaultPollLines,
     ),
+    displayCommandStartMarker:
+      input.displayCommandStartMarker ?? DEFAULT_OPTIONS.displayCommandStartMarker,
     prompt: input.prompt ?? DEFAULT_OPTIONS.prompt,
   };
 };
@@ -266,9 +270,28 @@ const resetSignalDir = (
   mkdirSync(state.signalDir, { recursive: true });
 };
 
-const commandLabel = (cmd: string, name?: string): string =>
+export const displayCommandForCommand = (
+  cmd: string,
+  marker = DEFAULT_OPTIONS.displayCommandStartMarker,
+): string => {
+  if (!marker) return cmd;
+
+  const lines = cmd.split("\n");
+  const reversedMarkerIndex = [...lines].reverse().findIndex((line) => line.trim() === marker);
+  if (reversedMarkerIndex === -1) return cmd;
+
+  const markerLineIndex = lines.length - reversedMarkerIndex - 1;
+  return (
+    lines
+      .slice(markerLineIndex + 1)
+      .join("\n")
+      .trimStart() || cmd
+  );
+};
+
+const commandLabel = (cmd: string, name: string | undefined, options: ResolvedOptions): string =>
   name ??
-  cmd
+  displayCommandForCommand(cmd, options.displayCommandStartMarker)
     .split(/[|;&\s]/)[0]
     ?.split("/")
     .pop() ??
@@ -278,12 +301,14 @@ const windowNameForCommand = (
   cmd: string,
   name: string | undefined,
   options: ResolvedOptions,
-): string =>
-  options.windowNameTemplate
-    .replaceAll("{{nameOrCommand}}", commandLabel(cmd, name))
+): string => {
+  const displayCommand = displayCommandForCommand(cmd, options.displayCommandStartMarker);
+  return options.windowNameTemplate
+    .replaceAll("{{nameOrCommand}}", commandLabel(cmd, name, options))
     .replaceAll("{{name}}", name ?? "")
-    .replaceAll("{{command}}", cmd)
+    .replaceAll("{{command}}", displayCommand)
     .slice(0, options.maxWindowNameLength);
+};
 
 const sessionNameForGitRoot = (gitRoot: string, options: ResolvedOptions): string =>
   options.sessionScope === "shared"
@@ -486,6 +511,7 @@ const createBashCommandScript = (
   signalDir: string,
   session: string,
   cmd: string,
+  displayCommand: string,
 ): { id: string; scriptPath: string } => {
   const scriptDir = join(signalDir, "s");
   mkdirSync(scriptDir, { recursive: true });
@@ -502,7 +528,7 @@ __window_id=$(tmux display-message -p -t "\${TMUX_PANE:-}" '#{window_id}' 2>/dev
 __signal_file="$__signal_dir/$__session.$__window_id.$__id"
 __output_file="$__signal_file.out"
 : > "$__output_file"
-printf '$ %s\n' ${shellQuote(cmd)}
+printf '$ %s\n' ${shellQuote(displayCommand)}
 (
 ${cmd}
 ) > >(tee -a "$__output_file") 2>&1
@@ -533,7 +559,8 @@ const addBashWindow = (
   name: string | undefined,
   options: ResolvedOptions,
 ): RunWindowResult => {
-  const script = createBashCommandScript(signalDir, session, cmd);
+  const displayCommand = displayCommandForCommand(cmd, options.displayCommandStartMarker);
+  const script = createBashCommandScript(signalDir, session, cmd, displayCommand);
   const raw = exec(
     `tmux new-window -d -t ${shellQuote(session)} -n ${shellQuote(windowNameForCommand(cmd, name, options))} -c ${shellQuote(gitRoot)} -P -F '#{window_id}|||#{window_index}' ${shellQuote(script.scriptPath)}`,
   );
@@ -562,7 +589,8 @@ const createBashSessionWindow = (
   name: string | undefined,
   options: ResolvedOptions,
 ): RunWindowResult => {
-  const script = createBashCommandScript(signalDir, session, cmd);
+  const displayCommand = displayCommandForCommand(cmd, options.displayCommandStartMarker);
+  const script = createBashCommandScript(signalDir, session, cmd, displayCommand);
   const raw = exec(
     `tmux new-session -d -s ${shellQuote(session)} -n ${shellQuote(windowNameForCommand(cmd, name, options))} -c ${shellQuote(gitRoot)} -P -F '#{window_id}|||#{window_index}' ${shellQuote(script.scriptPath)}`,
   );

@@ -2,6 +2,7 @@ import { DEFAULT_MAX_BYTES } from "@mariozechner/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPTIONS,
+  displayCommandForCommand,
   formatCompletionSummary,
   formatRenderedBashCall,
   formatRenderedBashResult,
@@ -46,6 +47,7 @@ describe("tmux-bash output truncation", () => {
     expect(DEFAULT_OPTIONS.alwaysShowOutputFilePath).toBe(false);
     expect(DEFAULT_OPTIONS.preserveOutputFiles).toBe(false);
     expect(DEFAULT_OPTIONS.outputDir).toBe("/tmp/pi-tmux-bash");
+    expect(DEFAULT_OPTIONS.displayCommandStartMarker).toBe("# SHIM_END");
   });
 
   it("keeps sessionNameTemplate as a deprecated alias", () => {
@@ -85,6 +87,37 @@ describe("tmux-bash output truncation", () => {
     });
 
     expect(result).toBe('$ sleep 90 && echo "hello"  bg');
+  });
+
+  it("strips command wrappers using the display marker", () => {
+    const command = [
+      "export __PI_FILE_LINE_TRACKER_EVENTS='/tmp/events.jsonl'",
+      "cat() {",
+      '  command cat "$@"',
+      "}",
+      "# SHIM_END",
+      "gh pr checks 2371",
+    ].join("\n");
+
+    expect(displayCommandForCommand(command)).toBe("gh pr checks 2371");
+  });
+
+  it("uses the last display marker", () => {
+    const command = ["outer", "# SHIM_END", "inner", "# SHIM_END", "echo hello"].join("\n");
+
+    expect(displayCommandForCommand(command)).toBe("echo hello");
+  });
+
+  it("does not strip commands when the display marker is disabled", () => {
+    const command = ["wrapper", "# SHIM_END", "echo hello"].join("\n");
+
+    expect(displayCommandForCommand(command, "")).toBe(command);
+  });
+
+  it("only strips marker lines", () => {
+    const command = "echo '# SHIM_END'";
+
+    expect(displayCommandForCommand(command)).toBe(command);
   });
 
   it("renders compact completion messages with output", () => {

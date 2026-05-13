@@ -26,6 +26,7 @@ const ConfigSchema = z
     maxTimeoutSeconds: z.number().int().positive().optional(),
     defaultPollInterval: z.number().int().nonnegative().optional(),
     defaultPollLines: z.number().int().positive().optional(),
+    displayCommandStartMarker: z.string().optional(),
     prompt: z.string().optional(),
   })
   .refine(

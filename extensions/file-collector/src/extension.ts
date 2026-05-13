@@ -130,6 +130,7 @@ type EventMetadata = Partial<
 >;
 
 const BASH_SHIM_PARSER_PATH = fileURLToPath(new URL("./bash-shim-parser.cjs", import.meta.url));
+const BASH_SHIM_END_MARKER = "# SHIM_END";
 
 const DEFAULT_ASSISTANT_CITATION_PATTERNS: RegexPatternConfig[] = [
   // Example: ./src/file.ts#L12 or ./src/file.ts#L12-L20
@@ -724,7 +725,7 @@ const buildBashCommandWithShim = (
   options: ResolvedOptions,
 ): string => {
   const shims = options.bashShimCommands.map(buildBashShimFunction).join("\n\n");
-  return `export __PI_FILE_LINE_TRACKER_EVENTS=${shellQuote(shimPath)}\n${shims}\n${command}`;
+  return `export __PI_FILE_LINE_TRACKER_EVENTS=${shellQuote(shimPath)}\n${shims}\n${BASH_SHIM_END_MARKER}\n${command}`;
 };
 
 const readBashShimRecords = async (shimPath: string): Promise<BashShimRecord[]> => {

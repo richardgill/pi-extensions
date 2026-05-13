@@ -122,6 +122,10 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Default tmux scrollback lines captured per poll.
   "defaultPollLines": 30,
 
+  // Marker used to hide wrapper/shim code from displayed command names/output.
+  // Set to "" to disable. Uses the last marker when multiple wrappers are present.
+  "displayCommandStartMarker": "# SHIM_END",
+
   // Extra prompt guidance appended to the bash and tmux tool instructions.
   "prompt": "Use bash with timeoutAction background for dev servers and watchers."
 }
