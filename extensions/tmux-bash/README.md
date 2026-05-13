@@ -2,7 +2,11 @@
 
 A pi extension that runs `bash` calls inside background tmux windows and provides a `tmux` tool for inspection.
 
-It is based on `@romansix/pi-tmux`, but runs agent commands in a project-specific background sidecar tmux session named `<project-session>-bg` by default. It can also use one shared background session and tag/filter windows by git root. That keeps agent-run windows out of the user's normal project tmux session.
+It is based on [`pi-tmux`](https://github.com/indigoviolet/pi-tmux), but runs agent commands in a project-specific background sidecar tmux session named `<project-session>-bg` by default. It can also use one shared background session and tag/filter windows by git root. That keeps agent-run windows out of the user's normal project tmux session.
+
+## Credits
+
+Credit to [`indigoviolet/pi-tmux`](https://github.com/indigoviolet/pi-tmux), which this extension is based on.
 
 ## Tools
 
