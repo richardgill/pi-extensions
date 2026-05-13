@@ -101,6 +101,7 @@ type ExtensionState = {
   signalDir: string | null;
   watcher: FSWatcher | null;
   bashSignals: Set<string>;
+  ownedSignals: Set<string>;
   pollers: Map<string, Poller>;
   activeSession: string | null;
   activeGitRoot: string | null;
@@ -233,6 +234,7 @@ export const createState = (): ExtensionState => ({
   signalDir: null,
   watcher: null,
   bashSignals: new Set(),
+  ownedSignals: new Set(),
   pollers: new Map(),
   activeSession: null,
   activeGitRoot: null,
@@ -252,10 +254,13 @@ const getSignalDir = (state: ExtensionState, options: ResolvedOptions): string =
 const resetSignalDir = (
   state: ExtensionState,
   options: ResolvedOptions,
-  sessionFile?: string,
+  sessionId?: string,
 ): void => {
-  const id = sessionFile
-    ? Buffer.from(sessionFile).toString("base64url").slice(0, 24)
+  const encodedSessionId = sessionId
+    ? Buffer.from(sessionId).toString("base64url").slice(0, 24)
+    : null;
+  const id = encodedSessionId
+    ? `${encodedSessionId}-${process.pid}-${randomBytes(4).toString("hex")}`
     : randomBytes(8).toString("hex");
   state.signalDir = signalDirPath(options, id);
   mkdirSync(state.signalDir, { recursive: true });
@@ -628,6 +633,7 @@ const readSignalExitCode = (state: ExtensionState, signalInfo?: SignalInfo): num
   const exitCode = parseInt(readFileSync(signalFile, "utf-8").trim());
   unlinkSync(signalFile);
   state.bashSignals.delete(filename);
+  state.ownedSignals.delete(filename);
   return exitCode;
 };
 
@@ -786,12 +792,12 @@ const handleCompletionSignal = (
   filepath: string,
   filename: string,
   options: ResolvedOptions,
-): void => {
+): boolean => {
   const parsed = parseSignalFilename(filename);
-  if (!parsed) return;
+  if (!parsed) return false;
 
   const exitCode = readFileSync(filepath, "utf-8").trim();
-  if (!/^-?\d+$/.test(exitCode)) return;
+  if (!/^-?\d+$/.test(exitCode)) return false;
   unlinkSync(filepath);
 
   const win = getWindows(parsed.session).find((item) => item.id === parsed.windowId);
@@ -823,6 +829,7 @@ const handleCompletionSignal = (
   );
   closeWindowOnCompletion(parsed.windowId, options);
   updateStoredBackgroundProcessStatus(state, options);
+  return true;
 };
 
 const handleSignalFile = (
@@ -832,13 +839,16 @@ const handleSignalFile = (
   filename: string,
   options: ResolvedOptions,
 ): void => {
+  if (!state.ownedSignals.has(filename)) return;
   if (state.bashSignals.has(filename)) return;
 
   const filepath = join(signalDir, filename);
   if (!existsSync(filepath)) return;
 
   try {
-    handleCompletionSignal(state, pi, filepath, filename, options);
+    if (handleCompletionSignal(state, pi, filepath, filename, options)) {
+      state.ownedSignals.delete(filename);
+    }
   } catch {}
 };
 
@@ -870,6 +880,7 @@ const cleanupState = (state: ExtensionState, options: ResolvedOptions): void => 
   for (const poller of state.pollers.values()) clearInterval(poller.timer);
   state.pollers.clear();
   state.bashSignals.clear();
+  state.ownedSignals.clear();
   state.statusContext = null;
 
   if (state.signalDir) {
@@ -1107,6 +1118,7 @@ const runBashInTmux = async (
     outputFile: result.outputFile,
   };
   const completionSignalFilename = signalFilename(signalInfo);
+  state.ownedSignals.add(completionSignalFilename);
   state.activeSession = session;
   state.activeGitRoot = gitRoot;
 
@@ -1141,6 +1153,9 @@ const runBashInTmux = async (
   state.bashSignals.add(completionSignalFilename);
   const exitCode = await waitForExitCode(signalDir, signal, signalInfo, params.timeout);
   state.bashSignals.delete(completionSignalFilename);
+  if (exitCode !== "timeout" || params.timeoutAction !== "background") {
+    state.ownedSignals.delete(completionSignalFilename);
+  }
   const output = formatTrimmedOutput(
     commandOutput(result.windowId, options.captureLines, result.outputFile),
     result.outputFile,
@@ -1523,7 +1538,7 @@ export const tmuxBash = (input: TmuxBashOptions = {}) => {
     const state = createState();
 
     pi.on("session_start", async (_event, ctx) => {
-      resetSignalDir(state, options, ctx.sessionManager.getSessionFile() ?? undefined);
+      resetSignalDir(state, options, ctx.sessionManager.getSessionId());
       state.statusContext = ctx;
       const gitRoot = getGitRoot(ctx.cwd);
       state.activeGitRoot = gitRoot;
