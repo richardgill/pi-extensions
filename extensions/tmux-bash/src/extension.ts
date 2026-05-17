@@ -13,6 +13,7 @@ import { Text, type TUI } from "@mariozechner/pi-tui";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -47,6 +48,8 @@ import {
 const SIGNAL_BASE = "/tmp/pi-tmux-bash";
 const SHARED_SESSION_NAME = "pi-background";
 const BACKGROUND_BASH_STATUS_KEY = "backgroundBashTmuxCommands";
+const SHELL_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const TMUX_ENV_EXPORT_DENYLIST = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"]);
 
 export type TmuxBashOptions = {
   projectSessionNameTemplate?: string;
@@ -251,7 +254,8 @@ const getSignalDir = (state: ExtensionState, options: ResolvedOptions): string =
   if (state.signalDir) return state.signalDir;
 
   state.signalDir = signalDirPath(options, randomBytes(8).toString("hex"));
-  mkdirSync(state.signalDir, { recursive: true });
+  mkdirSync(state.signalDir, { recursive: true, mode: 0o700 });
+  chmodSync(state.signalDir, 0o700);
   return state.signalDir;
 };
 
@@ -267,7 +271,8 @@ const resetSignalDir = (
     ? `${encodedSessionId}-${process.pid}-${randomBytes(4).toString("hex")}`
     : randomBytes(8).toString("hex");
   state.signalDir = signalDirPath(options, id);
-  mkdirSync(state.signalDir, { recursive: true });
+  mkdirSync(state.signalDir, { recursive: true, mode: 0o700 });
+  chmodSync(state.signalDir, 0o700);
 };
 
 export const displayCommandForCommand = (
@@ -507,6 +512,15 @@ const tagWindowPiSession = (windowId: string, piSessionId: string): void => {
   );
 };
 
+const isExportableEnvironmentName = (name: string): boolean =>
+  SHELL_IDENTIFIER_REGEX.test(name) && !TMUX_ENV_EXPORT_DENYLIST.has(name);
+
+export const formatEnvironmentExportsForBash = (env: NodeJS.ProcessEnv = process.env): string =>
+  Object.entries(env)
+    .filter(([name, value]) => value !== undefined && isExportableEnvironmentName(name))
+    .map(([name, value]) => `export ${name}=${shellQuote(value ?? "")}`)
+    .join("\n");
+
 const createBashCommandScript = (
   signalDir: string,
   session: string,
@@ -514,7 +528,8 @@ const createBashCommandScript = (
   displayCommand: string,
 ): { id: string; scriptPath: string } => {
   const scriptDir = join(signalDir, "s");
-  mkdirSync(scriptDir, { recursive: true });
+  mkdirSync(scriptDir, { recursive: true, mode: 0o700 });
+  chmodSync(scriptDir, 0o700);
 
   const id = randomBytes(4).toString("hex");
   const scriptPath = join(scriptDir, `${session}.${id}.sh`);
@@ -529,6 +544,7 @@ __signal_file="$__signal_dir/$__session.$__window_id.$__id"
 __output_file="$__signal_file.out"
 : > "$__output_file"
 printf '$ %s\n' ${shellQuote(displayCommand)}
+${formatEnvironmentExportsForBash()}
 (
 ${cmd}
 ) > >(tee -a "$__output_file") 2>&1

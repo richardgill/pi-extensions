@@ -4,6 +4,7 @@ import {
   DEFAULT_OPTIONS,
   displayCommandForCommand,
   formatCompletionSummary,
+  formatEnvironmentExportsForBash,
   formatRenderedBashCall,
   formatRenderedBashResult,
   formatRenderedCompletionMessage,
@@ -112,6 +113,20 @@ describe("tmux-bash output truncation", () => {
     const command = ["wrapper", "# SHIM_END", "echo hello"].join("\n");
 
     expect(displayCommandForCommand(command, "")).toBe(command);
+  });
+
+  it("exports pi process environment variables into tmux bash scripts", () => {
+    const result = formatEnvironmentExportsForBash({
+      MY_ENV_VAR: "7",
+      QUOTED_ENV_VAR: "it's ok",
+      TMUX: "/tmp/tmux-1000/default,1,0",
+      "not-exportable": "skip",
+    });
+
+    expect(result).toContain("export MY_ENV_VAR='7'");
+    expect(result).toContain("export QUOTED_ENV_VAR='it'\\''s ok'");
+    expect(result).not.toContain("TMUX");
+    expect(result).not.toContain("not-exportable");
   });
 
   it("only strips marker lines", () => {
