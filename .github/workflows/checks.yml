@@ -27,19 +27,36 @@ jobs:
               { "id": "lint", "name": "Lint" },
               { "id": "typecheck", "name": "Typecheck" },
               { "id": "test", "name": "Test" },
+              { "id": "e2e", "name": "E2E tests" },
               { "id": "misc-checks", "name": "Misc checks" },
               { "id": "knip", "name": "Dead code check" }
             ]
           status: in_progress
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux
 
       - name: Run checks in parallel
         id: parallel
         run: |
           mkdir -p /tmp/results /tmp/logs
 
+          run_e2e() {
+            local files=()
+            mapfile -t files < <(find extensions packages -path '*/tests/*' -name '*.e2e.test.ts' -print)
+            if [[ ${#files[@]} -eq 0 ]]; then
+              echo "No e2e tests found"
+              return 0
+            fi
+            pnpm exec vitest run "${files[@]}" --maxWorkers=1 --testTimeout=40000
+          }
+
           (pnpm check 2>&1 | tee /tmp/logs/lint; echo ${PIPESTATUS[0]} > /tmp/results/lint) &
           (pnpm typecheck 2>&1 | tee /tmp/logs/typecheck; echo ${PIPESTATUS[0]} > /tmp/results/typecheck) &
-          (pnpm test 2>&1 | tee /tmp/logs/test; echo ${PIPESTATUS[0]} > /tmp/results/test) &
+          (pnpm exec vitest run --exclude '**/*.e2e.test.ts' 2>&1 | tee /tmp/logs/test; echo ${PIPESTATUS[0]} > /tmp/results/test) &
+          (run_e2e 2>&1 | tee /tmp/logs/e2e; echo ${PIPESTATUS[0]} > /tmp/results/e2e) &
           (pnpm run misc-checks 2>&1 | tee /tmp/logs/misc-checks; echo ${PIPESTATUS[0]} > /tmp/results/misc-checks) &
           (pnpm knip 2>&1 | tee /tmp/logs/knip; echo ${PIPESTATUS[0]} > /tmp/results/knip) &
 
@@ -48,6 +65,7 @@ jobs:
           echo "lint=$(cat /tmp/results/lint)" >> $GITHUB_OUTPUT
           echo "typecheck=$(cat /tmp/results/typecheck)" >> $GITHUB_OUTPUT
           echo "test=$(cat /tmp/results/test)" >> $GITHUB_OUTPUT
+          echo "e2e=$(cat /tmp/results/e2e)" >> $GITHUB_OUTPUT
           echo "misc-checks=$(cat /tmp/results/misc-checks)" >> $GITHUB_OUTPUT
           echo "knip=$(cat /tmp/results/knip)" >> $GITHUB_OUTPUT
 
@@ -73,6 +91,7 @@ jobs:
             build_check "lint" "Lint" "/tmp/logs/lint" "${{ steps.parallel.outputs.lint }}"
             build_check "typecheck" "Typecheck" "/tmp/logs/typecheck" "${{ steps.parallel.outputs.typecheck }}"
             build_check "test" "Test" "/tmp/logs/test" "${{ steps.parallel.outputs.test }}"
+            build_check "e2e" "E2E tests" "/tmp/logs/e2e" "${{ steps.parallel.outputs.e2e }}"
             build_check "misc-checks" "Misc checks" "/tmp/logs/misc-checks" "${{ steps.parallel.outputs.misc-checks }}"
             build_check "knip" "Dead code check" "/tmp/logs/knip" "${{ steps.parallel.outputs.knip }}"
           ))
@@ -88,6 +107,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           checks: ${{ steps.build-json.outputs.checks }}
 
+      - name: Cleanup tmux sessions
+        if: always()
+        run: |
+          tmux list-sessions -F '#S' 2>/dev/null \
+            | grep -E '^project-[0-9a-f]{8}-bg$' \
+            | xargs -r -n1 tmux kill-session -t
+
       - name: Check for failures
         if: always()
         run: |
@@ -95,6 +121,7 @@ jobs:
           [[ "${{ steps.parallel.outputs.lint }}" != "0" ]] && echo "Lint failed" && failed=1
           [[ "${{ steps.parallel.outputs.typecheck }}" != "0" ]] && echo "Typecheck failed" && failed=1
           [[ "${{ steps.parallel.outputs.test }}" != "0" ]] && echo "Test failed" && failed=1
+          [[ "${{ steps.parallel.outputs.e2e }}" != "0" ]] && echo "E2E tests failed" && failed=1
           [[ "${{ steps.parallel.outputs.misc-checks }}" != "0" ]] && echo "Misc checks failed" && failed=1
           [[ "${{ steps.parallel.outputs.knip }}" != "0" ]] && echo "Dead code check failed" && failed=1
           exit $failed
