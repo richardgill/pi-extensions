@@ -11,6 +11,7 @@ import {
   formatRenderedCompletionMessage,
   formatTmuxOutputForContext,
   renderBashCallText,
+  renderBashResultText,
   resolveOptions,
 } from "../src/extension.js";
 
@@ -59,16 +60,26 @@ describe("tmux-bash output truncation", () => {
     expect(result.projectSessionNameTemplate).toBe("legacy-{{}}");
   });
 
-  it("formats background completion summaries name first", () => {
-    const result = formatCompletionSummary("sleep-90-hello", 5, 0);
+  it("formats background completion summaries with a tmux target line", () => {
+    const result = formatCompletionSummary("sleep-90-hello", "pi-background", 5, 0);
 
-    expect(result).toBe("sleep-90-hello completed successfully in tmux window :5");
+    expect(result).toBe(
+      'Background job "sleep-90-hello" completed successfully\ntmux: pi-background:5',
+    );
   });
 
-  it("formats background failure summaries name first", () => {
-    const result = formatCompletionSummary("local-ci", 7, 2);
+  it("formats background failure summaries with a tmux target line", () => {
+    const result = formatCompletionSummary("local-ci", "pi-background", 7, 2);
 
-    expect(result).toBe("local-ci exited with code 2 in tmux window :7");
+    expect(result).toBe('Background job "local-ci" exited with code 2\ntmux: pi-background:7');
+  });
+
+  it("formats background completion summaries with duration", () => {
+    const result = formatCompletionSummary("sleep-90", "pi-background", 3, 0, 90_000);
+
+    expect(result).toBe(
+      'Background job "sleep-90" completed successfully after 90s\ntmux: pi-background:3',
+    );
   });
 
   it("hides full output paths from collapsed bash results", () => {
@@ -92,10 +103,34 @@ describe("tmux-bash output truncation", () => {
     expect(result).toBe('$ sleep 90 && echo "hello" bg');
   });
 
+  it("renders background bash start output compactly", () => {
+    const call = formatRenderedBashCall({ command: "sleep 90", background: true });
+    const result = formatRenderedBashResult("Started in tmux window.", false);
+
+    expect(`${call}\n${result}`).toBe("$ sleep 90 bg\nStarted in tmux window.");
+  });
+
   it("formats bash durations as whole seconds", () => {
     expect(formatDurationSeconds(5_000)).toBe("5s");
     expect(formatDurationSeconds(10_000)).toBe("10s");
     expect(formatDurationSeconds(10_900)).toBe("10s");
+  });
+
+  it("renders an extra newline above elapsed time", () => {
+    const theme = {
+      bold: (text: string) => `<bold>${text}</bold>`,
+      fg: (name: string, text: string) => `<${name}>${text}</${name}>`,
+    };
+
+    const result = renderBashResultText(
+      "working",
+      false,
+      true,
+      { startedAt: 0, endedAt: 5_000 },
+      theme,
+    );
+
+    expect(result).toBe("<toolOutput>working</toolOutput>\n\n\n<muted>Elapsed 5s</muted>");
   });
 
   it("renders timeout metadata like the built-in bash tool", () => {
@@ -165,9 +200,10 @@ describe("tmux-bash output truncation", () => {
     expect(displayCommandForCommand(command)).toBe(command);
   });
 
-  it("renders compact completion messages with output", () => {
+  it("renders compact completion messages with the tmux target line", () => {
     const raw = [
-      "sleep-hello completed successfully in tmux window :5.",
+      'Background job "sleep-hello" completed successfully after 90s',
+      "tmux: pi-background:5",
       "",
       "```",
       "hello",
@@ -177,7 +213,7 @@ describe("tmux-bash output truncation", () => {
     ].join("\n");
 
     expect(formatRenderedCompletionMessage(raw, false)).toBe(
-      "sleep-hello completed in tmux window :5\nhello",
+      'Background job "sleep-hello" completed after 90s\n  tmux: pi-background:5\n  Output: hello',
     );
   });
 

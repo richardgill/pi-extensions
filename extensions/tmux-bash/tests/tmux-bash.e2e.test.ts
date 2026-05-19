@@ -26,7 +26,7 @@ type TmuxBashE2eTestCase = {
   expectedContextOutput?: (project: PiE2eProject, outputFile: string | undefined) => string;
   expectedOutputFileContent?: string;
   expectedLatestToolResult?: { toolName: string; isError: boolean };
-  expectedTmuxSessionExists: boolean;
+  expectedTmuxSessionExists?: boolean;
   timeoutMs?: number;
 };
 
@@ -144,6 +144,16 @@ const testCases: TmuxBashE2eTestCase[] = [
     expectedTmuxSessionExists: false,
   },
   {
+    name: "background command renders start output",
+    script: (project) => [
+      bash("sleep 90", { background: true }),
+      recordContext(project, "background-start-context", "bash", "started-ok"),
+    ],
+    expectedTerminalOutput: "started-ok\n",
+    expectedContextOutputName: "background-start-context",
+    expectedContextOutput: () => "Started in tmux window.",
+  },
+  {
     name: "background command returns immediately and leaves session running",
     script: (project) => [
       bash("sleep 30", { background: true, name: "server" }),
@@ -233,7 +243,9 @@ describe("tmux-bash e2e", () => {
 
       expectPiSuccess(result);
       expect(result.terminalOutput).toBe(testCase.expectedTerminalOutput);
-      expect(project.tmuxSessionExists()).toBe(testCase.expectedTmuxSessionExists);
+      if (testCase.expectedTmuxSessionExists !== undefined) {
+        expect(project.tmuxSessionExists()).toBe(testCase.expectedTmuxSessionExists);
+      }
 
       const outputFile = testCase.expectedOutputFileContent
         ? findOutputFileWithContent(project, testCase.expectedOutputFileContent)
