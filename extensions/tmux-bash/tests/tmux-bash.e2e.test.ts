@@ -4,8 +4,8 @@ import { getWindows } from "../src/tmux-utils.js";
 import { createPiE2eProject, expectPiSuccess, type PiE2eProject } from "./testing/e2e-project.js";
 import {
   bash,
+  expectLatestToolResult,
   recordLatestToolResult,
-  replyIfContextContains,
   scriptedToolCall,
   type ScriptedStep,
 } from "./testing/scripted-provider.js";
@@ -21,7 +21,6 @@ const longOutputCommand = "for i in $(seq 1 2100); do printf 'line-%04d\\n' \"$i
 type TmuxBashE2eTestCase = {
   name: string;
   script: (project: PiE2eProject) => ScriptedStep[];
-  expectedTerminalOutput: string;
   expectedContextOutputName?: string;
   expectedContextOutput?: (project: PiE2eProject, outputFile: string | undefined) => string;
   expectedOutputFileContent?: string;
@@ -63,23 +62,26 @@ const findOutputFileWithContent = (project: PiE2eProject, content: string): stri
 const testCases: TmuxBashE2eTestCase[] = [
   {
     name: "prints stdout exactly",
-    script: () => [bash("printf 'hello\\n'"), replyIfContextContains("hello", "hello")],
-    expectedTerminalOutput: "hello\n",
+    script: () => [
+      bash("printf 'hello\\n'"),
+      expectLatestToolResult("bash", { contains: "hello" }),
+    ],
     expectedTmuxSessionExists: false,
   },
   {
     name: "captures stderr exactly",
-    script: () => [bash("printf 'oops\\n' >&2"), replyIfContextContains("oops", "oops")],
-    expectedTerminalOutput: "oops\n",
+    script: () => [
+      bash("printf 'oops\\n' >&2"),
+      expectLatestToolResult("bash", { contains: "oops" }),
+    ],
     expectedTmuxSessionExists: false,
   },
   {
     name: "reports non-zero exit codes",
     script: () => [
       bash("printf 'bad\\n'; exit 7"),
-      replyIfContextContains("Command exited with code 7", "exit 7"),
+      expectLatestToolResult("bash", { contains: "Command exited with code 7" }),
     ],
-    expectedTerminalOutput: "exit 7\n",
     expectedTmuxSessionExists: false,
   },
   {
@@ -89,9 +91,8 @@ const testCases: TmuxBashE2eTestCase[] = [
         timeout: 1,
         timeoutAction: "kill",
       }),
-      replyIfContextContains("Command timed out after 1 seconds", "timed out"),
+      expectLatestToolResult("bash", { contains: "Command timed out after 1 seconds" }),
     ],
-    expectedTerminalOutput: "timed out\n",
     expectedTmuxSessionExists: false,
   },
   {
@@ -99,9 +100,8 @@ const testCases: TmuxBashE2eTestCase[] = [
     script: () => [
       bash("sleep 30", { background: true, name: "server" }),
       scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-      replyIfContextContains("Background session", "started"),
+      expectLatestToolResult("tmux", { contains: "Background session" }),
     ],
-    expectedTerminalOutput: "started\n",
     expectedTmuxSessionExists: true,
   },
   {
@@ -109,9 +109,8 @@ const testCases: TmuxBashE2eTestCase[] = [
     script: () => [
       bash("sleep 30", { background: true, name: "worker" }),
       scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-      replyIfContextContains("Background session", "listed"),
+      expectLatestToolResult("tmux", { contains: "worker" }),
     ],
-    expectedTerminalOutput: "listed\n",
     expectedTmuxSessionExists: true,
   },
   {
@@ -122,9 +121,8 @@ const testCases: TmuxBashE2eTestCase[] = [
         name: "peek-test",
       }),
       scriptedToolCall("tmux", { action: "peek", window: "all" }, { delayMs: 500 }),
-      recordLatestToolResult(peekContextPath(project), "peeked", "tmux"),
+      recordLatestToolResult(peekContextPath(project), { toolName: "tmux" }),
     ],
-    expectedTerminalOutput: "peeked\n",
     expectedContextOutputName: "peek-context",
     expectedContextOutput: peekContextOutput,
     expectedOutputFileContent: "peek-me\n",
@@ -135,18 +133,16 @@ const testCases: TmuxBashE2eTestCase[] = [
     script: () => [
       bash("sleep 30", { background: true, name: "kill-me" }),
       scriptedToolCall("tmux", { action: "kill" }),
-      replyIfContextContains("Killed background session", "killed"),
+      expectLatestToolResult("tmux", { contains: "Killed background session" }),
     ],
-    expectedTerminalOutput: "killed\n",
     expectedTmuxSessionExists: false,
   },
   {
     name: "truncates bash context output but preserves full output file",
     script: (project) => [
       bash(longOutputCommand),
-      recordLatestToolResult(truncateContextPath(project), "truncated", "bash"),
+      recordLatestToolResult(truncateContextPath(project), { toolName: "bash" }),
     ],
-    expectedTerminalOutput: "truncated\n",
     expectedContextOutputName: "truncated-bash-context",
     expectedContextOutput: truncatedLongOutputContext,
     expectedOutputFileContent: longOutput,
@@ -172,7 +168,6 @@ describe("tmux-bash e2e", () => {
       });
 
       expectPiSuccess(result);
-      expect(result.terminalOutput).toBe(testCase.expectedTerminalOutput);
       expect(project.tmuxSessionExists()).toBe(testCase.expectedTmuxSessionExists);
 
       const outputFile = testCase.expectedOutputFileContent

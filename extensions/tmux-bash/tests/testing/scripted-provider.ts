@@ -4,7 +4,7 @@ import path from "node:path";
 export type ScriptedStep =
   | ScriptedToolCallStep
   | ScriptedTextStep
-  | ScriptedContextTextStep
+  | ScriptedExpectLatestToolResultStep
   | ScriptedRecordLatestToolResultStep;
 
 type ScriptedToolCallStep = {
@@ -19,17 +19,24 @@ type ScriptedTextStep = {
   text: string;
 };
 
-type ScriptedContextTextStep = {
-  type: "contextText";
-  contains: string;
-  text: string;
-  missingText?: string;
+type ExpectedToolResult = {
+  contains?: string;
+  equals?: string;
+};
+
+type ScriptedExpectLatestToolResultStep = {
+  type: "expectLatestToolResult";
+  toolName: string;
+  expected: ExpectedToolResult;
 };
 
 type ScriptedRecordLatestToolResultStep = {
   type: "recordLatestToolResult";
   outputPath: string;
-  text: string;
+  toolName?: string;
+};
+
+type RecordLatestToolResultOptions = {
   toolName?: string;
 };
 
@@ -54,24 +61,22 @@ export const bash = (command: string, options: Record<string, unknown> = {}): Sc
 
 export const reply = scriptedText;
 
-export const scriptedContextText = (contains: string, text = contains): ScriptedStep => ({
-  type: "contextText",
-  contains,
-  text,
-  missingText: `missing ${text}`,
+export const expectLatestToolResult = (
+  toolName: string,
+  expected: ExpectedToolResult,
+): ScriptedStep => ({
+  type: "expectLatestToolResult",
+  toolName,
+  expected,
 });
-
-export const replyIfContextContains = scriptedContextText;
 
 export const recordLatestToolResult = (
   outputPath: string,
-  text: string,
-  toolName?: string,
+  options: RecordLatestToolResultOptions = {},
 ): ScriptedStep => ({
   type: "recordLatestToolResult",
   outputPath,
-  text,
-  ...(toolName === undefined ? {} : { toolName }),
+  ...(options.toolName === undefined ? {} : { toolName: options.toolName }),
 });
 
 export const writeScriptedProvider = (root: string, steps: ScriptedStep[]): string => {
@@ -117,6 +122,20 @@ const writeText = (filePath, text) => {
   writeFileSync(filePath, text, "utf8");
 };
 
+const failExpectedText = (message, expected, actual) => {
+  throw new Error(message + "\\nExpected: " + JSON.stringify(expected) + "\\nActual: " + JSON.stringify(actual));
+};
+
+const assertExpectedText = (actual, expected) => {
+  if (expected.equals !== undefined && actual !== expected.equals) {
+    failExpectedText("Expected latest tool result to equal text", expected.equals, actual);
+  }
+
+  if (expected.contains !== undefined && !actual.includes(expected.contains)) {
+    failExpectedText("Expected latest tool result to contain text", expected.contains, actual);
+  }
+};
+
 export default function scriptedProvider(pi) {
   const registration = registerFauxProvider({
     provider: SCRIPTED_PROVIDER,
@@ -152,7 +171,7 @@ ${steps.map((step) => `    ${scriptedStepSource(step)},`).join("\n")}
 
 const scriptedStepSource = (step: ScriptedStep): string => {
   if (step.type === "toolCall") return scriptedToolCallSource(step);
-  if (step.type === "contextText") return scriptedContextTextSource(step);
+  if (step.type === "expectLatestToolResult") return scriptedExpectLatestToolResultSource(step);
   if (step.type === "recordLatestToolResult") return scriptedRecordLatestToolResultSource(step);
   return `fauxAssistantMessage(${JSON.stringify(step.text)})`;
 };
@@ -163,8 +182,8 @@ const scriptedToolCallSource = (step: ScriptedToolCallStep): string => {
   return `async () => { await sleep(${JSON.stringify(step.delayMs)}); return ${response}; }`;
 };
 
-const scriptedContextTextSource = (step: ScriptedContextTextStep): string =>
-  `(context) => fauxAssistantMessage(JSON.stringify(context.messages).includes(${JSON.stringify(step.contains)}) ? ${JSON.stringify(step.text)} : ${JSON.stringify(step.missingText ?? `missing ${step.text}`)})`;
+const scriptedExpectLatestToolResultSource = (step: ScriptedExpectLatestToolResultStep): string =>
+  `(context) => { assertExpectedText(latestToolResultText(context, ${JSON.stringify(step.toolName)}), ${JSON.stringify(step.expected)}); return fauxAssistantMessage(""); }`;
 
 const scriptedRecordLatestToolResultSource = (step: ScriptedRecordLatestToolResultStep): string =>
-  `(context) => { writeText(${JSON.stringify(step.outputPath)}, latestToolResultText(context, ${JSON.stringify(step.toolName)})); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
+  `(context) => { writeText(${JSON.stringify(step.outputPath)}, latestToolResultText(context, ${JSON.stringify(step.toolName)})); return fauxAssistantMessage(""); }`;
