@@ -571,6 +571,11 @@ const bashDurationText = (state: BashRenderState, isPartial: boolean): string | 
 
 const shouldRenderBashDuration = (args: Partial<BashInput>): boolean => args.background !== true;
 
+const bashDurationSeparator = (isPartial: boolean): string => (isPartial ? "\n\n" : "\n");
+
+const renderDurationOnlyText = (renderedDuration: string, isPartial: boolean): string =>
+  isPartial ? `\n${renderedDuration}` : renderedDuration;
+
 export const renderBashResultText = (
   raw: string,
   expanded: boolean,
@@ -583,7 +588,8 @@ export const renderBashResultText = (
   const renderedOutput = output ? theme.fg("toolOutput", output) : "";
   const renderedDuration = duration ? theme.fg("muted", duration) : "";
 
-  return [renderedOutput, renderedDuration].filter(Boolean).join("\n\n\n");
+  if (!renderedOutput) return renderDurationOnlyText(renderedDuration, isPartial);
+  return [renderedOutput, renderedDuration].filter(Boolean).join(bashDurationSeparator(isPartial));
 };
 
 const emitInitialBashUpdate = (

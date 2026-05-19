@@ -116,10 +116,10 @@ describe("tmux-bash output truncation", () => {
     expect(formatDurationSeconds(10_900)).toBe("10s");
   });
 
-  it("renders an extra newline above elapsed time", () => {
+  it("renders elapsed with one visible blank line after output", () => {
     const theme = {
-      bold: (text: string) => `<bold>${text}</bold>`,
-      fg: (name: string, text: string) => `<${name}>${text}</${name}>`,
+      bold: (text: string) => text,
+      fg: (_name: string, text: string) => text,
     };
 
     const result = renderBashResultText(
@@ -130,7 +130,39 @@ describe("tmux-bash output truncation", () => {
       theme,
     );
 
-    expect(result).toBe("<toolOutput>working</toolOutput>\n\n\n<muted>Elapsed 5s</muted>");
+    expect(result).toBe(`working
+
+Elapsed 5s`);
+  });
+
+  it("renders elapsed with one visible blank line when there is no output yet", () => {
+    const theme = {
+      bold: (text: string) => text,
+      fg: (_name: string, text: string) => text,
+    };
+
+    const result = renderBashResultText("", false, true, { startedAt: 0, endedAt: 5_000 }, theme);
+
+    expect(result).toBe(`
+Elapsed 5s`);
+  });
+
+  it("renders took without an extra blank line after output", () => {
+    const theme = {
+      bold: (text: string) => text,
+      fg: (_name: string, text: string) => text,
+    };
+
+    const result = renderBashResultText(
+      "done",
+      false,
+      false,
+      { startedAt: 0, endedAt: 5_000 },
+      theme,
+    );
+
+    expect(result).toBe(`done
+Took 5s`);
   });
 
   it("renders timeout metadata like the built-in bash tool", () => {
