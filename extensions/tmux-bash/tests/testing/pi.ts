@@ -23,7 +23,11 @@ export const runPi = async (options: RunPiOptions): Promise<RunPiResult> => {
   return new Promise((resolve, reject) => {
     const child = spawn(piBin, args, {
       cwd: options.cwd,
-      env: { ...process.env, PI_CODING_AGENT_DIR: options.agentDir },
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: options.agentDir,
+        PI_EXTENSION_CONFIG_DIR: options.agentDir,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const timeout = setTimeout(() => {
@@ -47,7 +51,12 @@ export const runPi = async (options: RunPiOptions): Promise<RunPiResult> => {
     child.on("error", reject);
     child.on("close", (code) => {
       clearTimeout(timeout);
-      resolve({ stdout, stderr, terminalOutput: terminalChunks.join(""), code });
+      resolve({
+        stdout,
+        stderr,
+        terminalOutput: terminalChunks.join(""),
+        code,
+      });
     });
   });
 };

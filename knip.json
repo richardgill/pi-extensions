@@ -33,6 +33,7 @@
       "project": ["src/**/*.ts"]
     }
   },
+  "ignore": ["overlay/**"],
   "ignoreExportsUsedInFile": {
     "type": true
   },
