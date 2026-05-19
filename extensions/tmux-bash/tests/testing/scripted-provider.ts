@@ -28,16 +28,19 @@ type ScriptedExpectLatestToolResultStep = {
   type: "expectLatestToolResult";
   toolName: string;
   expected: ExpectedToolResult;
+  text: string;
 };
 
 type ScriptedRecordLatestToolResultStep = {
   type: "recordLatestToolResult";
   outputPath: string;
+  text: string;
   toolName?: string;
 };
 
 type RecordLatestToolResultOptions = {
   toolName?: string;
+  text?: string;
 };
 
 export const scriptedToolCall = (
@@ -64,10 +67,12 @@ export const reply = scriptedText;
 export const expectLatestToolResult = (
   toolName: string,
   expected: ExpectedToolResult,
+  text = "",
 ): ScriptedStep => ({
   type: "expectLatestToolResult",
   toolName,
   expected,
+  text,
 });
 
 export const recordLatestToolResult = (
@@ -76,6 +81,7 @@ export const recordLatestToolResult = (
 ): ScriptedStep => ({
   type: "recordLatestToolResult",
   outputPath,
+  text: options.text ?? "",
   ...(options.toolName === undefined ? {} : { toolName: options.toolName }),
 });
 
@@ -183,7 +189,7 @@ const scriptedToolCallSource = (step: ScriptedToolCallStep): string => {
 };
 
 const scriptedExpectLatestToolResultSource = (step: ScriptedExpectLatestToolResultStep): string =>
-  `(context) => { assertExpectedText(latestToolResultText(context, ${JSON.stringify(step.toolName)}), ${JSON.stringify(step.expected)}); return fauxAssistantMessage(""); }`;
+  `(context) => { assertExpectedText(latestToolResultText(context, ${JSON.stringify(step.toolName)}), ${JSON.stringify(step.expected)}); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
 
 const scriptedRecordLatestToolResultSource = (step: ScriptedRecordLatestToolResultStep): string =>
-  `(context) => { writeText(${JSON.stringify(step.outputPath)}, latestToolResultText(context, ${JSON.stringify(step.toolName)})); return fauxAssistantMessage(""); }`;
+  `(context) => { writeText(${JSON.stringify(step.outputPath)}, latestToolResultText(context, ${JSON.stringify(step.toolName)})); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
