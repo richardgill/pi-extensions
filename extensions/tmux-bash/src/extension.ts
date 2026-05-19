@@ -80,6 +80,11 @@ export type TmuxBashOptions = {
 
 type FullscreenCommandResult = { ok: true } | { ok: false; message: string };
 
+type RenderTheme = {
+  fg: (name: "toolTitle" | "muted", text: string) => string;
+  bold: (text: string) => string;
+};
+
 type ResolvedOptions = Required<Omit<TmuxBashOptions, "sessionNameTemplate">>;
 type SignalInfo = {
   session: string;
@@ -460,15 +465,22 @@ const visibleOutputLines = (lines: string[]): string[] =>
     .filter((line) => !isFullOutputNoticeLine(line))
     .filter((line) => line.trim() !== "");
 
-export const formatRenderedBashCall = (args: Partial<BashInput>): string => {
-  const command = truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
-  const metadata = [
+const bashCallCommand = (args: Partial<BashInput>): string =>
+  truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
+
+const bashCallMetadata = (args: Partial<BashInput>): string[] =>
+  [
     args.background === true ? "bg" : undefined,
-    args.timeout !== undefined ? `timeout ${args.timeout}s` : undefined,
+    args.timeout !== undefined ? `(timeout ${args.timeout}s)` : undefined,
   ].filter((item) => item !== undefined);
 
-  return [`$ ${command}`, ...metadata].join("  ");
-};
+export const formatRenderedBashCall = (args: Partial<BashInput>): string =>
+  [`$ ${bashCallCommand(args)}`, ...bashCallMetadata(args)].join(" ");
+
+export const renderBashCallText = (args: Partial<BashInput>, theme: RenderTheme): string =>
+  `${theme.fg("toolTitle", theme.bold(`$ ${bashCallCommand(args)}`))}${bashCallMetadata(args)
+    .map((item) => theme.fg("muted", ` ${item}`))
+    .join("")}`;
 
 export const formatRenderedBashResult = (raw: string, expanded: boolean): string => {
   if (expanded) return raw;
@@ -1209,27 +1221,14 @@ const runBashInTmux = async (
   if (exitCode === "aborted") {
     execSafe(`tmux kill-window -t ${shellQuote(result.windowId)}`);
     updateBackgroundProcessStatus(ctx, options);
-    return {
-      content: [{ type: "text" as const, text: `${text}\n\nCommand aborted` }],
-      details: output.details,
-      isError: true,
-    };
+    throw new Error(`${text}\n\nCommand aborted`);
   }
 
   if (exitCode === "timeout") {
     if (params.timeoutAction !== "background") {
       execSafe(`tmux kill-window -t ${shellQuote(result.windowId)}`);
       updateBackgroundProcessStatus(ctx, options);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `${text}\n\nCommand timed out after ${params.timeout} seconds and tmux window :${result.index} was killed.`,
-          },
-        ],
-        details: output.details,
-        isError: true,
-      };
+      throw new Error(`${text}\n\nCommand timed out after ${params.timeout} seconds`);
     }
 
     if (params.pollInterval > 0)
@@ -1260,11 +1259,7 @@ const runBashInTmux = async (
   updateBackgroundProcessStatus(ctx, options);
 
   if (exitCode !== 0) {
-    return {
-      content: [{ type: "text" as const, text: `${text}\n\nCommand exited with code ${exitCode}` }],
-      details: output.details,
-      isError: true,
-    };
+    throw new Error(`${text}\n\nCommand exited with code ${exitCode}`);
   }
 
   return { content: [{ type: "text" as const, text }], details: output.details };
@@ -1498,11 +1493,7 @@ const registerBashTool = (
       );
     },
     renderCall(args, theme) {
-      return new Text(
-        theme.fg("toolTitle", theme.bold(formatRenderedBashCall(args as Partial<BashInput>))),
-        0,
-        0,
-      );
+      return new Text(renderBashCallText(args as Partial<BashInput>, theme), 0, 0);
     },
     renderResult(result, { expanded }, theme) {
       const content = result.content?.[0];

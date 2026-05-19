@@ -4,7 +4,6 @@ import { getWindows } from "../src/tmux-utils.js";
 import { createPiE2eProject, expectPiSuccess, type PiE2eProject } from "./testing/e2e-project.js";
 import {
   bash,
-  expectLatestToolResult,
   recordLatestToolResult,
   scriptedToolCall,
   type ScriptedStep,
@@ -25,6 +24,7 @@ type TmuxBashE2eTestCase = {
   expectedContextOutputName?: string;
   expectedContextOutput?: (project: PiE2eProject, outputFile: string | undefined) => string;
   expectedOutputFileContent?: string;
+  expectedLatestToolResult?: { toolName: string; isError: boolean };
   expectedTmuxSessionExists: boolean;
   timeoutMs?: number;
 };
@@ -44,6 +44,9 @@ const bashOutputContext =
 
 const failedBashContext = (_project: PiE2eProject, outputFile: string | undefined): string =>
   `bad\n\n${fullOutputNotice(outputFile)}\n\nCommand exited with code 7`;
+
+const timeoutBashContext = (_project: PiE2eProject, outputFile: string | undefined): string =>
+  `starting\n\n${fullOutputNotice(outputFile)}\n\nCommand timed out after 1 seconds`;
 
 const truncatedLongOutputContext = (
   _project: PiE2eProject,
@@ -95,6 +98,7 @@ const testCases: TmuxBashE2eTestCase[] = [
     expectedContextOutputName: "stdout-context",
     expectedContextOutput: bashOutputContext("hello"),
     expectedOutputFileContent: "hello\n",
+    expectedLatestToolResult: { toolName: "bash", isError: false },
     expectedTmuxSessionExists: false,
   },
   {
@@ -119,22 +123,23 @@ const testCases: TmuxBashE2eTestCase[] = [
     expectedContextOutputName: "failed-context",
     expectedContextOutput: failedBashContext,
     expectedOutputFileContent: "bad\n",
+    expectedLatestToolResult: { toolName: "bash", isError: true },
     expectedTmuxSessionExists: false,
   },
   {
     name: "kills timed-out foreground command",
-    script: () => [
+    script: (project) => [
       bash("printf 'starting\\n'; sleep 5", {
         timeout: 1,
         timeoutAction: "kill",
       }),
-      expectLatestToolResult(
-        "bash",
-        { contains: "Command timed out after 1 seconds" },
-        "timeout-ok",
-      ),
+      recordContext(project, "timeout-context", "bash", "timeout-ok"),
     ],
     expectedTerminalOutput: "timeout-ok\n",
+    expectedContextOutputName: "timeout-context",
+    expectedContextOutput: timeoutBashContext,
+    expectedOutputFileContent: "starting\n",
+    expectedLatestToolResult: { toolName: "bash", isError: true },
     expectedTmuxSessionExists: false,
   },
   {
@@ -236,6 +241,11 @@ describe("tmux-bash e2e", () => {
         expect(project.readContextOutput(testCase.expectedContextOutputName)).toBe(
           testCase.expectedContextOutput?.(project, outputFile),
         );
+      }
+
+      if (testCase.expectedLatestToolResult) {
+        const expected = testCase.expectedLatestToolResult;
+        expect(project.latestToolResult(expected.toolName)?.isError).toBe(expected.isError);
       }
     },
     40_000,

@@ -9,6 +9,7 @@ import {
   formatRenderedBashResult,
   formatRenderedCompletionMessage,
   formatTmuxOutputForContext,
+  renderBashCallText,
   resolveOptions,
 } from "../src/extension.js";
 
@@ -87,7 +88,29 @@ describe("tmux-bash output truncation", () => {
       background: true,
     });
 
-    expect(result).toBe('$ sleep 90 && echo "hello"  bg');
+    expect(result).toBe('$ sleep 90 && echo "hello" bg');
+  });
+
+  it("renders timeout metadata like the built-in bash tool", () => {
+    const result = formatRenderedBashCall({
+      command: 'sleep 10 && echo "done"',
+      timeout: 15,
+    });
+
+    expect(result).toBe('$ sleep 10 && echo "done" (timeout 15s)');
+  });
+
+  it("renders timeout metadata muted, not as part of the bash title", () => {
+    const theme = {
+      bold: (text: string) => `<bold>${text}</bold>`,
+      fg: (name: string, text: string) => `<${name}>${text}</${name}>`,
+    };
+
+    const result = renderBashCallText({ command: "sleep 10", timeout: 15 }, theme);
+
+    expect(result).toBe(
+      "<toolTitle><bold>$ sleep 10</bold></toolTitle><muted> (timeout 15s)</muted>",
+    );
   });
 
   it("strips command wrappers using the display marker", () => {

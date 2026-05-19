@@ -20,8 +20,16 @@ export type TempPiProject = {
   contextOutputPath: (name: string) => string;
   readContextOutput: (name: string) => string;
   outputFiles: () => string[];
+  latestToolResult: (toolName: string) => ToolResultMessage | undefined;
   trackTmuxSession: (session: string) => void;
   cleanup: () => void;
+};
+
+type ToolResultMessage = {
+  role: "toolResult";
+  toolName: string;
+  isError: boolean;
+  content: { type: string; text?: string }[];
 };
 
 export const createTempPiProject = (): TempPiProject => {
@@ -44,6 +52,7 @@ export const createTempPiProject = (): TempPiProject => {
     contextOutputPath: (name) => path.join(contextDir, `${name}.txt`),
     readContextOutput: (name) => readFileSync(path.join(contextDir, `${name}.txt`), "utf8"),
     outputFiles: () => findOutputFiles(outputDir),
+    latestToolResult: (toolName) => latestToolResult(agentDir, toolName),
     trackTmuxSession: (session) => tmuxSessions.push(session),
     cleanup: () => {
       tmuxSessions.forEach(killTmuxSession);
@@ -83,6 +92,38 @@ const findOutputFiles = (root: string): string[] => {
     .map((entry) => path.join(entry.parentPath, entry.name))
     .sort();
 };
+
+const sessionFiles = (agentDir: string): string[] => {
+  const sessionsDir = path.join(agentDir, "sessions");
+  if (!existsSync(sessionsDir)) return [];
+
+  return readdirSync(sessionsDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(entry.parentPath, entry.name))
+    .sort();
+};
+
+const sessionMessages = (agentDir: string): unknown[] =>
+  sessionFiles(agentDir).flatMap((file) =>
+    readFileSync(file, "utf8").trim().split("\n").flatMap(parseSessionMessage),
+  );
+
+const parseSessionMessage = (line: string): unknown[] => {
+  try {
+    return [JSON.parse(line).message];
+  } catch {
+    return [];
+  }
+};
+
+const isToolResult = (value: unknown): value is ToolResultMessage =>
+  typeof value === "object" && value !== null && (value as ToolResultMessage).role === "toolResult";
+
+const latestToolResult = (agentDir: string, toolName: string): ToolResultMessage | undefined =>
+  sessionMessages(agentDir)
+    .filter(isToolResult)
+    .filter((message) => message.toolName === toolName)
+    .at(-1);
 
 const killTmuxSession = (session: string): void => {
   try {
