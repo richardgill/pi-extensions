@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { formatDurationSeconds } from "../src/extension.js";
 import { getWindows } from "../src/tmux-utils.js";
 import { createPiE2eProject, expectPiSuccess, type PiE2eProject } from "./testing/e2e-project.js";
 import {
@@ -214,6 +215,11 @@ afterEach(() => {
 });
 
 describe("tmux-bash e2e", () => {
+  it("formats foreground bash duration without trailing decimal", () => {
+    expect(formatDurationSeconds(5_000)).toBe("5s");
+    expect(formatDurationSeconds(10_000)).toBe("10s");
+  });
+
   it.each(testCases)(
     "$name",
     async (testCase) => {

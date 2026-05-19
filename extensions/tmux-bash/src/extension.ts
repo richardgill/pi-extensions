@@ -3,6 +3,7 @@ import {
   DEFAULT_MAX_LINES,
   formatSize,
   truncateTail,
+  type AgentToolUpdateCallback,
   type BashToolDetails,
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -81,8 +82,16 @@ export type TmuxBashOptions = {
 type FullscreenCommandResult = { ok: true } | { ok: false; message: string };
 
 type RenderTheme = {
-  fg: (name: "toolTitle" | "muted", text: string) => string;
+  fg: (name: "toolTitle" | "toolOutput" | "muted", text: string) => string;
   bold: (text: string) => string;
+};
+
+type ToolRenderContext<TState, TArgs> = {
+  args: TArgs;
+  state: TState;
+  executionStarted: boolean;
+  isError: boolean;
+  invalidate: () => void;
 };
 
 type ResolvedOptions = Required<Omit<TmuxBashOptions, "sessionNameTemplate">>;
@@ -105,6 +114,12 @@ type Poller = {
 };
 
 type PollerDetails = Omit<Poller, "timer" | "signalInfo">;
+
+type BashRenderState = {
+  startedAt?: number;
+  endedAt?: number;
+  interval?: NodeJS.Timeout;
+};
 
 type ExtensionState = {
   signalDir: string | null;
@@ -487,6 +502,66 @@ export const formatRenderedBashResult = (raw: string, expanded: boolean): string
 
   const [summary = "", ...detail] = raw.split("\n").filter((line) => !isFullOutputNoticeLine(line));
   return [summary, ...detail.slice(-5)].join("\n").trimEnd();
+};
+
+export const formatDurationSeconds = (ms: number): string =>
+  `${Math.max(0, Math.floor(ms / 1000))}s`;
+
+const startBashRenderTiming = (context: ToolRenderContext<BashRenderState, Partial<BashInput>>) => {
+  if (!context.executionStarted || context.state.startedAt !== undefined) return;
+
+  context.state.startedAt = Date.now();
+  context.state.endedAt = undefined;
+};
+
+const updateBashResultTiming = (
+  context: ToolRenderContext<BashRenderState, Partial<BashInput>>,
+  isPartial: boolean,
+): void => {
+  if (context.state.startedAt === undefined) context.state.startedAt = Date.now();
+
+  if (isPartial && !context.state.interval) {
+    context.state.interval = setInterval(() => context.invalidate(), 1000);
+  }
+
+  if (isPartial && !context.isError) return;
+
+  if (context.state.endedAt === undefined) context.state.endedAt = Date.now();
+  if (!context.state.interval) return;
+
+  clearInterval(context.state.interval);
+  context.state.interval = undefined;
+};
+
+const bashDurationText = (state: BashRenderState, isPartial: boolean): string | undefined => {
+  if (state.startedAt === undefined) return undefined;
+
+  const label = isPartial ? "Elapsed" : "Took";
+  const endTime = state.endedAt ?? Date.now();
+  return `${label} ${formatDurationSeconds(endTime - state.startedAt)}`;
+};
+
+const shouldRenderBashDuration = (args: Partial<BashInput>): boolean => args.background !== true;
+
+const renderBashResultText = (
+  raw: string,
+  expanded: boolean,
+  isPartial: boolean,
+  state: BashRenderState,
+  theme: RenderTheme,
+): string => {
+  const output = formatRenderedBashResult(raw, expanded);
+  const duration = bashDurationText(state, isPartial);
+  const renderedOutput = output ? theme.fg("toolOutput", output) : "";
+  const renderedDuration = duration ? theme.fg("muted", duration) : "";
+
+  return [renderedOutput, renderedDuration].filter(Boolean).join("\n\n");
+};
+
+const emitInitialBashUpdate = (
+  onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
+) => {
+  onUpdate?.({ content: [], details: undefined });
 };
 
 export const formatRenderedCompletionMessage = (raw: string, expanded: boolean): string => {
@@ -1141,6 +1216,7 @@ const executeTool = (
 const runBashInTmux = async (
   params: BashInput,
   signal: AbortSignal | undefined,
+  onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   state: ExtensionState,
@@ -1205,6 +1281,7 @@ const runBashInTmux = async (
     };
   }
 
+  emitInitialBashUpdate(onUpdate);
   state.bashSignals.add(completionSignalFilename);
   const exitCode = await waitForExitCode(signalDir, signal, signalInfo, params.timeout);
   state.bashSignals.delete(completionSignalFilename);
@@ -1487,18 +1564,30 @@ const registerBashTool = (
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
     parameters: bashToolCallSchema.typeBoxSchema,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       return bashToolCallSchema.handleInput(params, (input) =>
-        runBashInTmux(input, signal, pi, ctx, state, options),
+        runBashInTmux(input, signal, onUpdate, pi, ctx, state, options),
       );
     },
-    renderCall(args, theme) {
+    renderCall(args, theme, context) {
+      startBashRenderTiming(context as ToolRenderContext<BashRenderState, Partial<BashInput>>);
       return new Text(renderBashCallText(args as Partial<BashInput>, theme), 0, 0);
     },
-    renderResult(result, { expanded }, theme) {
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      const bashContext = context as ToolRenderContext<BashRenderState, Partial<BashInput>>;
       const content = result.content?.[0];
       const raw = content?.type === "text" ? content.text : "";
-      return new Text(theme.fg("toolOutput", formatRenderedBashResult(raw, expanded)), 0, 0);
+
+      if (!shouldRenderBashDuration(bashContext.args)) {
+        return new Text(theme.fg("toolOutput", formatRenderedBashResult(raw, expanded)), 0, 0);
+      }
+
+      updateBashResultTiming(bashContext, isPartial);
+      return new Text(
+        renderBashResultText(raw, expanded, isPartial, bashContext.state, theme),
+        0,
+        0,
+      );
     },
   });
 };

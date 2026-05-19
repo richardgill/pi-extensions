@@ -4,6 +4,7 @@ import {
   DEFAULT_OPTIONS,
   displayCommandForCommand,
   formatCompletionSummary,
+  formatDurationSeconds,
   formatEnvironmentExportsForBash,
   formatRenderedBashCall,
   formatRenderedBashResult,
@@ -89,6 +90,12 @@ describe("tmux-bash output truncation", () => {
     });
 
     expect(result).toBe('$ sleep 90 && echo "hello" bg');
+  });
+
+  it("formats bash durations as whole seconds", () => {
+    expect(formatDurationSeconds(5_000)).toBe("5s");
+    expect(formatDurationSeconds(10_000)).toBe("10s");
+    expect(formatDurationSeconds(10_900)).toBe("10s");
   });
 
   it("renders timeout metadata like the built-in bash tool", () => {
