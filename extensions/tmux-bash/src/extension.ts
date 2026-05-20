@@ -49,6 +49,8 @@ import {
 const SIGNAL_BASE = "/tmp/pi-tmux-bash";
 const SHARED_SESSION_NAME = "pi-background";
 const BACKGROUND_BASH_STATUS_KEY = "backgroundBashTmuxCommands";
+const FOREGROUND_BASH_UPDATE_INTERVAL_MS = 250;
+const BASH_DURATION_SEPARATOR = "\n\n";
 const SHELL_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TMUX_ENV_EXPORT_DENYLIST = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"]);
 
@@ -529,8 +531,11 @@ export const formatRenderedBashResult = (raw: string, expanded: boolean): string
   return [summary, ...detail.slice(-5)].join("\n").trimEnd();
 };
 
-export const formatDurationSeconds = (ms: number): string =>
-  `${Math.max(0, Math.floor(ms / 1000))}s`;
+const durationSeconds = (ms: number): number => Math.max(0, ms / 1000);
+
+export const formatDurationSeconds = (ms: number): string => `${Math.floor(durationSeconds(ms))}s`;
+
+const formatElapsedDurationSeconds = (ms: number): string => `${durationSeconds(ms).toFixed(1)}s`;
 
 const completionDurationMs = (startedAt: number | undefined): number | undefined =>
   startedAt === undefined ? undefined : Date.now() - startedAt;
@@ -566,15 +571,13 @@ const bashDurationText = (state: BashRenderState, isPartial: boolean): string | 
 
   const label = isPartial ? "Elapsed" : "Took";
   const endTime = state.endedAt ?? Date.now();
-  return `${label} ${formatDurationSeconds(endTime - state.startedAt)}`;
+  const duration = isPartial
+    ? formatElapsedDurationSeconds(endTime - state.startedAt)
+    : formatDurationSeconds(endTime - state.startedAt);
+  return `${label} ${duration}`;
 };
 
 const shouldRenderBashDuration = (args: Partial<BashInput>): boolean => args.background !== true;
-
-const bashDurationSeparator = (isPartial: boolean): string => (isPartial ? "\n\n" : "\n");
-
-const renderDurationOnlyText = (renderedDuration: string, isPartial: boolean): string =>
-  isPartial ? `\n${renderedDuration}` : renderedDuration;
 
 export const renderBashResultText = (
   raw: string,
@@ -588,14 +591,49 @@ export const renderBashResultText = (
   const renderedOutput = output ? theme.fg("toolOutput", output) : "";
   const renderedDuration = duration ? theme.fg("muted", duration) : "";
 
-  if (!renderedOutput) return renderDurationOnlyText(renderedDuration, isPartial);
-  return [renderedOutput, renderedDuration].filter(Boolean).join(bashDurationSeparator(isPartial));
+  if (!renderedOutput) return isPartial ? `\n${renderedDuration}` : renderedDuration;
+  return [renderedOutput, renderedDuration].filter(Boolean).join(BASH_DURATION_SEPARATOR);
 };
 
-const emitInitialBashUpdate = (
+const bashUpdate = (text = "", details?: BashToolDetails) => ({
+  content: text ? [{ type: "text" as const, text }] : [],
+  details,
+});
+
+const emitForegroundBashOutputUpdate = (
   onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
-) => {
-  onUpdate?.({ content: [], details: undefined });
+  windowId: string,
+  outputFile: string | undefined,
+  options: ResolvedOptions,
+  lastText: string | undefined,
+): string | undefined => {
+  if (!onUpdate) return lastText;
+
+  const output = formatTrimmedOutput(
+    commandOutput(windowId, options.captureLines, outputFile),
+    outputFile,
+    shouldShowOutputPath(options),
+  );
+  if (output.text === "(no output)" || output.text === lastText) return lastText;
+
+  onUpdate(bashUpdate(output.text, output.details));
+  return output.text;
+};
+
+const startForegroundBashOutputUpdates = (
+  onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
+  windowId: string,
+  outputFile: string | undefined,
+  options: ResolvedOptions,
+): (() => void) => {
+  let lastText: string | undefined;
+  const update = () => {
+    lastText = emitForegroundBashOutputUpdate(onUpdate, windowId, outputFile, options, lastText);
+  };
+  const timer = setInterval(update, FOREGROUND_BASH_UPDATE_INTERVAL_MS);
+
+  update();
+  return () => clearInterval(timer);
 };
 
 export const formatRenderedCompletionMessage = (raw: string, expanded: boolean): string => {
@@ -671,8 +709,8 @@ printf '$ %s\n' ${shellQuote(displayCommand)}
 ${formatEnvironmentExportsForBash()}
 (
 ${cmd}
-) > >(tee -a "$__output_file") 2>&1
-__rc=$?
+) 2>&1 | tee -a "$__output_file"
+__rc=\${PIPESTATUS[0]}
 printf '%s\n' "$__rc" > "$__signal_file"
 if [ -n "\${SHELL:-}" ] && [ -x "\${SHELL:-}" ]; then
   exec "$SHELL" -l
@@ -1325,10 +1363,20 @@ const runBashInTmux = async (
     };
   }
 
-  emitInitialBashUpdate(onUpdate);
+  onUpdate?.(bashUpdate());
+  const stopForegroundUpdates = startForegroundBashOutputUpdates(
+    onUpdate,
+    result.windowId,
+    result.outputFile,
+    options,
+  );
   state.bashSignals.add(completionSignalFilename);
-  const exitCode = await waitForExitCode(signalDir, signal, signalInfo, params.timeout);
-  state.bashSignals.delete(completionSignalFilename);
+  const exitCode = await waitForExitCode(signalDir, signal, signalInfo, params.timeout).finally(
+    () => {
+      stopForegroundUpdates();
+      state.bashSignals.delete(completionSignalFilename);
+    },
+  );
   if (exitCode !== "timeout" || params.timeoutAction !== "background") {
     state.ownedSignals.delete(completionSignalFilename);
     state.signalStartedAt.delete(completionSignalFilename);

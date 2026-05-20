@@ -132,7 +132,7 @@ describe("tmux-bash output truncation", () => {
 
     expect(result).toBe(`working
 
-Elapsed 5s`);
+Elapsed 5.0s`);
   });
 
   it("renders elapsed with one visible blank line when there is no output yet", () => {
@@ -144,10 +144,10 @@ Elapsed 5s`);
     const result = renderBashResultText("", false, true, { startedAt: 0, endedAt: 5_000 }, theme);
 
     expect(result).toBe(`
-Elapsed 5s`);
+Elapsed 5.0s`);
   });
 
-  it("renders took without an extra blank line after output", () => {
+  it("renders took with one visible blank line after output", () => {
     const theme = {
       bold: (text: string) => text,
       fg: (_name: string, text: string) => text,
@@ -162,6 +162,7 @@ Elapsed 5s`);
     );
 
     expect(result).toBe(`done
+
 Took 5s`);
   });
 

@@ -75,6 +75,12 @@ const peekContextOutput = (project: PiE2eProject): string => {
 const contextPath = (project: PiE2eProject, name: string): string =>
   project.contextOutputPath(name);
 
+const firstUpdateMatching = (
+  updates: { text: string; elapsedMs: number }[],
+  pattern: RegExp,
+): { text: string; elapsedMs: number } | undefined =>
+  updates.find((update) => pattern.test(update.text));
+
 const recordContext = (
   project: PiE2eProject,
   name: string,
@@ -113,6 +119,19 @@ const testCases: TmuxBashE2eTestCase[] = [
     expectedContextOutput: bashOutputContext("oops"),
     expectedOutputFileContent: "oops\n",
     expectedTmuxSessionExists: false,
+  },
+  {
+    name: "captures delayed foreground stdout exactly",
+    script: (project) => [
+      bash('echo "hello" && sleep 5 && echo "bye"', { timeout: 10 }),
+      recordContext(project, "delayed-stdout-context", "bash", "delayed-ok"),
+    ],
+    expectedTerminalOutput: "delayed-ok\n",
+    expectedContextOutputName: "delayed-stdout-context",
+    expectedContextOutput: bashOutputContext("hello\nbye"),
+    expectedOutputFileContent: "hello\nbye\n",
+    expectedTmuxSessionExists: false,
+    timeoutMs: 20_000,
   },
   {
     name: "reports non-zero exit codes",
@@ -229,6 +248,25 @@ describe("tmux-bash e2e", () => {
     expect(formatDurationSeconds(5_000)).toBe("5s");
     expect(formatDurationSeconds(10_000)).toBe("10s");
   });
+
+  it("streams foreground stdout before command completion", async () => {
+    const project = createProject();
+    const result = await project.runBashTool({
+      command: 'echo "hello" && sleep 5 && echo "bye"',
+      timeout: 10,
+      timeoutAction: "background",
+      background: false,
+      pollInterval: 0,
+      pollLines: 30,
+    });
+
+    const helloUpdate = firstUpdateMatching(result.updates, /(^|\n)hello(\n|$)/);
+
+    expect(helloUpdate?.elapsedMs).toBeLessThan(5_000);
+    expect(helloUpdate?.text).toMatch(/(^|\n)hello(\n|$)/);
+    expect(helloUpdate?.text).not.toMatch(/(^|\n)bye(\n|$)/);
+    expect(result.text).toMatch(/^hello\nbye/);
+  }, 30_000);
 
   it.each(testCases)(
     "$name",
