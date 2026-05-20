@@ -1,5 +1,13 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.3
+
+### Patch Changes
+
+- [`1dd348e`](https://github.com/richardgill/pi-extensions/commit/1dd348e13b8090c7425e813b69ebe3ff391eaca9) Thanks [@richardgill](https://github.com/richardgill)! - Make `/tmux` open a fullscreen fzf picker over sidecar tmux windows from the current pi session.
+
+- [#26](https://github.com/richardgill/pi-extensions/pull/26) [`6c0ddbb`](https://github.com/richardgill/pi-extensions/commit/6c0ddbb277dd35cb9a10ec1717e1417c7d4dc588) Thanks [@richardgill](https://github.com/richardgill)! - Clarify background bash guidance so agents rely on completion notifications and only poll when interim progress is useful.
+
 ## 0.0.2
 
 ### Patch Changes
