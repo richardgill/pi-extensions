@@ -445,6 +445,13 @@ const formatTrimmedOutput = (
 ): FormattedOutput =>
   formatOutput(content.trim(), fullOutputPath, "(no output)", showFullOutputPath);
 
+export const limitOutputLines = (content: string, lines: number): string => {
+  const trimmed = content.trimEnd();
+  if (!trimmed) return "";
+
+  return trimmed.split("\n").slice(-lines).join("\n");
+};
+
 export const formatCompletionSummary = (
   windowTitle: string,
   session: string,
@@ -827,6 +834,13 @@ const captureWindowOutput = (windowId: string, lines: number): string =>
 const commandOutput = (windowId: string, lines: number, outputFile?: string): string =>
   readOutputFile(outputFile) ?? captureWindowOutput(windowId, lines);
 
+const commandOutputTail = (windowId: string, lines: number, outputFile?: string): string => {
+  const fileOutput = readOutputFile(outputFile);
+  if (fileOutput !== null) return limitOutputLines(fileOutput, lines);
+
+  return captureWindowOutput(windowId, lines);
+};
+
 const pollerKey = (session: string, windowId: string): string => `${session}:${windowId}`;
 
 const readSignalExitCode = (state: ExtensionState, signalInfo?: SignalInfo): number | undefined => {
@@ -942,6 +956,7 @@ const startPoller = (
   if (interval <= 0) return;
 
   stopPoller(state, session, windowId);
+  let lastText: string | undefined;
   const timer = setInterval(() => {
     const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
       (item) => item.id === windowId,
@@ -952,14 +967,18 @@ const startPoller = (
       return;
     }
 
-    const output = formatTrimmedOutput(
-      commandOutput(windowId, lines, signalInfo?.outputFile),
-      signalInfo?.outputFile,
-      shouldShowOutputPath(options),
-    ).text;
     const exitCode = readSignalExitCode(state, signalInfo);
     const durationMs = completionDurationMs(signalInfo?.startedAt);
     const completed = exitCode !== undefined;
+    const outputLines = completed ? options.completionTailLines : lines;
+    const output = formatTrimmedOutput(
+      commandOutputTail(windowId, outputLines, signalInfo?.outputFile),
+      signalInfo?.outputFile,
+      shouldShowOutputPath(options),
+    ).text;
+    if (!completed && output === lastText) return;
+
+    lastText = output;
     if (completed) stopPoller(state, session, windowId);
 
     pi.sendMessage(
@@ -974,7 +993,7 @@ const startPoller = (
 \`\`\`\n${output}\n\`\`\``,
         display: true,
       },
-      { triggerTurn: true, deliverAs: "followUp" },
+      { triggerTurn: completed, deliverAs: "followUp" },
     );
     if (completed) {
       closeWindowOnCompletion(windowId, options);

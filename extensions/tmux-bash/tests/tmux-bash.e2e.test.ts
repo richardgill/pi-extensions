@@ -268,6 +268,51 @@ describe("tmux-bash e2e", () => {
     expect(result.text).toMatch(/^hello\nbye/);
   }, 30_000);
 
+  it("does not trigger assistant turns for background poll messages", async () => {
+    const project = createProject();
+    const result = await project.runBashTool(
+      {
+        command: "printf 'line-1\\nline-2\\nline-3\\nline-4\\n'; sleep 5",
+        timeout: 10,
+        timeoutAction: "background",
+        background: true,
+        pollInterval: 1,
+        pollLines: 2,
+      },
+      { waitAfterExecuteMs: 1_200 },
+    );
+
+    const pollMessage = result.messages.find((message) => message.customType === "tmux-bash-poll");
+
+    expect(pollMessage?.content).not.toContain("line-1");
+    expect(pollMessage?.content).not.toContain("line-2");
+    expect(pollMessage?.content).toContain("line-3");
+    expect(pollMessage?.content).toContain("line-4");
+    expect(pollMessage?.triggerTurn).toBe(false);
+    expect(pollMessage?.deliverAs).toBe("followUp");
+  }, 20_000);
+
+  it("does not resend unchanged background poll output", async () => {
+    const project = createProject();
+    const result = await project.runBashTool(
+      {
+        command: "printf 'same\\n'; sleep 5",
+        timeout: 10,
+        timeoutAction: "background",
+        background: true,
+        pollInterval: 1,
+        pollLines: 5,
+      },
+      { waitAfterExecuteMs: 2_200 },
+    );
+
+    const pollMessages = result.messages.filter(
+      (message) => message.customType === "tmux-bash-poll",
+    );
+
+    expect(pollMessages).toHaveLength(1);
+  }, 20_000);
+
   it.each(testCases)(
     "$name",
     async (testCase) => {

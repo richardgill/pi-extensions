@@ -2,7 +2,11 @@ import path from "node:path";
 import { expect } from "vitest";
 import type { BashInput } from "../../src/tool-call-schemas.js";
 import { backgroundSessionName } from "../../src/tmux-utils.js";
-import { runBashToolDirectly, type DirectBashRunResult } from "./direct-tool.js";
+import {
+  runBashToolDirectly,
+  type DirectBashRunOptions,
+  type DirectBashRunResult,
+} from "./direct-tool.js";
 import { runPi, type RunPiResult } from "./pi.js";
 import { type ScriptedStep, writeScriptedProvider } from "./scripted-provider.js";
 import { createTempPiProject, tmuxSessionExists, type TempPiProject } from "./temp-project.js";
@@ -15,7 +19,7 @@ export type PiE2eRunOptions = {
 
 export type PiE2eProject = TempPiProject & {
   run: (options: PiE2eRunOptions) => Promise<RunPiResult>;
-  runBashTool: (input: BashInput) => Promise<DirectBashRunResult>;
+  runBashTool: (input: BashInput, options?: DirectBashRunOptions) => Promise<DirectBashRunResult>;
   tmuxSession: () => string;
   tmuxSessionExists: () => boolean;
 };
@@ -28,7 +32,7 @@ export const createPiE2eProject = (): PiE2eProject => {
   return {
     ...project,
     run: (options) => runPiForProject(project, options),
-    runBashTool: (input) => runBashToolDirectly(project, input),
+    runBashTool: (input, options) => runBashToolDirectly(project, input, options),
     tmuxSession: () => tmuxSession,
     tmuxSessionExists: () => tmuxSessionExists(tmuxSession),
   };

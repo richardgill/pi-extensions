@@ -10,6 +10,7 @@ import {
   formatRenderedBashResult,
   formatRenderedCompletionMessage,
   formatTmuxOutputForContext,
+  limitOutputLines,
   renderBashCallText,
   renderBashResultText,
   resolveOptions,
@@ -33,6 +34,12 @@ describe("tmux-bash output truncation", () => {
     const result = formatTmuxOutputForContext("hello");
 
     expect(result).toEqual({ text: "hello", details: undefined });
+  });
+
+  it("limits output to the latest requested lines", () => {
+    const content = ["line-1", "line-2", "line-3", "line-4"].join("\n") + "\n";
+
+    expect(limitOutputLines(content, 2)).toBe("line-3\nline-4");
   });
 
   it("can include full output paths for small output", () => {

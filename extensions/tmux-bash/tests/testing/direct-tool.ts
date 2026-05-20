@@ -13,9 +13,21 @@ export type TimedToolUpdate = {
   text: string;
 };
 
+export type DirectMessage = {
+  customType?: string;
+  content?: string;
+  triggerTurn?: boolean;
+  deliverAs?: string;
+};
+
+export type DirectBashRunOptions = {
+  waitAfterExecuteMs?: number;
+};
+
 export type DirectBashRunResult = {
   text: string;
   updates: TimedToolUpdate[];
+  messages: DirectMessage[];
 };
 
 type ToolResult = {
@@ -39,6 +51,7 @@ type EventHandler = (event: unknown, ctx: ExtensionContext) => void | Promise<vo
 type FakePi = ExtensionAPI & {
   tools: RegisteredTool[];
   handlers: Map<string, EventHandler[]>;
+  messages: DirectMessage[];
 };
 
 const resultText = (result: ToolResult): string => {
@@ -54,17 +67,21 @@ const updateText = (update: ToolResult): string => {
 const createFakePi = (): FakePi => {
   const tools: RegisteredTool[] = [];
   const handlers = new Map<string, EventHandler[]>();
+  const messages: DirectMessage[] = [];
 
   return {
     tools,
     handlers,
+    messages,
     on: (name: string, handler: EventHandler) => {
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
     registerTool: (tool: RegisteredTool) => tools.push(tool),
     registerCommand: () => {},
     registerMessageRenderer: () => {},
-    sendMessage: () => {},
+    sendMessage: (message: DirectMessage, options?: DirectMessage) => {
+      messages.push({ ...message, ...options });
+    },
     sendUserMessage: () => {},
   } as unknown as FakePi;
 };
@@ -89,9 +106,12 @@ const registeredBashTool = (pi: FakePi): RegisteredTool => {
   return tool;
 };
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const runBashToolDirectly = async (
   project: TempPiProject,
   input: BashInput,
+  options: DirectBashRunOptions = {},
 ): Promise<DirectBashRunResult> => {
   const pi = createFakePi();
   const ctx = createContext(project);
@@ -112,7 +132,8 @@ export const runBashToolDirectly = async (
       onUpdate,
       ctx,
     );
-    return { text: resultText(result), updates };
+    if (options.waitAfterExecuteMs) await sleep(options.waitAfterExecuteMs);
+    return { text: resultText(result), updates, messages: pi.messages };
   } finally {
     await emit(pi, "session_shutdown", ctx);
   }
