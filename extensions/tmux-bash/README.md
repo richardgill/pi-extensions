@@ -40,11 +40,80 @@ type BashInTmuxInput =
     };
 ```
 
-## Commands
+## API helpers
 
-- `/tmux` — open a fullscreen fzf picker for the scoped sidecar tmux windows
-- `/tmux:cat` — bring background tmux output into the conversation
-- `/tmux:clear` — kill idle background windows
+Other extensions can import tmux-bash helpers to target the same background tmux sessions and scoped windows.
+
+```ts
+import type { ResolvedOptions } from "@richardgill/pi-tmux-bash";
+import { loadTmuxBashConfig } from "@richardgill/pi-tmux-bash/config";
+
+// Example:
+// const options = loadTmuxBashConfig();
+//
+// Reads ~/.pi/agent/tmux-bash.jsonc with the same schema as the extension entrypoint.
+// Falls back to DEFAULT_OPTIONS for omitted config.
+// Use this when another extension wants to target the same tmux session/window scope.
+export const loadTmuxBashConfig = (): ResolvedOptions => {};
+```
+
+```ts
+import {
+  clearIdleBashWindows,
+  listBashWindows,
+  resolveTmuxBashContext,
+  type TmuxBashContext,
+  type TmuxWindow,
+  type TmuxWindowFilters,
+} from "@richardgill/pi-tmux-bash/core";
+import type { ResolvedOptions } from "@richardgill/pi-tmux-bash";
+
+export type TmuxBashContext = {
+  gitRoot: string;
+  session: string;
+  filters: TmuxWindowFilters;
+};
+
+// Example:
+// const options = loadTmuxBashConfig();
+// const context = resolveTmuxBashContext({
+//   cwd: ctx.cwd,
+//   piSessionId: ctx.sessionManager.getSessionId(),
+//   options,
+// });
+// if (!context) ctx.ui.notify("Not in a git repository.", "error");
+//
+// Resolves:
+// - current git root
+// - tmux session name from config
+// - window filters from config
+export const resolveTmuxBashContext = (input: {
+  cwd: string;
+  piSessionId: string;
+  options: ResolvedOptions;
+}): TmuxBashContext | null => {};
+
+// Example:
+// const windows = listBashWindows(context);
+// // [
+// //   { id: "@2172", index: 3, title: "hello-sleep-done", outputFile: "/tmp/..." },
+// // ]
+//
+// Lists only bash-created windows matching the resolved scope.
+export const listBashWindows = (context: TmuxBashContext): TmuxWindow[] => {};
+
+// Example:
+// const count = clearIdleBashWindows(context);
+// // 0
+// // or 3, after killing 3 finished bash-created windows
+// // or "missing", if the tmux session does not exist
+//
+// “Idle” means:
+// - window was created by tmux-bash
+// - pane command is a shell: bash/zsh/sh/fish/dash
+// - shell has no child process left
+export const clearIdleBashWindows = (context: TmuxBashContext): number | "missing" => {};
+```
 
 ## Config
 
@@ -68,10 +137,7 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Tool name exposed to the agent. Change if another extension registers "tmux".
   "toolName": "tmux",
 
-  // Slash command prefix. "tmux" creates /tmux, /tmux:cat, /tmux:clear.
-  "commandPrefix": "tmux",
-
-  // Number of tmux scrollback lines captured by peek and /tmux:cat.
+  // Number of tmux scrollback lines captured by peek.
   "captureLines": 50,
 
   // Number of tmux scrollback lines captured when a command completes.

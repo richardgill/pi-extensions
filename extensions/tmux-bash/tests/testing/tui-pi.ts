@@ -21,11 +21,14 @@ export type RunPiTuiOptions = {
   timeoutMs?: number;
   cols?: number;
   rows?: number;
+  captureAnsi?: boolean;
 };
 
 export type RunPiTuiResult = {
   pane: string;
   checkpoints: Record<string, string>;
+  paneAnsi?: string;
+  checkpointsAnsi?: Record<string, string>;
 };
 
 const tmuxSessionName = (): string => `pi-tui-test-${process.pid}-${Date.now()}`;
@@ -60,8 +63,8 @@ const buildPiCommand = (options: RunPiTuiOptions): string => {
 
 const tmux = (args: string[]): string => execFileSync("tmux", args, { encoding: "utf8" });
 
-const capturePane = (session: string): string =>
-  tmux(["capture-pane", "-p", "-J", "-S", "-", "-t", session]);
+const capturePane = (session: string, options: { ansi?: boolean } = {}): string =>
+  tmux(["capture-pane", "-p", ...(options.ansi ? ["-e"] : []), "-J", "-S", "-", "-t", session]);
 
 const paneMatches = (pane: string, matcher: string | RegExp): boolean =>
   typeof matcher === "string" ? pane.includes(matcher) : matcher.test(pane);
@@ -131,27 +134,41 @@ const captureCheckpoint = async (
   session: string,
   checkpoint: RunPiTuiCheckpoint,
   defaultTimeoutMs: number,
-): Promise<[string, string]> => {
+  captureAnsi: boolean,
+): Promise<[[string, string], [string, string] | undefined]> => {
   const pane = await waitForPane(
     session,
     checkpoint.waitFor,
     checkpoint.timeoutMs ?? defaultTimeoutMs,
   );
+  const paneAnsi = captureAnsi ? capturePane(session, { ansi: true }) : undefined;
   sendKeys(session, checkpoint.keys);
   if (checkpoint.delayMs !== undefined) await sleep(checkpoint.delayMs);
-  return [checkpoint.name, pane];
+  return [[checkpoint.name, pane], paneAnsi ? [checkpoint.name, paneAnsi] : undefined];
 };
 
 const captureCheckpoints = async (
   session: string,
   checkpoints: RunPiTuiCheckpoint[] | undefined,
   defaultTimeoutMs: number,
-): Promise<Record<string, string>> => {
-  const entries = [];
+  captureAnsi: boolean,
+): Promise<{ plain: Record<string, string>; ansi?: Record<string, string> }> => {
+  const plainEntries = [];
+  const ansiEntries = [];
   for (const checkpoint of checkpoints ?? []) {
-    entries.push(await captureCheckpoint(session, checkpoint, defaultTimeoutMs));
+    const [plain, ansi] = await captureCheckpoint(
+      session,
+      checkpoint,
+      defaultTimeoutMs,
+      captureAnsi,
+    );
+    plainEntries.push(plain);
+    if (ansi) ansiEntries.push(ansi);
   }
-  return Object.fromEntries(entries);
+  return {
+    plain: Object.fromEntries(plainEntries),
+    ...(captureAnsi ? { ansi: Object.fromEntries(ansiEntries) } : {}),
+  };
 };
 
 const killTmuxSession = (session: string): void => {
@@ -171,9 +188,20 @@ export const runPiTui = async (options: RunPiTuiOptions): Promise<RunPiTuiResult
     await sleep(1_000);
     sendPrompt(session, options.prompt);
     const timeoutMs = options.timeoutMs ?? 20_000;
-    const checkpoints = await captureCheckpoints(session, options.checkpoints, timeoutMs);
+    const checkpoints = await captureCheckpoints(
+      session,
+      options.checkpoints,
+      timeoutMs,
+      Boolean(options.captureAnsi),
+    );
     const pane = await waitForPane(session, options.waitFor, timeoutMs);
-    return { pane, checkpoints };
+    return {
+      pane,
+      checkpoints: checkpoints.plain,
+      ...(options.captureAnsi
+        ? { paneAnsi: capturePane(session, { ansi: true }), checkpointsAnsi: checkpoints.ansi }
+        : {}),
+    };
   } finally {
     killTmuxSession(session);
   }

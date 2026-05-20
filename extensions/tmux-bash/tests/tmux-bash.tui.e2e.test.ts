@@ -8,7 +8,7 @@ import {
   type ScriptedStep,
   writeScriptedProvider,
 } from "./testing/scripted-provider.js";
-import { runPiTui, type RunPiTuiCheckpoint } from "./testing/tui-pi.js";
+import { runPiTui, type RunPiTuiCheckpoint, type RunPiTuiResult } from "./testing/tui-pi.js";
 
 const projects: PiE2eProject[] = [];
 const doneMarker = "PI-TUI-DONE";
@@ -31,8 +31,12 @@ const tmux = (args: Record<string, unknown>, options: { delayMs?: number } = {})
 const runTui = (
   project: PiE2eProject,
   script: ScriptedStep[],
-  options: { waitFor?: string | RegExp; checkpoints?: RunPiTuiCheckpoint[] } = {},
-): Promise<{ pane: string; checkpoints: Record<string, string> }> => {
+  options: {
+    waitFor?: string | RegExp;
+    checkpoints?: RunPiTuiCheckpoint[];
+    captureAnsi?: boolean;
+  } = {},
+): Promise<RunPiTuiResult> => {
   const scriptedProvider = writeScriptedProvider(project.tempRoot, script);
 
   return runPiTui({
@@ -42,6 +46,7 @@ const runTui = (
     prompt: "run scripted tool call",
     waitFor: options.waitFor ?? doneMarker,
     checkpoints: options.checkpoints,
+    captureAnsi: options.captureAnsi,
     timeoutMs: 25_000,
   });
 };
@@ -66,6 +71,18 @@ const bashTranscript = (pane: string): string => {
 
   const end = lines.findIndex((line, index) => index > start && line === doneMarker);
   if (end === -1) throw new Error(`Missing done marker in pane:\n${pane}`);
+
+  return lines.slice(start, end).join("\n").trimEnd();
+};
+
+const ansiBashTranscript = (pane: string): string => {
+  const lines = pane.split("\n");
+  const visibleLines = lines.map((line) => stripAnsi(line).trim());
+  const start = visibleLines.findIndex((line) => line.startsWith("$ "));
+  if (start === -1) throw new Error(`Missing ANSI bash call in pane:\n${pane}`);
+
+  const end = visibleLines.findIndex((line, index) => index > start && line === doneMarker);
+  if (end === -1) throw new Error(`Missing ANSI done marker in pane:\n${pane}`);
 
   return lines.slice(start, end).join("\n").trimEnd();
 };
@@ -185,6 +202,21 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.pane).toMatch(/Took [0-9]+\.[0-9]s/);
   }, 30_000);
 
+  it("renders background poll metadata in the bash call title", async () => {
+    const project = createProject();
+    const result = await runTui(project, [
+      bash("printf 'poll-title\\n'; sleep 5", {
+        background: true,
+        pollInterval: 1,
+        pollLines: 5,
+      }),
+      reply(doneMarker),
+    ]);
+
+    expect(result.pane).toContain("$ printf 'poll-title\\n'; sleep 5 (background, poll 1s)");
+    expect(result.pane).not.toContain("$ printf 'poll-title\\n'; sleep 5 (background)\n");
+  }, 30_000);
+
   it("renders background poll output without requesting another assistant turn", async () => {
     const project = createProject();
     const result = await runTui(
@@ -217,11 +249,29 @@ describe("tmux-bash TUI rendering", () => {
 
     expect(stableBashTranscript(result.pane))
       .toBe(`$ printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'
+
 fit-line-1
 fit-line-2
 fit-line-3
 
 Took <duration>`);
+  }, 30_000);
+
+  it("can capture ANSI-colored bash output", async () => {
+    const project = createProject();
+    const command = "printf 'color-line\\n'";
+    const result = await runTui(project, [bashTool(command), reply(doneMarker)], {
+      captureAnsi: true,
+    });
+    const transcript = ansiBashTranscript(result.paneAnsi ?? "");
+
+    expect(result.paneAnsi).toContain(String.fromCharCode(27));
+    expect(trimmedPaneLines(transcript).join("\n")).toContain(`$ printf 'color-line\\n'
+
+color-line
+
+Took`);
+    expect(transcript).toMatch(ANSI_ESCAPE_PATTERN);
   }, 30_000);
 
   it("renders overflowing bash output while collapsed", async () => {
@@ -231,6 +281,7 @@ Took <duration>`);
 
     expect(stableBashTranscript(result.pane))
       .toBe(`$ for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' "$i"; done
+
 ... (395 earlier lines, ctrl+o to expand)
 overflow-line-396
 overflow-line-397
@@ -248,6 +299,7 @@ Took <duration>`);
 
     expect(stableBashTranscript(result.pane))
       .toBe(`$ for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' "$i"; done
+
 ... (1997 earlier lines, ctrl+o to expand)
 overflow-line-3999
 overflow-line-4000

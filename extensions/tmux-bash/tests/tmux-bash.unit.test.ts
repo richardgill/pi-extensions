@@ -38,6 +38,19 @@ describe("tmux-bash output truncation", () => {
     expect(result).toEqual({ text: "hello", details: undefined });
   });
 
+  it("matches vanilla bash for a single output line over the byte limit", () => {
+    const fullOutputPath = "/tmp/pi-tmux-bash-full.log";
+    const content = `${"x".repeat(DEFAULT_MAX_BYTES + 100)}\n`;
+
+    const result = formatTmuxOutputForContext(content, fullOutputPath);
+
+    expect(result.text).toBe(
+      `(no output)\n\n[Showing lines 2-2 of 2 (50.0KB limit). Full output: ${fullOutputPath}]`,
+    );
+    expect(result.details?.truncation?.outputLines).toBe(1);
+    expect(result.details?.truncation?.totalLines).toBe(2);
+  });
+
   it("limits output to the latest requested lines", () => {
     const content = ["line-1", "line-2", "line-3", "line-4"].join("\n") + "\n";
 
@@ -157,6 +170,16 @@ describe("tmux-bash output truncation", () => {
     expect(result).toBe("$ sleep 90 (background)");
   });
 
+  it("renders background poll metadata in the same brackets", () => {
+    const result = formatRenderedBashCall({
+      command: "sleep 90",
+      background: true,
+      pollInterval: 30,
+    });
+
+    expect(result).toBe("$ sleep 90 (background, poll 30s)");
+  });
+
   it("formats bash durations as whole seconds", () => {
     expect(formatDurationSeconds(5_000)).toBe("5s");
     expect(formatDurationSeconds(10_000)).toBe("10s");
@@ -211,6 +234,29 @@ Elapsed 5.0s`);
     expect(result).toBe(`done
 
 Took 5.0s`);
+  });
+
+  it("renders collapsed bash elision with vanilla pi colors", () => {
+    const theme = {
+      bold: (text: string) => text,
+      fg: (name: string, text: string) => `<${name}>${text}</${name}>`,
+    };
+
+    const result = renderBashResultText(
+      "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\n\n[Showing lines 1-6 of 7. Full output: /tmp/output.out]",
+      false,
+      false,
+      {},
+      theme,
+    );
+
+    expect(result).toContain(
+      "<muted>... (3 earlier lines, </muted><dim>ctrl+o</dim><muted> to expand)</muted>",
+    );
+    expect(result).toContain("<toolOutput>line-6</toolOutput>");
+    expect(result).toContain(
+      "<toolOutput>[Showing lines 1-6 of 7. Full output: /tmp/output.out]</toolOutput>",
+    );
   });
 
   it("renders timeout metadata like the built-in bash tool", () => {
