@@ -118,13 +118,13 @@ describe("tmux-bash output truncation", () => {
     };
     const call = formatRenderedBashCall({ command: "sleep 90", background: true });
     const result = renderBackgroundBashResultText(
-      "Started in background tmux window.",
+      "Started in background tmux window. Result will be reported when it finishes.",
       false,
       theme,
     );
 
     expect(`${call}\n${result}`).toBe(
-      "$ sleep 90 (background)\n\nStarted in background tmux window.",
+      "$ sleep 90 (background)\n\nStarted in background tmux window. Result will be reported when it finishes.",
     );
   });
 

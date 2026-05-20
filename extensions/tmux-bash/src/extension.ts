@@ -586,7 +586,11 @@ const bashDurationText = (state: BashRenderState, isPartial: boolean): string | 
   return `${label} ${duration}`;
 };
 
-const shouldRenderBashDuration = (args: Partial<BashInput>): boolean => args.background !== true;
+const isTimeoutBackgroundResult = (raw: string): boolean =>
+  raw.includes("Still running after ") && raw.includes(" in background tmux.");
+
+const shouldRenderBashDuration = (args: Partial<BashInput>, raw: string): boolean =>
+  args.background !== true && !isTimeoutBackgroundResult(raw);
 
 export const renderBackgroundBashResultText = (
   raw: string,
@@ -1387,7 +1391,7 @@ const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in background tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}.`,
+          text: `Started in background tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Result will be reported when it finishes.`,
         },
       ],
       details: undefined,
@@ -1445,11 +1449,12 @@ const runBashInTmux = async (
         gitRoot,
         signalInfo,
       );
+    const timeoutText = `Still running after ${params.timeout}s in background tmux${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Use ${options.toolName} peek/list/kill to inspect or stop it. Result will be reported when it finishes.`;
     return {
       content: [
         {
           type: "text" as const,
-          text: `${text}\n\nCommand is still running after ${params.timeout} seconds in tmux window :${result.index}${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Use ${options.toolName} peek/list/kill to inspect or stop it.`,
+          text: [text, timeoutText].filter(Boolean).join("\n\n"),
         },
       ],
       details: output.details,
@@ -1703,7 +1708,7 @@ const registerBashTool = (
       const content = result.content?.[0];
       const raw = content?.type === "text" ? content.text : "";
 
-      if (!shouldRenderBashDuration(bashContext.args)) {
+      if (!shouldRenderBashDuration(bashContext.args, raw)) {
         return new Text(renderBackgroundBashResultText(raw, expanded, theme), 0, 0);
       }
 

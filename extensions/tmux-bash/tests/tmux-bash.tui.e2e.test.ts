@@ -56,7 +56,9 @@ describe("tmux-bash TUI rendering", () => {
     ]);
 
     expect(result.pane).toContain('$ echo "hi" && sleep 80 && echo "bye" (background)');
-    expect(result.pane).toContain("Started in background tmux window.");
+    expect(result.pane).toContain(
+      "Started in background tmux window. Result will be reported when it finishes.",
+    );
     expect(result.pane).not.toContain("bg (timeout 1s)");
     expect(result.pane).not.toContain("(background) (timeout 1s)");
   }, 30_000);
@@ -73,7 +75,10 @@ describe("tmux-bash TUI rendering", () => {
     ]);
 
     expect(result.pane).toContain("$ printf starting && sleep 5 (timeout 1s)");
-    expect(result.pane).toContain("Command is still running after 1 seconds");
+    expect(result.pane).toContain(
+      "Still running after 1s in background tmux. Use tmux peek/list/kill to inspect or stop it. Result will be reported when it finishes.",
+    );
+    expect(result.pane).not.toContain("Took 1s");
     expect(result.pane).not.toContain("$ printf starting && sleep 5 (background)");
   }, 30_000);
 
@@ -122,7 +127,9 @@ describe("tmux-bash TUI rendering", () => {
       { waitFor: "poll-two" },
     );
 
-    expect(result.pane).toContain("Started in background tmux window and polling every 1s.");
+    expect(result.pane).toContain(
+      "Started in background tmux window and polling every 1s. Result will be reported when it finishes.",
+    );
     expect(result.pane).toContain("poll-one");
     expect(result.pane).toContain("poll-two");
     expect(result.pane).toContain(doneMarker);
