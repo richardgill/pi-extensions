@@ -3,12 +3,21 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { shellQuote } from "../../src/tmux-utils.js";
 
+export type RunPiTuiCheckpoint = {
+  name: string;
+  waitFor: string | RegExp;
+  timeoutMs?: number;
+  keys?: string[];
+  delayMs?: number;
+};
+
 export type RunPiTuiOptions = {
   cwd: string;
   agentDir: string;
   extensions: string[];
   prompt: string;
   waitFor: string | RegExp;
+  checkpoints?: RunPiTuiCheckpoint[];
   timeoutMs?: number;
   cols?: number;
   rows?: number;
@@ -16,6 +25,7 @@ export type RunPiTuiOptions = {
 
 export type RunPiTuiResult = {
   pane: string;
+  checkpoints: Record<string, string>;
 };
 
 const tmuxSessionName = (): string => `pi-tui-test-${process.pid}-${Date.now()}`;
@@ -113,6 +123,37 @@ const sendPrompt = (session: string, prompt: string): void => {
   tmux(["send-keys", "-t", session, "Enter"]);
 };
 
+const sendKeys = (session: string, keys: string[] | undefined): void => {
+  keys?.forEach((key) => tmux(["send-keys", "-t", session, key]));
+};
+
+const captureCheckpoint = async (
+  session: string,
+  checkpoint: RunPiTuiCheckpoint,
+  defaultTimeoutMs: number,
+): Promise<[string, string]> => {
+  const pane = await waitForPane(
+    session,
+    checkpoint.waitFor,
+    checkpoint.timeoutMs ?? defaultTimeoutMs,
+  );
+  sendKeys(session, checkpoint.keys);
+  if (checkpoint.delayMs !== undefined) await sleep(checkpoint.delayMs);
+  return [checkpoint.name, pane];
+};
+
+const captureCheckpoints = async (
+  session: string,
+  checkpoints: RunPiTuiCheckpoint[] | undefined,
+  defaultTimeoutMs: number,
+): Promise<Record<string, string>> => {
+  const entries = [];
+  for (const checkpoint of checkpoints ?? []) {
+    entries.push(await captureCheckpoint(session, checkpoint, defaultTimeoutMs));
+  }
+  return Object.fromEntries(entries);
+};
+
 const killTmuxSession = (session: string): void => {
   try {
     tmux(["kill-session", "-t", session]);
@@ -129,8 +170,10 @@ export const runPiTui = async (options: RunPiTuiOptions): Promise<RunPiTuiResult
     startPiTui(session, options);
     await sleep(1_000);
     sendPrompt(session, options.prompt);
-    const pane = await waitForPane(session, options.waitFor, options.timeoutMs ?? 20_000);
-    return { pane };
+    const timeoutMs = options.timeoutMs ?? 20_000;
+    const checkpoints = await captureCheckpoints(session, options.checkpoints, timeoutMs);
+    const pane = await waitForPane(session, options.waitFor, timeoutMs);
+    return { pane, checkpoints };
   } finally {
     killTmuxSession(session);
   }
