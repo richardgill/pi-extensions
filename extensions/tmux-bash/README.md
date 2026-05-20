@@ -7,7 +7,6 @@ pi extension which replaces pi's native `bash` tool with background tmux invocat
 - `bash` — run every bash command inside a background tmux window; use `background: true` for long-running commands
 - `tmux peek` — capture output from one or all background windows
 - `tmux list` — list background windows
-- `tmux attach` — attach to the background session when you do want to inspect it
 - `tmux kill` — kill windows in the configured `tmuxWindowScope`, or the whole background session when scope is `all`
 - `tmux poll` — start periodic output check-ins for an existing window
 - `tmux unpoll` — stop periodic output check-ins for a window

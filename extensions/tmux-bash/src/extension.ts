@@ -27,7 +27,6 @@ import {
 import type { FSWatcher } from "node:fs";
 import { join } from "node:path";
 import {
-  attachToResolvedSession,
   backgroundSessionName,
   capturePanes,
   DEFAULT_SESSION_NAME_TEMPLATE,
@@ -38,6 +37,7 @@ import {
   getWindows,
   shellQuote,
   sessionExists,
+  tmuxWindowAttachCommand,
   tmuxWindowAttachHint,
   type TmuxWindowFilters,
 } from "./tmux-utils.js";
@@ -1151,33 +1151,6 @@ const toolError = (text: string) => ({ ...toolText(text), isError: true });
 const isUnfilteredWindowScope = (filters: TmuxWindowFilters): boolean =>
   filters.gitRoot === undefined && filters.piSessionId === undefined;
 
-const attachAction = (
-  params: Extract<TmuxInput, { action: "attach" }>,
-  session: string,
-  filters: TmuxWindowFilters,
-) => {
-  if (!sessionExists(session)) return toolError(`No background session '${session}' to attach to.`);
-
-  const windowIndex = resolveWindowIndex(params.window);
-  if (windowIndex === "invalid")
-    return toolError("Error: 'window' must be a numeric index for attach action.");
-
-  const windows = getWindows(session, filters);
-  const fallbackWindow = windows.find((window) => window.active) ?? windows.at(0);
-  const targetWindow = windowIndex ?? fallbackWindow?.index;
-  if (targetWindow === undefined) {
-    return toolError(`No background tmux windows in session ${session}.`);
-  }
-
-  const msg = attachToResolvedSession(session, targetWindow, filters);
-  const failed = msg.startsWith("Failed") || msg.startsWith("No ");
-  return {
-    content: [{ type: "text" as const, text: msg }],
-    details: { session, windowIndex: targetWindow },
-    ...(failed ? { isError: true } : {}),
-  };
-};
-
 const peekAction = (
   params: Extract<TmuxInput, { action: "peek" }>,
   session: string,
@@ -1321,7 +1294,6 @@ const executeTool = (
   const piSessionId = ctx.sessionManager.getSessionId();
   const session = tmuxSessionNameForGitRoot(gitRoot, options);
   const filters = tmuxWindowFiltersForScope(gitRoot, piSessionId, options);
-  if (params.action === "attach") return attachAction(params, session, filters);
   if (params.action === "peek") return peekAction(params, session, filters, options);
   if (params.action === "list") return listAction(session, filters);
   if (params.action === "kill") {
@@ -1710,6 +1682,7 @@ const registerBashTool = (
       "Background jobs will report automatically when they finish; do not keep polling manually unless you need interim output.",
       "Use pollInterval only when periodic progress updates are useful.",
       `Use ${options.toolName} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.`,
+      `If asked, you can attach to tmux window using: ${tmuxWindowAttachCommand("@id")}, where \`@id\` is a #{window_id} like @123.`,
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
     parameters: bashToolCallSchema.typeBoxSchema,
@@ -1751,6 +1724,7 @@ const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: Resolved
     promptSnippet: "Inspect and control the background tmux sessions created by bash tool",
     promptGuidelines: [
       `Use ${options.toolName} poll/unpoll to start or stop periodic check-ins for an existing background window.`,
+      `If asked, you can attach to tmux window using: ${tmuxWindowAttachCommand("@id")}, where \`@id\` is a #{window_id} like @123.`,
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
     parameters: tmuxToolCallSchema.typeBoxSchema,
@@ -1766,7 +1740,7 @@ const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: Resolved
       }>;
       const action = tmuxArgs.action ?? options.toolName;
       const windowLabel =
-        (action === "attach" || action === "peek" || action === "poll" || action === "unpoll") &&
+        (action === "peek" || action === "poll" || action === "unpoll") &&
         tmuxArgs.window !== undefined
           ? ` :${tmuxArgs.window}`
           : "";

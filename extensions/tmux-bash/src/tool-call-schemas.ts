@@ -25,7 +25,7 @@ const name = z.string().optional().describe("Optional tmux window name.");
 const backgroundFalse = z.literal(false).optional();
 const tmuxWindow = z
   .union([z.number().int(), z.string().min(1)])
-  .describe("Window index/name. Required for poll/unpoll; optional for attach/peek.");
+  .describe("Window index/name. Required for poll/unpoll.");
 const tmuxPeekWindow = z
   .union([z.literal("all"), z.number().int(), z.string().min(1)])
   .describe('Window index/name, or "all" for peek.');
@@ -108,7 +108,6 @@ export const buildTmuxInputSchema = (options: SchemaOptions) =>
     z.object({ action: tmuxAction("list") }),
     z.object({ action: tmuxAction("kill") }),
     z.object({ action: tmuxAction("list-polls") }),
-    z.object({ action: tmuxAction("attach"), window: tmuxWindow.optional() }),
     z.object({ action: tmuxAction("peek"), window: tmuxPeekWindow.optional() }),
     z.object({
       action: tmuxAction("poll"),
