@@ -29,6 +29,7 @@ const tmuxWindow = z
 const tmuxPeekWindow = z
   .union([z.literal("all"), z.number().int(), z.string().min(1)])
   .describe('Window index/name, or "all" for peek.');
+const tmuxWindowId = z.string().min(1).describe("tmux #{window_id}, e.g. @123.");
 const tmuxAction = <TAction extends string>(action: TAction) =>
   z.literal(action).describe("tmux action.");
 
@@ -106,7 +107,7 @@ export const buildBashInputSchema = (options: SchemaOptions) => {
 export const buildTmuxInputSchema = (options: SchemaOptions) =>
   z.discriminatedUnion("action", [
     z.object({ action: tmuxAction("list") }),
-    z.object({ action: tmuxAction("kill") }),
+    z.object({ action: tmuxAction("kill"), window: tmuxWindowId }),
     z.object({ action: tmuxAction("list-polls") }),
     z.object({ action: tmuxAction("peek"), window: tmuxPeekWindow.optional() }),
     z.object({

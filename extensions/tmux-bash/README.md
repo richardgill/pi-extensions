@@ -7,7 +7,7 @@ pi extension which replaces pi's native `bash` tool with background tmux invocat
 - `bash` — run every bash command inside a background tmux window; use `background: true` for long-running commands
 - `tmux peek` — capture output from one or all background windows
 - `tmux list` — list background windows
-- `tmux kill` — kill windows in the configured `tmuxWindowScope`, or the whole background session when scope is `all`
+- `tmux kill` — kill one background window by stable tmux `#{window_id}` (for example `@123`)
 - `tmux poll` — start periodic output check-ins for an existing window
 - `tmux unpoll` — stop periodic output check-ins for a window
 
@@ -79,6 +79,9 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
 
   // Number of non-empty completion lines sent back after trimming.
   "completionTailLines": 20,
+
+  // Number of peek output lines shown while collapsed in the TUI.
+  "peekPreviewLines": 5,
 
   // Template for created tmux window names.
   // Supports {{nameOrCommand}}, {{name}}, and {{command}}.

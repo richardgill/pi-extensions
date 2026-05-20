@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { formatDurationSeconds } from "../src/extension.js";
 import {
   backgroundSessionName,
+  formatWindowAge,
   getWindows,
   sessionExists,
   tmuxWindowAttachCommand,
@@ -64,22 +65,19 @@ const truncatedLongOutputContext = (
 
 const backgroundStartContext = (project: PiE2eProject): string => {
   const window = getWindows(project.tmuxSession()).at(0);
-  return `Started in background tmux window. Result will be reported when it finishes.\n\nAttach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+  return `Started in background tmux window. Result will be reported when it finishes.\n\n  Attach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
 };
 
 const listContext =
   (title: string) =>
   (project: PiE2eProject): string => {
     const window = getWindows(project.tmuxSession()).find((item) => item.title === title);
-    return `Background session ${project.tmuxSession()} — 1 window(s)\n  ${window?.id}  ${title}${window?.active ? "  (active)" : ""}\n    Attach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+    return `Background session ${project.tmuxSession()} — 1 window(s)\n\n  ${title} ${window?.id} (${window ? formatWindowAge(window) : "0s"})`;
   };
-
-const killContext = (project: PiE2eProject): string =>
-  `Killed 1 background window(s) in ${project.tmuxSession()}.`;
 
 const peekContextOutput = (project: PiE2eProject): string => {
   const window = getWindows(project.tmuxSession()).find((item) => item.title === "peek-test");
-  return `── window peek-test ──\n$ printf 'peek-me\\n'; sleep 30\npeek-me\n\nAttach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+  return `tmux window: peek-test ${window?.id}\n$ printf 'peek-me\\n'; sleep 30\npeek-me\n\nAttach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
 };
 
 const contextPath = (project: PiE2eProject, name: string): string =>
@@ -287,18 +285,6 @@ const testCases: TmuxBashE2eTestCase[] = [
     expectedTmuxSessionExists: true,
   },
   {
-    name: "kills background session",
-    script: (project) => [
-      bash("sleep 30", { background: true, name: "kill-me" }),
-      scriptedToolCall("tmux", { action: "kill" }),
-      recordContext(project, "kill-context", "tmux", "killed-ok"),
-    ],
-    expectedTerminalOutput: "killed-ok\n",
-    expectedContextOutputName: "kill-context",
-    expectedContextOutput: killContext,
-    expectedTmuxSessionExists: false,
-  },
-  {
     name: "truncates bash context output but preserves full output file",
     script: (project) => [
       bash(longOutputCommand),
@@ -358,6 +344,9 @@ describe("tmux-bash e2e", () => {
 
     const pollMessage = result.messages.find((message) => message.customType === "tmux-bash-poll");
 
+    expect(pollMessage?.content).toMatch(/^tmux poll: .* @\d+/);
+    expect(pollMessage?.content).toContain("Attach with: tmux");
+    expect(pollMessage?.content).not.toContain("(:");
     expect(pollMessage?.content).not.toContain("line-1");
     expect(pollMessage?.content).not.toContain("line-2");
     expect(pollMessage?.content).toContain("line-3");
@@ -491,9 +480,28 @@ describe("tmux-bash e2e", () => {
     expect(project.readContextOutput("default-window-scope-list")).not.toContain("foreign");
   }, 20_000);
 
-  it("kills only current pi session windows by default", async () => {
+  it("kills a scoped background tmux window by window id", async () => {
+    const project = createProject({ tmuxWindowScope: "all" });
+    const windowId = seedTmuxWindow(project, { title: "kill-id" });
+
+    const result = await project.run({
+      script: [
+        scriptedToolCall("tmux", { action: "kill", window: windowId }, { delayMs: 500 }),
+        recordContext(project, "kill-window-id", "tmux", "killed"),
+      ],
+      prompt: "kill window id",
+    });
+
+    expectPiSuccess(result);
+    expect(project.readContextOutput("kill-window-id")).toBe(
+      `Killed background tmux window: kill-id ${windowId}.`,
+    );
+    expect(windowTitles(project)).toEqual([]);
+  }, 20_000);
+
+  it("does not kill windows outside the current scope", async () => {
     const project = createProject();
-    seedTmuxWindow(project, {
+    const windowId = seedTmuxWindow(project, {
       title: "foreign",
       gitRoot: project.projectDir,
       piSessionId: "foreign-session",
@@ -501,16 +509,15 @@ describe("tmux-bash e2e", () => {
 
     const result = await project.run({
       script: [
-        bash("sleep 30", { background: true, name: "own" }),
-        scriptedToolCall("tmux", { action: "kill" }, { delayMs: 500 }),
-        recordContext(project, "default-window-scope-kill", "tmux", "killed"),
+        scriptedToolCall("tmux", { action: "kill", window: windowId }, { delayMs: 500 }),
+        recordContext(project, "default-window-scope-kill", "tmux", "not-killed"),
       ],
       prompt: "default pi-session window kill scope",
     });
 
     expectPiSuccess(result);
     expect(project.readContextOutput("default-window-scope-kill")).toBe(
-      `Killed 1 background window(s) in ${project.tmuxSession()}.`,
+      `No tmux window ${windowId} in session ${project.tmuxSession()}.`,
     );
     expect(windowTitles(project)).toEqual(["foreign"]);
   }, 20_000);

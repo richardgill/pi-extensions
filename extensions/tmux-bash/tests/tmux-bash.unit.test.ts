@@ -135,13 +135,13 @@ describe("tmux-bash output truncation", () => {
     };
     const call = formatRenderedBashCall({ command: "sleep 90", background: true });
     const result = renderBackgroundBashResultText(
-      "Started in background tmux window. Result will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
+      "Started in background tmux window. Result will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
       false,
       theme,
     );
 
     expect(`${call}\n${result}`).toBe(
-      "$ sleep 90 (background)\n\nStarted in background tmux window. Result will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
+      "$ sleep 90 (background)\n\nStarted in background tmux window. Result will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
     );
   });
 
@@ -303,13 +303,15 @@ Took 5s`);
     ].join("\n");
 
     expect(formatRenderedCompletionMessage(raw, false)).toBe(
-      "sleep-hello completed in tmux window :5\nhello",
+      "sleep-hello completed in tmux window :5\n  hello",
     );
   });
 
-  it("keeps expanded completion messages unchanged", () => {
+  it("renders expanded completion messages with indented output", () => {
     const raw = "sleep-hello completed successfully in tmux window :5.\n\n```\nhello\n```";
 
-    expect(formatRenderedCompletionMessage(raw, true)).toBe(raw);
+    expect(formatRenderedCompletionMessage(raw, true)).toBe(
+      "sleep-hello completed successfully in tmux window :5.\n\n  hello",
+    );
   });
 });
