@@ -87,9 +87,33 @@ export const getWindows = (name: string, filters?: string | TmuxWindowFilters): 
     .filter((window) => matchesWindowFilters(window, windowFilters));
 };
 
-export const formatWindowLines = (windows: TmuxWindow[]): string[] =>
-  windows.map(
-    (window) => `  :${window.index}  ${window.title}${window.active ? "  (active)" : ""}`,
+type FormatWindowLinesOptions = {
+  attachHints?: boolean;
+  stableIds?: boolean;
+};
+
+export const tmuxWindowAttachCommand = (
+  windowId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string => (env.TMUX ? `tmux switch-client -t ${windowId}` : `tmux attach -t ${windowId}`);
+
+export const tmuxWindowAttachHint = (
+  windowId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string => `Attach with: ${tmuxWindowAttachCommand(windowId, env)}`;
+
+const windowTargetLabel = (window: TmuxWindow, options: FormatWindowLinesOptions): string =>
+  options.stableIds ? window.id : `:${window.index}`;
+
+export const formatWindowLines = (
+  windows: TmuxWindow[],
+  options: FormatWindowLinesOptions = {},
+): string[] =>
+  windows.map((window) =>
+    [
+      `  ${windowTargetLabel(window, options)}  ${window.title}${window.active ? "  (active)" : ""}`,
+      ...(options.attachHints ? [`    ${tmuxWindowAttachHint(window.id)}`] : []),
+    ].join("\n"),
   );
 
 export const capturePanes = (
@@ -108,7 +132,7 @@ export const capturePanes = (
       const output = execSafe(
         `tmux capture-pane -t ${shellQuote(`${name}:${item.index}`)} -p -S -${lines}`,
       );
-      return `── window ${item.index}: ${item.title} ──\n${output ?? "(empty)"}`;
+      return `── window ${item.title} ──\n${output ?? "(empty)"}\n\n${tmuxWindowAttachHint(item.id)}`;
     })
     .join("\n\n");
 };

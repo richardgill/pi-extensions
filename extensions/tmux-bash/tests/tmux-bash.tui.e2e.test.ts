@@ -59,6 +59,7 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.pane).toContain(
       "Started in background tmux window. Result will be reported when it finishes.",
     );
+    expect(result.pane).toContain("Attach with: tmux");
     expect(result.pane).not.toContain("bg (timeout 1s)");
     expect(result.pane).not.toContain("(background) (timeout 1s)");
   }, 30_000);
@@ -130,6 +131,7 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.pane).toContain(
       "Started in background tmux window and polling every 1s. Result will be reported when it finishes.",
     );
+    expect(result.pane).toContain("Attach with: tmux");
     expect(result.pane).toContain("poll-one");
     expect(result.pane).toContain("poll-two");
     expect(result.pane).toContain(doneMarker);

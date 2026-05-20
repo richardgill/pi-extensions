@@ -16,6 +16,7 @@ import {
   renderBashResultText,
   resolveOptions,
 } from "../src/extension.js";
+import { tmuxWindowAttachCommand } from "../src/tmux-utils.js";
 
 describe("tmux-bash output truncation", () => {
   it("truncates oversized output before returning it to model context", () => {
@@ -77,6 +78,13 @@ describe("tmux-bash output truncation", () => {
     expect(result.tmuxWindowScope).toBe("all");
   });
 
+  it("formats tmux window attach commands for the current environment", () => {
+    expect(tmuxWindowAttachCommand("@1065", { TMUX: "/tmp/tmux" })).toBe(
+      "tmux switch-client -t @1065",
+    );
+    expect(tmuxWindowAttachCommand("@1065", {})).toBe("tmux attach -t @1065");
+  });
+
   it("formats background completion summaries with a tmux target line", () => {
     const result = formatCompletionSummary("sleep-90-hello", "pi-background", 5, 0);
 
@@ -127,13 +135,13 @@ describe("tmux-bash output truncation", () => {
     };
     const call = formatRenderedBashCall({ command: "sleep 90", background: true });
     const result = renderBackgroundBashResultText(
-      "Started in background tmux window. Result will be reported when it finishes.",
+      "Started in background tmux window. Result will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
       false,
       theme,
     );
 
     expect(`${call}\n${result}`).toBe(
-      "$ sleep 90 (background)\n\nStarted in background tmux window. Result will be reported when it finishes.",
+      "$ sleep 90 (background)\n\nStarted in background tmux window. Result will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
     );
   });
 

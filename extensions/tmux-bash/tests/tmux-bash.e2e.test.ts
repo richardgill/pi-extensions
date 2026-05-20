@@ -2,7 +2,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { formatDurationSeconds } from "../src/extension.js";
-import { backgroundSessionName, getWindows, sessionExists } from "../src/tmux-utils.js";
+import {
+  backgroundSessionName,
+  getWindows,
+  sessionExists,
+  tmuxWindowAttachCommand,
+} from "../src/tmux-utils.js";
 import { createPiE2eProject, expectPiSuccess, type PiE2eProject } from "./testing/e2e-project.js";
 import {
   bash,
@@ -57,21 +62,24 @@ const truncatedLongOutputContext = (
 ): string =>
   `${longLines.slice(100).join("\n")}\n\n[Showing lines 101-2100 of 2100. Full output: ${outputFile}]`;
 
+const backgroundStartContext = (project: PiE2eProject): string => {
+  const window = getWindows(project.tmuxSession()).at(0);
+  return `Started in background tmux window. Result will be reported when it finishes.\n\nAttach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+};
+
 const listContext =
   (title: string) =>
   (project: PiE2eProject): string => {
     const window = getWindows(project.tmuxSession()).find((item) => item.title === title);
-    return `Background session ${project.tmuxSession()} — 1 window(s)\n  :${window?.index}  ${title}${window?.active ? "  (active)" : ""}`;
+    return `Background session ${project.tmuxSession()} — 1 window(s)\n  ${window?.id}  ${title}${window?.active ? "  (active)" : ""}\n    Attach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
   };
 
 const killContext = (project: PiE2eProject): string =>
   `Killed 1 background window(s) in ${project.tmuxSession()}.`;
 
 const peekContextOutput = (project: PiE2eProject): string => {
-  const index = getWindows(project.tmuxSession()).find(
-    (window) => window.title === "peek-test",
-  )?.index;
-  return `── window ${index}: peek-test ──\n$ printf 'peek-me\\n'; sleep 30\npeek-me`;
+  const window = getWindows(project.tmuxSession()).find((item) => item.title === "peek-test");
+  return `── window peek-test ──\n$ printf 'peek-me\\n'; sleep 30\npeek-me\n\nAttach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
 };
 
 const contextPath = (project: PiE2eProject, name: string): string =>
@@ -236,8 +244,7 @@ const testCases: TmuxBashE2eTestCase[] = [
     ],
     expectedTerminalOutput: "started-ok\n",
     expectedContextOutputName: "background-start-context",
-    expectedContextOutput: () =>
-      "Started in background tmux window. Result will be reported when it finishes.",
+    expectedContextOutput: backgroundStartContext,
   },
   {
     name: "background command returns immediately and leaves session running",

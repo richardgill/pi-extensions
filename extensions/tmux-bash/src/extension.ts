@@ -38,6 +38,7 @@ import {
   getWindows,
   shellQuote,
   sessionExists,
+  tmuxWindowAttachHint,
   type TmuxWindowFilters,
 } from "./tmux-utils.js";
 import {
@@ -1201,7 +1202,7 @@ const listAction = (session: string, filters: TmuxWindowFilters) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}'.`);
 
   const windows = getWindows(session, filters);
-  const lines = formatWindowLines(windows);
+  const lines = formatWindowLines(windows, { attachHints: true, stableIds: true });
   return {
     content: [
       {
@@ -1399,7 +1400,7 @@ const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in background tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Result will be reported when it finishes.`,
+          text: `Started in background tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Result will be reported when it finishes.\n\n${tmuxWindowAttachHint(result.windowId)}`,
         },
       ],
       details: undefined,
