@@ -38,6 +38,7 @@ import {
   getWindows,
   shellQuote,
   sessionExists,
+  type TmuxWindowFilters,
 } from "./tmux-utils.js";
 import {
   buildBashToolCallSchema,
@@ -55,10 +56,10 @@ const SHELL_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TMUX_ENV_EXPORT_DENYLIST = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"]);
 
 export type TmuxBashOptions = {
-  projectSessionNameTemplate?: string;
-  sessionNameTemplate?: string;
-  sessionScope?: "project" | "shared";
-  sharedSessionName?: string;
+  gitRootTmuxSessionNameTemplate?: string;
+  tmuxSessionScope?: "git-root" | "global";
+  globalTmuxSessionName?: string;
+  tmuxWindowScope?: "pi-session" | "git-root" | "all";
   toolName?: string;
   commandPrefix?: string;
   captureLines?: number;
@@ -96,7 +97,7 @@ type ToolRenderContext<TState, TArgs> = {
   invalidate: () => void;
 };
 
-type ResolvedOptions = Required<Omit<TmuxBashOptions, "sessionNameTemplate">>;
+type ResolvedOptions = Required<TmuxBashOptions>;
 type SignalInfo = {
   session: string;
   windowId: string;
@@ -111,6 +112,7 @@ type Poller = {
   windowId: string;
   windowIndex: number;
   gitRoot: string;
+  piSessionId: string;
   interval: number;
   lines: number;
   signalInfo?: SignalInfo;
@@ -132,6 +134,7 @@ type ExtensionState = {
   pollers: Map<string, Poller>;
   activeSession: string | null;
   activeGitRoot: string | null;
+  activePiSessionId: string | null;
   statusContext: ExtensionContext | null;
   signalStartedAt: Map<string, number>;
 };
@@ -140,9 +143,10 @@ type RunWindowResult = { index: number; windowId: string; id: string; outputFile
 type FormattedOutput = { text: string; details: BashToolDetails | undefined };
 
 export const DEFAULT_OPTIONS: ResolvedOptions = {
-  projectSessionNameTemplate: DEFAULT_SESSION_NAME_TEMPLATE,
-  sessionScope: "project",
-  sharedSessionName: SHARED_SESSION_NAME,
+  gitRootTmuxSessionNameTemplate: DEFAULT_SESSION_NAME_TEMPLATE,
+  tmuxSessionScope: "global",
+  globalTmuxSessionName: SHARED_SESSION_NAME,
+  tmuxWindowScope: "pi-session",
   toolName: "tmux",
   commandPrefix: "tmux",
   captureLines: 50,
@@ -165,10 +169,10 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   prompt: "",
 };
 
-const assertProjectSessionNameTemplate = (template: string): string => {
+const assertGitRootTmuxSessionNameTemplate = (template: string): string => {
   if (!template.includes("{{}}")) {
     throw new Error(
-      'projectSessionNameTemplate must include "{{}}" as the project session placeholder',
+      'gitRootTmuxSessionNameTemplate must include "{{}}" as the git root session placeholder',
     );
   }
 
@@ -207,16 +211,15 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
   }
 
   return {
-    projectSessionNameTemplate: assertProjectSessionNameTemplate(
-      input.projectSessionNameTemplate ??
-        input.sessionNameTemplate ??
-        DEFAULT_OPTIONS.projectSessionNameTemplate,
+    gitRootTmuxSessionNameTemplate: assertGitRootTmuxSessionNameTemplate(
+      input.gitRootTmuxSessionNameTemplate ?? DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate,
     ),
-    sessionScope: input.sessionScope ?? DEFAULT_OPTIONS.sessionScope,
-    sharedSessionName: nonEmpty(
-      "sharedSessionName",
-      input.sharedSessionName ?? DEFAULT_OPTIONS.sharedSessionName,
+    tmuxSessionScope: input.tmuxSessionScope ?? DEFAULT_OPTIONS.tmuxSessionScope,
+    globalTmuxSessionName: nonEmpty(
+      "globalTmuxSessionName",
+      input.globalTmuxSessionName ?? DEFAULT_OPTIONS.globalTmuxSessionName,
     ),
+    tmuxWindowScope: input.tmuxWindowScope ?? DEFAULT_OPTIONS.tmuxWindowScope,
     toolName: nonEmpty("toolName", input.toolName ?? DEFAULT_OPTIONS.toolName),
     commandPrefix: nonEmpty("commandPrefix", input.commandPrefix ?? DEFAULT_OPTIONS.commandPrefix),
     captureLines: positiveInteger(
@@ -269,6 +272,7 @@ export const createState = (): ExtensionState => ({
   pollers: new Map(),
   activeSession: null,
   activeGitRoot: null,
+  activePiSessionId: null,
   statusContext: null,
   signalStartedAt: new Map(),
 });
@@ -340,22 +344,20 @@ const windowNameForCommand = (
     .slice(0, options.maxWindowNameLength);
 };
 
-const sessionNameForGitRoot = (gitRoot: string, options: ResolvedOptions): string =>
-  options.sessionScope === "shared"
-    ? options.sharedSessionName
-    : backgroundSessionName(gitRoot, options.projectSessionNameTemplate);
+const tmuxSessionNameForGitRoot = (gitRoot: string, options: ResolvedOptions): string =>
+  options.tmuxSessionScope === "global"
+    ? options.globalTmuxSessionName
+    : backgroundSessionName(gitRoot, options.gitRootTmuxSessionNameTemplate);
 
-const filteredGitRoot = (gitRoot: string, options: ResolvedOptions): string | undefined =>
-  options.sessionScope === "shared" ? gitRoot : undefined;
-
-const windowFiltersForPiSession = (
+const tmuxWindowFiltersForScope = (
   gitRoot: string,
   piSessionId: string,
   options: ResolvedOptions,
-): { gitRoot?: string; piSessionId: string } => ({
-  ...(options.sessionScope === "shared" ? { gitRoot } : {}),
-  piSessionId,
-});
+): TmuxWindowFilters => {
+  if (options.tmuxWindowScope === "pi-session") return { piSessionId };
+  if (options.tmuxWindowScope === "git-root") return { gitRoot };
+  return {};
+};
 
 const parseSignalFilename = (filename: string): SignalInfo | null => {
   const lastDot = filename.lastIndexOf(".");
@@ -892,10 +894,7 @@ const hasChildProcesses = (pid: string): boolean =>
 const isIdleShellProcess = (command: string, pid: string): boolean =>
   shellCommands.has(command) && !hasChildProcesses(pid);
 
-const countRunningBackgroundProcesses = (
-  session: string,
-  filters: { gitRoot?: string; piSessionId: string },
-): number => {
+const countRunningBackgroundProcesses = (session: string, filters: TmuxWindowFilters): number => {
   const raw = execSafe(
     `tmux list-windows -t ${shellQuote(session)} -F '#{pane_current_command}|||#{pane_pid}|||#{@pi-tmux-bash-git-root}|||#{@pi-tmux-bash-pi-session-id}'`,
   );
@@ -908,7 +907,9 @@ const countRunningBackgroundProcesses = (
       return { command, pid, gitRoot, piSessionId };
     })
     .filter((window) => filters.gitRoot === undefined || window.gitRoot === filters.gitRoot)
-    .filter((window) => window.piSessionId === filters.piSessionId)
+    .filter(
+      (window) => filters.piSessionId === undefined || window.piSessionId === filters.piSessionId,
+    )
     .filter((window) => !isIdleShellProcess(window.command, window.pid)).length;
 };
 
@@ -924,8 +925,8 @@ const updateBackgroundProcessStatus = (ctx: ExtensionContext, options: ResolvedO
     return;
   }
 
-  const session = sessionNameForGitRoot(gitRoot, options);
-  const filters = windowFiltersForPiSession(gitRoot, ctx.sessionManager.getSessionId(), options);
+  const session = tmuxSessionNameForGitRoot(gitRoot, options);
+  const filters = tmuxWindowFiltersForScope(gitRoot, ctx.sessionManager.getSessionId(), options);
   const count = sessionExists(session) ? countRunningBackgroundProcesses(session, filters) : 0;
   ctx.ui.setStatus(BACKGROUND_BASH_STATUS_KEY, formatBackgroundProcessStatus(count));
 };
@@ -946,6 +947,7 @@ const pollerDetails = ({
   windowId,
   windowIndex,
   gitRoot,
+  piSessionId,
   interval,
   lines,
 }: Poller): PollerDetails => ({
@@ -953,6 +955,7 @@ const pollerDetails = ({
   windowId,
   windowIndex,
   gitRoot,
+  piSessionId,
   interval,
   lines,
 });
@@ -967,6 +970,7 @@ const startPoller = (
   lines: number,
   options: ResolvedOptions,
   gitRoot: string,
+  piSessionId: string,
   signalInfo?: SignalInfo,
 ): void => {
   if (interval <= 0) return;
@@ -974,9 +978,8 @@ const startPoller = (
   stopPoller(state, session, windowId);
   let lastText: string | undefined;
   const timer = setInterval(() => {
-    const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
-      (item) => item.id === windowId,
-    );
+    const filters = tmuxWindowFiltersForScope(gitRoot, piSessionId, options);
+    const window = getWindows(session, filters).find((item) => item.id === windowId);
     if (!window) {
       stopPoller(state, session, windowId);
       updateStoredBackgroundProcessStatus(state, options);
@@ -1023,6 +1026,7 @@ const startPoller = (
     windowId,
     windowIndex,
     gitRoot,
+    piSessionId,
     interval,
     lines,
     signalInfo,
@@ -1128,6 +1132,7 @@ const cleanupState = (state: ExtensionState, options: ResolvedOptions): void => 
   state.ownedSignals.clear();
   state.signalStartedAt.clear();
   state.statusContext = null;
+  state.activePiSessionId = null;
 
   if (state.signalDir) {
     cleanupSignalDir(state.signalDir, options.preserveOutputFiles);
@@ -1142,11 +1147,13 @@ const toolText = (text: string, details: unknown = {}) => ({
 
 const toolError = (text: string) => ({ ...toolText(text), isError: true });
 
+const isUnfilteredWindowScope = (filters: TmuxWindowFilters): boolean =>
+  filters.gitRoot === undefined && filters.piSessionId === undefined;
+
 const attachAction = (
   params: Extract<TmuxInput, { action: "attach" }>,
   session: string,
-  gitRoot: string,
-  options: ResolvedOptions,
+  filters: TmuxWindowFilters,
 ) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}' to attach to.`);
 
@@ -1154,20 +1161,18 @@ const attachAction = (
   if (windowIndex === "invalid")
     return toolError("Error: 'window' must be a numeric index for attach action.");
 
-  const filter = filteredGitRoot(gitRoot, options);
-  const windows = getWindows(session, filter);
-  const projectWindow = windows.find((window) => window.active) ?? windows.at(0);
-  const targetWindow =
-    options.sessionScope === "shared" ? (windowIndex ?? projectWindow?.index) : windowIndex;
-  if (options.sessionScope === "shared" && targetWindow === undefined) {
-    return toolError(`No background tmux windows for ${gitRoot} in session ${session}.`);
+  const windows = getWindows(session, filters);
+  const fallbackWindow = windows.find((window) => window.active) ?? windows.at(0);
+  const targetWindow = windowIndex ?? fallbackWindow?.index;
+  if (targetWindow === undefined) {
+    return toolError(`No background tmux windows in session ${session}.`);
   }
 
-  const msg = attachToResolvedSession(session, targetWindow, filter);
+  const msg = attachToResolvedSession(session, targetWindow, filters);
   const failed = msg.startsWith("Failed") || msg.startsWith("No ");
   return {
     content: [{ type: "text" as const, text: msg }],
-    details: { session, ...(targetWindow !== undefined ? { windowIndex: targetWindow } : {}) },
+    details: { session, windowIndex: targetWindow },
     ...(failed ? { isError: true } : {}),
   };
 };
@@ -1175,7 +1180,7 @@ const attachAction = (
 const peekAction = (
   params: Extract<TmuxInput, { action: "peek" }>,
   session: string,
-  gitRoot: string,
+  filters: TmuxWindowFilters,
   options: ResolvedOptions,
 ) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}'.`);
@@ -1185,50 +1190,53 @@ const peekAction = (
       ? "all"
       : resolveWindowIndex(params.window);
   const target = windowIndex === "invalid" || windowIndex === undefined ? "all" : windowIndex;
-  const output = formatOutput(
-    capturePanes(session, target, options.captureLines, filteredGitRoot(gitRoot, options)),
-  );
+  const output = formatOutput(capturePanes(session, target, options.captureLines, filters));
   return {
     content: [{ type: "text" as const, text: output.text }],
     details: { session, ...output.details },
   };
 };
 
-const listAction = (session: string, gitRoot: string, options: ResolvedOptions) => {
+const listAction = (session: string, filters: TmuxWindowFilters) => {
   if (!sessionExists(session)) return toolError(`No background session '${session}'.`);
 
-  const filtered = options.sessionScope === "shared";
-  const windows = getWindows(session, filteredGitRoot(gitRoot, options));
+  const windows = getWindows(session, filters);
   const lines = formatWindowLines(windows);
   return {
     content: [
       {
         type: "text" as const,
-        text: `Background session ${session} — ${windows.length} ${filtered ? "project " : ""}window(s)\n${lines.join("\n")}`,
+        text: `Background session ${session} — ${windows.length} window(s)\n${lines.join("\n")}`,
       },
     ],
     details: { session, windows },
   };
 };
 
-const killAction = (session: string, gitRoot: string, options: ResolvedOptions) => {
+const killFilteredWindows = (session: string, windows: ReturnType<typeof getWindows>) => {
+  windows.forEach((window) =>
+    execSafe(`tmux kill-window -t ${shellQuote(`${session}:${window.index}`)}`),
+  );
+};
+
+const killAction = (session: string, filters: TmuxWindowFilters) => {
   if (!sessionExists(session)) return toolText(`No background session '${session}' to kill.`);
-  if (options.sessionScope !== "shared") {
+  if (isUnfilteredWindowScope(filters)) {
     exec(`tmux kill-session -t ${shellQuote(session)}`);
     return toolText(`Killed background session ${session}.`);
   }
 
-  const windows = getWindows(session, gitRoot);
-  windows.forEach((window) =>
-    execSafe(`tmux kill-window -t ${shellQuote(`${session}:${window.index}`)}`),
-  );
-  return toolText(`Killed ${windows.length} background window(s) for ${gitRoot} in ${session}.`);
+  const windows = getWindows(session, filters);
+  killFilteredWindows(session, windows);
+  return toolText(`Killed ${windows.length} background window(s) in ${session}.`);
 };
 
 const pollAction = (
   params: Extract<TmuxInput, { action: "poll" }>,
   session: string,
   gitRoot: string,
+  piSessionId: string,
+  filters: TmuxWindowFilters,
   state: ExtensionState,
   pi: ExtensionAPI,
   options: ResolvedOptions,
@@ -1238,9 +1246,7 @@ const pollAction = (
     return toolError("Error: 'window' (index) required for poll action.");
   }
 
-  const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
-    (item) => item.index === windowIndex,
-  );
+  const window = getWindows(session, filters).find((item) => item.index === windowIndex);
   if (!window) return toolError(`No tmux window :${windowIndex} in session ${session}.`);
 
   if (params.pollInterval <= 0)
@@ -1256,6 +1262,7 @@ const pollAction = (
     params.pollLines,
     options,
     gitRoot,
+    piSessionId,
   );
   return toolText(`Polling "${window.title}" (:${windowIndex}) every ${params.pollInterval}s.`);
 };
@@ -1263,18 +1270,15 @@ const pollAction = (
 const unpollAction = (
   params: Extract<TmuxInput, { action: "unpoll" }>,
   session: string,
-  gitRoot: string,
+  filters: TmuxWindowFilters,
   state: ExtensionState,
-  options: ResolvedOptions,
 ) => {
   const windowIndex = resolveWindowIndex(params.window);
   if (windowIndex === undefined || windowIndex === "invalid") {
     return toolError("Error: 'window' (index) required for unpoll action.");
   }
 
-  const window = getWindows(session, filteredGitRoot(gitRoot, options)).find(
-    (item) => item.index === windowIndex,
-  );
+  const window = getWindows(session, filters).find((item) => item.index === windowIndex);
   if (!window) return toolError(`No tmux window :${windowIndex} in session ${session}.`);
 
   return toolText(
@@ -1284,15 +1288,14 @@ const unpollAction = (
   );
 };
 
-const listPollsAction = (
-  session: string,
-  gitRoot: string,
-  state: ExtensionState,
-  options: ResolvedOptions,
-) => {
+const pollerMatchesFilters = (poller: Poller, filters: TmuxWindowFilters): boolean =>
+  (filters.gitRoot === undefined || poller.gitRoot === filters.gitRoot) &&
+  (filters.piSessionId === undefined || poller.piSessionId === filters.piSessionId);
+
+const listPollsAction = (session: string, filters: TmuxWindowFilters, state: ExtensionState) => {
   const pollers = [...state.pollers.values()]
     .filter((poller) => poller.session === session)
-    .filter((poller) => options.sessionScope !== "shared" || poller.gitRoot === gitRoot);
+    .filter((poller) => pollerMatchesFilters(poller, filters));
   if (pollers.length === 0) return toolText("No active pollers.");
 
   const details = pollers.map(pollerDetails);
@@ -1314,18 +1317,21 @@ const executeTool = (
   const gitRoot = getGitRoot(ctx.cwd);
   if (!gitRoot) return toolError("Error: not in a git repository.");
 
-  const session = sessionNameForGitRoot(gitRoot, options);
-  if (params.action === "attach") return attachAction(params, session, gitRoot, options);
-  if (params.action === "peek") return peekAction(params, session, gitRoot, options);
-  if (params.action === "list") return listAction(session, gitRoot, options);
+  const piSessionId = ctx.sessionManager.getSessionId();
+  const session = tmuxSessionNameForGitRoot(gitRoot, options);
+  const filters = tmuxWindowFiltersForScope(gitRoot, piSessionId, options);
+  if (params.action === "attach") return attachAction(params, session, filters);
+  if (params.action === "peek") return peekAction(params, session, filters, options);
+  if (params.action === "list") return listAction(session, filters);
   if (params.action === "kill") {
-    const result = killAction(session, gitRoot, options);
+    const result = killAction(session, filters);
     updateBackgroundProcessStatus(ctx, options);
     return result;
   }
-  if (params.action === "poll") return pollAction(params, session, gitRoot, state, pi, options);
-  if (params.action === "unpoll") return unpollAction(params, session, gitRoot, state, options);
-  return listPollsAction(session, gitRoot, state, options);
+  if (params.action === "poll")
+    return pollAction(params, session, gitRoot, piSessionId, filters, state, pi, options);
+  if (params.action === "unpoll") return unpollAction(params, session, filters, state);
+  return listPollsAction(session, filters, state);
 };
 
 const runBashInTmux = async (
@@ -1342,7 +1348,7 @@ const runBashInTmux = async (
 
   state.statusContext = ctx;
   startWatching(state, pi, options);
-  const session = sessionNameForGitRoot(gitRoot, options);
+  const session = tmuxSessionNameForGitRoot(gitRoot, options);
   const piSessionId = ctx.sessionManager.getSessionId();
   const exists = sessionExists(session);
   const signalDir = getSignalDir(state, options);
@@ -1370,6 +1376,7 @@ const runBashInTmux = async (
   state.signalStartedAt.set(completionSignalFilename, signalInfo.startedAt);
   state.activeSession = session;
   state.activeGitRoot = gitRoot;
+  state.activePiSessionId = piSessionId;
 
   updateBackgroundProcessStatus(ctx, options);
 
@@ -1385,6 +1392,7 @@ const runBashInTmux = async (
         params.pollLines,
         options,
         gitRoot,
+        piSessionId,
         signalInfo,
       );
     return {
@@ -1447,6 +1455,7 @@ const runBashInTmux = async (
         params.pollLines,
         options,
         gitRoot,
+        piSessionId,
         signalInfo,
       );
     const timeoutText = `Still running after ${params.timeout}s in background tmux${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Use ${options.toolName} peek/list/kill to inspect or stop it. Result will be reported when it finishes.`;
@@ -1502,14 +1511,11 @@ const createFullscreenCommandLauncher = (
   return new Text(label, 0, 0);
 };
 
-const sidecarWindowPickerCommand = (
-  session: string,
-  filters: { gitRoot?: string; piSessionId: string },
-): string => {
+const sidecarWindowPickerCommand = (session: string, filters: TmuxWindowFilters): string => {
   const script = `
 session=${shellQuote(session)}
 git_root_filter=${shellQuote(filters.gitRoot ?? "")}
-pi_session_filter=${shellQuote(filters.piSessionId)}
+pi_session_filter=${shellQuote(filters.piSessionId ?? "")}
 if ! command -v fzf >/dev/null 2>&1; then
   printf 'fzf is required\n' >&2
   exit 1
@@ -1519,7 +1525,7 @@ if ! tmux has-session -t "$session" 2>/dev/null; then
   exit 1
 fi
 selected=$(tmux list-windows -t "$session" -F '#{window_activity}'$'\t''#{window_id}'$'\t''#{window_index}'$'\t''#{window_name}'$'\t''#{window_active}'$'\t''#{pane_current_command}'$'\t''#{pane_current_path}'$'\t''#{@pi-tmux-bash-git-root}'$'\t''#{@pi-tmux-bash-pi-session-id}' 2>/dev/null \
-  | awk -F '\t' -v git_root_filter="$git_root_filter" -v pi_session_filter="$pi_session_filter" '(git_root_filter == "" || $8 == git_root_filter) && $9 == pi_session_filter { active = ($5 == "1") ? "  \\033[32m(active)\\033[39m" : ""; printf "%s\\t%s\\t%s\\t\\033[34m:%s\\033[39m %s  \\033[90m%s  %s%s\\033[39m\\n", $1, $2, $3, $3, $4, $6, $7, active }' \
+  | awk -F '\t' -v git_root_filter="$git_root_filter" -v pi_session_filter="$pi_session_filter" '(git_root_filter == "" || $8 == git_root_filter) && (pi_session_filter == "" || $9 == pi_session_filter) { active = ($5 == "1") ? "  \\033[32m(active)\\033[39m" : ""; printf "%s\\t%s\\t%s\\t\\033[34m:%s\\033[39m %s  \\033[90m%s  %s%s\\033[39m\\n", $1, $2, $3, $3, $4, $6, $7, active }' \
   | sort -t $'\t' -k1,1nr \
   | cut -f2- \
   | fzf --ansi --no-sort \
@@ -1539,19 +1545,23 @@ fi
   return `bash -lc ${shellQuote(script)}`;
 };
 
-const clearIdleWindows = (session: string, gitRoot?: string): number | "missing" => {
+const clearIdleWindows = (session: string, filters: TmuxWindowFilters): number | "missing" => {
   const raw = execSafe(
-    `tmux list-windows -t ${shellQuote(session)} -F '#{window_index}|||#{window_name}|||#{pane_current_command}|||#{pane_pid}|||#{@pi-tmux-bash-git-root}'`,
+    `tmux list-windows -t ${shellQuote(session)} -F '#{window_index}|||#{window_name}|||#{pane_current_command}|||#{pane_pid}|||#{@pi-tmux-bash-git-root}|||#{@pi-tmux-bash-pi-session-id}'`,
   );
   if (!raw) return "missing";
 
   const idle = raw
     .split("\n")
     .map((line) => {
-      const [index = "0", name = "", cmd = "", pid = "", windowGitRoot = ""] = line.split("|||");
-      return { index: parseInt(index), name, cmd, pid, gitRoot: windowGitRoot };
+      const [index = "0", name = "", cmd = "", pid = "", windowGitRoot = "", piSessionId = ""] =
+        line.split("|||");
+      return { index: parseInt(index), name, cmd, pid, gitRoot: windowGitRoot, piSessionId };
     })
-    .filter((window) => gitRoot === undefined || window.gitRoot === gitRoot)
+    .filter((window) => filters.gitRoot === undefined || window.gitRoot === filters.gitRoot)
+    .filter(
+      (window) => filters.piSessionId === undefined || window.piSessionId === filters.piSessionId,
+    )
     .filter((window) => ["bash", "zsh", "sh", "fish", "dash"].includes(window.cmd))
     .filter((window) => !execSafe(`pgrep -P ${shellQuote(window.pid)}`));
 
@@ -1576,8 +1586,8 @@ const openProjectWindowPicker = async (
     return;
   }
 
-  const session = sessionNameForGitRoot(gitRoot, options);
-  const filters = windowFiltersForPiSession(gitRoot, ctx.sessionManager.getSessionId(), options);
+  const session = tmuxSessionNameForGitRoot(gitRoot, options);
+  const filters = tmuxWindowFiltersForScope(gitRoot, ctx.sessionManager.getSessionId(), options);
   if (!sessionExists(session)) {
     ctx.ui.notify(`No tmux session '${session}' for this project.`, "error");
     return;
@@ -1617,13 +1627,18 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const session = sessionNameForGitRoot(gitRoot, options);
+      const session = tmuxSessionNameForGitRoot(gitRoot, options);
+      const filters = tmuxWindowFiltersForScope(
+        gitRoot,
+        ctx.sessionManager.getSessionId(),
+        options,
+      );
       if (!sessionExists(session)) {
         ctx.ui.notify("No background tmux session for this project.", "error");
         return;
       }
 
-      const windows = getWindows(session, filteredGitRoot(gitRoot, options));
+      const windows = getWindows(session, filters);
       const choices = [
         "all windows",
         ...windows.map((item) => `:${item.index}  ${item.title}${item.active ? "  (active)" : ""}`),
@@ -1638,9 +1653,7 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const output = formatOutput(
-        capturePanes(session, target, options.captureLines, filteredGitRoot(gitRoot, options)),
-      );
+      const output = formatOutput(capturePanes(session, target, options.captureLines, filters));
       pi.sendUserMessage(`Here is the background tmux output:\n\n\`\`\`\n${output.text}\n\`\`\``, {
         deliverAs: "followUp",
       });
@@ -1656,8 +1669,13 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const session = sessionNameForGitRoot(gitRoot, options);
-      const count = clearIdleWindows(session, filteredGitRoot(gitRoot, options));
+      const session = tmuxSessionNameForGitRoot(gitRoot, options);
+      const filters = tmuxWindowFiltersForScope(
+        gitRoot,
+        ctx.sessionManager.getSessionId(),
+        options,
+      );
+      const count = clearIdleWindows(session, filters);
       if (count === "missing") {
         ctx.ui.notify("No background tmux session for this project.", "error");
         return;
@@ -1795,22 +1813,29 @@ export const tmuxBash = (input: TmuxBashOptions = {}) => {
       state.statusContext = ctx;
       const gitRoot = getGitRoot(ctx.cwd);
       state.activeGitRoot = gitRoot;
-      state.activeSession = gitRoot ? sessionNameForGitRoot(gitRoot, options) : null;
-      if (state.activeSession && options.autoKillIdleOnStartup)
-        clearIdleWindows(
-          state.activeSession,
-          gitRoot ? filteredGitRoot(gitRoot, options) : undefined,
+      state.activePiSessionId = ctx.sessionManager.getSessionId();
+      state.activeSession = gitRoot ? tmuxSessionNameForGitRoot(gitRoot, options) : null;
+      if (state.activeSession && options.autoKillIdleOnStartup && gitRoot) {
+        const filters = tmuxWindowFiltersForScope(
+          gitRoot,
+          ctx.sessionManager.getSessionId(),
+          options,
         );
+        clearIdleWindows(state.activeSession, filters);
+      }
       updateBackgroundProcessStatus(ctx, options);
     });
 
     pi.on("session_shutdown", async (_event, ctx) => {
       if (ctx.hasUI) ctx.ui.setStatus(BACKGROUND_BASH_STATUS_KEY, undefined);
       if (state.activeSession && options.killSessionOnShutdown) {
-        if (options.sessionScope === "shared" && state.activeGitRoot) {
-          getWindows(state.activeSession, state.activeGitRoot).forEach((window) =>
-            execSafe(`tmux kill-window -t ${shellQuote(`${state.activeSession}:${window.index}`)}`),
+        if (state.activeGitRoot && state.activePiSessionId) {
+          const filters = tmuxWindowFiltersForScope(
+            state.activeGitRoot,
+            state.activePiSessionId,
+            options,
           );
+          killAction(state.activeSession, filters);
         } else {
           execSafe(`tmux kill-session -t ${shellQuote(state.activeSession)}`);
         }

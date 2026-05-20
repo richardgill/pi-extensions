@@ -24,9 +24,11 @@ export type PiE2eProject = TempPiProject & {
   tmuxSessionExists: () => boolean;
 };
 
-export const createPiE2eProject = (): PiE2eProject => {
-  const project = createTempPiProject();
-  const tmuxSession = backgroundSessionName(project.projectDir);
+export const createPiE2eProject = (
+  options: { tmuxBashConfig?: Record<string, unknown> } = {},
+): PiE2eProject => {
+  const project = createTempPiProject(options);
+  const tmuxSession = tmuxSessionNameForProject(project);
   project.trackTmuxSession(tmuxSession);
 
   return {
@@ -40,6 +42,15 @@ export const createPiE2eProject = (): PiE2eProject => {
 
 export const expectPiSuccess = (result: RunPiResult): void => {
   expect(result.code, result.stdout + result.stderr).toBe(0);
+};
+
+const tmuxSessionNameForProject = (project: TempPiProject): string => {
+  if (project.tmuxBashConfig.tmuxSessionScope === "git-root") {
+    const template = String(project.tmuxBashConfig.gitRootTmuxSessionNameTemplate ?? "{{}}-bg");
+    return backgroundSessionName(project.projectDir, template);
+  }
+
+  return String(project.tmuxBashConfig.globalTmuxSessionName ?? "pi-background");
 };
 
 const extensionsForProject = (project: TempPiProject, script: ScriptedStep[]): string[] => {

@@ -4,10 +4,10 @@ import { tmuxBash, DEFAULT_OPTIONS } from "./extension.js";
 
 const ConfigSchema = z
   .object({
-    projectSessionNameTemplate: z.string().includes("{{}}").optional(),
-    sessionNameTemplate: z.string().includes("{{}}").optional(),
-    sessionScope: z.enum(["project", "shared"]).optional(),
-    sharedSessionName: z.string().min(1).optional(),
+    gitRootTmuxSessionNameTemplate: z.string().includes("{{}}").optional(),
+    tmuxSessionScope: z.enum(["git-root", "global"]).optional(),
+    globalTmuxSessionName: z.string().min(1).optional(),
+    tmuxWindowScope: z.enum(["pi-session", "git-root", "all"]).optional(),
     toolName: z.string().min(1).optional(),
     commandPrefix: z.string().min(1).optional(),
     captureLines: z.number().int().positive().optional(),

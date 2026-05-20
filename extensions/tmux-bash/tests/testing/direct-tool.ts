@@ -121,7 +121,7 @@ export const runBashToolDirectly = async (
     updates.push({ elapsedMs: Date.now() - startedAt, text: updateText(update) });
   };
 
-  tmuxBash({ outputDir: project.outputDir, preserveOutputFiles: true })(pi);
+  tmuxBash(project.tmuxBashConfig)(pi);
   await emit(pi, "session_start", ctx);
 
   try {

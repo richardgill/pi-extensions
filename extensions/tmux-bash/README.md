@@ -1,12 +1,6 @@
 # @richardgill/pi-tmux-bash
 
-A pi extension that runs `bash` calls inside background tmux windows and provides a `tmux` tool for inspection.
-
-It is based on [`pi-tmux`](https://github.com/indigoviolet/pi-tmux), but runs agent commands in a project-specific background sidecar tmux session named `<project-session>-bg` by default. It can also use one shared background session and tag/filter windows by git root. That keeps agent-run windows out of the user's normal project tmux session.
-
-## Credits
-
-Credit to [`indigoviolet/pi-tmux`](https://github.com/indigoviolet/pi-tmux), which this extension is based on.
+pi extension which replaces pi's native `bash` tool with background tmux invocations. Provides a `tmux` tool for inspection.
 
 ## Tools
 
@@ -14,7 +8,7 @@ Credit to [`indigoviolet/pi-tmux`](https://github.com/indigoviolet/pi-tmux), whi
 - `tmux peek` — capture output from one or all background windows
 - `tmux list` — list background windows
 - `tmux attach` — attach to the background session when you do want to inspect it
-- `tmux kill` — kill the background session, or only this git root's tagged windows in shared-session mode
+- `tmux kill` — kill windows in the configured `tmuxWindowScope`, or the whole background session when scope is `all`
 - `tmux poll` — start periodic output check-ins for an existing window
 - `tmux unpoll` — stop periodic output check-ins for a window
 
@@ -49,7 +43,7 @@ type BashInTmuxInput =
 
 ## Commands
 
-- `/tmux` — open a fullscreen fzf picker for this pi session's sidecar tmux windows
+- `/tmux` — open a fullscreen fzf picker for the scoped sidecar tmux windows
 - `/tmux:cat` — bring background tmux output into the conversation
 - `/tmux:clear` — kill idle background windows
 
@@ -59,15 +53,18 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
 
 ```jsonc
 {
-  // Use a per-project sidecar session, or a single shared session tagged/filtering by git root.
-  "sessionScope": "project",
+  // Use one global sidecar tmux session, or a per-git-root sidecar session.
+  "tmuxSessionScope": "global",
 
-  // Template for the background tmux session name when sessionScope is "project".
-  // "{{}}" is replaced with the normal project session name.
-  "projectSessionNameTemplate": "_bg_{{}}",
+  // Which windows inside the selected tmux session list/peek/kill/poll commands can access.
+  "tmuxWindowScope": "pi-session",
 
-  // Background tmux session name when sessionScope is "shared".
-  "sharedSessionName": "pi-background",
+  // Template for the background tmux session name when tmuxSessionScope is "git-root".
+  // "{{}}" is replaced with the normal git-root session name.
+  "gitRootTmuxSessionNameTemplate": "_bg_{{}}",
+
+  // Background tmux session name when tmuxSessionScope is "global".
+  "globalTmuxSessionName": "pi-background",
 
   // Tool name exposed to the agent. Change if another extension registers "tmux".
   "toolName": "tmux",
@@ -134,3 +131,11 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "prompt": "Use bash with timeoutAction background for dev servers and watchers."
 }
 ```
+
+
+It is based on [`pi-tmux`](https://github.com/indigoviolet/pi-tmux), but runs agent commands in sidecar tmux sessions instead of the user's normal tmux session. By default it uses one global background tmux session and filters visible windows to the current Pi session.
+
+## Credits
+
+Credit to [`indigoviolet/pi-tmux`](https://github.com/indigoviolet/pi-tmux), which this extension is based on.
+

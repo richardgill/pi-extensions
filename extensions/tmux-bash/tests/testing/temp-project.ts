@@ -17,6 +17,7 @@ export type TempPiProject = {
   agentDir: string;
   outputDir: string;
   contextDir: string;
+  tmuxBashConfig: Record<string, unknown>;
   contextOutputPath: (name: string) => string;
   readContextOutput: (name: string) => string;
   outputFiles: () => string[];
@@ -32,16 +33,19 @@ type ToolResultMessage = {
   content: { type: string; text?: string }[];
 };
 
-export const createTempPiProject = (): TempPiProject => {
+export const createTempPiProject = (
+  options: { tmuxBashConfig?: Record<string, unknown> } = {},
+): TempPiProject => {
   const tempRoot = mkdtempSync(path.join(tmpdir(), "pi-tmux-bash-e2e-"));
   const projectDir = path.join(tempRoot, "project");
   const agentDir = path.join(tempRoot, "agent");
   const outputDir = path.join(tempRoot, "output");
   const contextDir = path.join(tempRoot, "context");
   const tmuxSessions: string[] = [];
+  const tmuxBashConfig = buildTmuxBashConfig(outputDir, tempRoot, options.tmuxBashConfig);
 
   initGitRepo(projectDir);
-  writeTmuxBashConfig(agentDir, outputDir);
+  writeTmuxBashConfig(agentDir, tmuxBashConfig);
 
   return {
     tempRoot,
@@ -49,6 +53,7 @@ export const createTempPiProject = (): TempPiProject => {
     agentDir,
     outputDir,
     contextDir,
+    tmuxBashConfig,
     contextOutputPath: (name) => path.join(contextDir, `${name}.txt`),
     readContextOutput: (name) => readFileSync(path.join(contextDir, `${name}.txt`), "utf8"),
     outputFiles: () => findOutputFiles(outputDir),
@@ -75,13 +80,20 @@ const initGitRepo = (cwd: string): void => {
   execFileSync("git", ["init"], { cwd, stdio: "ignore" });
 };
 
-const writeTmuxBashConfig = (agentDir: string, outputDir: string): void => {
+const buildTmuxBashConfig = (
+  outputDir: string,
+  tempRoot: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  outputDir,
+  preserveOutputFiles: true,
+  globalTmuxSessionName: `pi-tmux-bash-e2e-${path.basename(tempRoot)}`,
+  ...overrides,
+});
+
+const writeTmuxBashConfig = (agentDir: string, config: Record<string, unknown>): void => {
   mkdirSync(agentDir, { recursive: true });
-  writeFileSync(
-    path.join(agentDir, "tmux-bash.jsonc"),
-    JSON.stringify({ outputDir, preserveOutputFiles: true }, null, 2),
-    "utf8",
-  );
+  writeFileSync(path.join(agentDir, "tmux-bash.jsonc"), JSON.stringify(config, null, 2), "utf8");
 };
 
 const findOutputFiles = (root: string): string[] => {

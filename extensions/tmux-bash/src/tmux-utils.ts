@@ -96,9 +96,9 @@ export const capturePanes = (
   name: string,
   window: number | "all",
   lines = 50,
-  gitRoot?: string,
+  filters?: string | TmuxWindowFilters,
 ): string => {
-  const windows = getWindows(name, gitRoot);
+  const windows = getWindows(name, filters);
   const targets = window === "all" ? windows : windows.filter((item) => item.index === window);
 
   if (targets.length === 0) return "No matching windows.";
@@ -170,13 +170,13 @@ const openTerminalTab = (session: string, window?: number): string => {
 export const attachToResolvedSession = (
   session: string,
   window?: number,
-  gitRoot?: string,
+  filters?: string | TmuxWindowFilters,
 ): string => {
   const target = window === undefined ? session : `${session}:${window}`;
   if (!sessionExists(session)) return "No background tmux session for this project.";
 
   if (window !== undefined) {
-    const windows = getWindows(session, gitRoot);
+    const windows = getWindows(session, filters);
     const match = windows.find((item) => item.index === window);
     if (!match) {
       const available = formatWindowLines(windows);

@@ -52,9 +52,10 @@ describe("tmux-bash output truncation", () => {
   });
 
   it("closes completed windows by default", () => {
-    expect(DEFAULT_OPTIONS.projectSessionNameTemplate).toBe("{{}}-bg");
-    expect(DEFAULT_OPTIONS.sessionScope).toBe("project");
-    expect(DEFAULT_OPTIONS.sharedSessionName).toBe("pi-background");
+    expect(DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate).toBe("{{}}-bg");
+    expect(DEFAULT_OPTIONS.tmuxSessionScope).toBe("global");
+    expect(DEFAULT_OPTIONS.globalTmuxSessionName).toBe("pi-background");
+    expect(DEFAULT_OPTIONS.tmuxWindowScope).toBe("pi-session");
     expect(DEFAULT_OPTIONS.autoCloseWindowsOnCompletion).toBe(true);
     expect(DEFAULT_OPTIONS.alwaysShowOutputFilePath).toBe(false);
     expect(DEFAULT_OPTIONS.preserveOutputFiles).toBe(false);
@@ -62,10 +63,18 @@ describe("tmux-bash output truncation", () => {
     expect(DEFAULT_OPTIONS.displayCommandStartMarker).toBe("# SHIM_END");
   });
 
-  it("keeps sessionNameTemplate as a deprecated alias", () => {
-    const result = resolveOptions({ sessionNameTemplate: "legacy-{{}}" });
+  it("resolves new tmux scope configuration", () => {
+    const result = resolveOptions({
+      gitRootTmuxSessionNameTemplate: "git-{{}}",
+      tmuxSessionScope: "git-root",
+      globalTmuxSessionName: "global-bg",
+      tmuxWindowScope: "all",
+    });
 
-    expect(result.projectSessionNameTemplate).toBe("legacy-{{}}");
+    expect(result.gitRootTmuxSessionNameTemplate).toBe("git-{{}}");
+    expect(result.tmuxSessionScope).toBe("git-root");
+    expect(result.globalTmuxSessionName).toBe("global-bg");
+    expect(result.tmuxWindowScope).toBe("all");
   });
 
   it("formats background completion summaries with a tmux target line", () => {
