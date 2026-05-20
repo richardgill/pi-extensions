@@ -517,11 +517,13 @@ const indentCompletionDetailLines = (lines: string[]): string[] => {
 const bashCallCommand = (args: Partial<BashInput>): string =>
   truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
 
-const bashCallMetadata = (args: Partial<BashInput>): string[] =>
-  [
-    args.background === true ? "bg" : undefined,
-    args.timeout !== undefined ? `(timeout ${args.timeout}s)` : undefined,
-  ].filter((item) => item !== undefined);
+const bashCallMetadata = (args: Partial<BashInput>): string[] => {
+  if (args.background === true) return ["(background)"];
+
+  return [args.timeout !== undefined ? `(timeout ${args.timeout}s)` : undefined].filter(
+    (item) => item !== undefined,
+  );
+};
 
 export const formatRenderedBashCall = (args: Partial<BashInput>): string =>
   [`$ ${bashCallCommand(args)}`, ...bashCallMetadata(args)].join(" ");
