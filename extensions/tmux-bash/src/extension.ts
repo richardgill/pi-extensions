@@ -8,6 +8,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
+  type TruncationOptions,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text, type TUI } from "@mariozechner/pi-tui";
@@ -56,6 +57,8 @@ const SHARED_SESSION_NAME = "pi-background";
 const BACKGROUND_BASH_STATUS_KEY = "backgroundBashTmuxCommands";
 const FOREGROUND_BASH_UPDATE_INTERVAL_MS = 250;
 const BASH_DURATION_SEPARATOR = "\n\n";
+const COLLAPSED_OUTPUT_PREVIEW_LINES = 5;
+const TRUNCATED_COLLAPSED_OUTPUT_PREVIEW_LINES = 2;
 const SHELL_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TMUX_ENV_EXPORT_DENYLIST = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"]);
 
@@ -84,6 +87,8 @@ export type TmuxBashOptions = {
   defaultPollInterval?: number;
   defaultPollLines?: number;
   displayCommandStartMarker?: string;
+  maxOutputLines?: number;
+  maxOutputBytes?: number;
   prompt?: string;
 };
 
@@ -157,6 +162,11 @@ type ExtensionState = {
 type RunWindowResult = { index: number; windowId: string; id: string; outputFile?: string };
 type FormattedOutput = { text: string; details: BashToolDetails | undefined };
 
+type CollapsedOutputParts = {
+  outputLines: string[];
+  truncationNotice?: string;
+};
+
 export const DEFAULT_OPTIONS: ResolvedOptions = {
   gitRootTmuxSessionNameTemplate: DEFAULT_SESSION_NAME_TEMPLATE,
   tmuxSessionScope: "global",
@@ -182,6 +192,8 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   defaultPollInterval: 0,
   defaultPollLines: 30,
   displayCommandStartMarker: "# SHIM_END",
+  maxOutputLines: DEFAULT_MAX_LINES,
+  maxOutputBytes: DEFAULT_MAX_BYTES,
   prompt: "",
 };
 
@@ -280,6 +292,14 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
     ),
     displayCommandStartMarker:
       input.displayCommandStartMarker ?? DEFAULT_OPTIONS.displayCommandStartMarker,
+    maxOutputLines: positiveInteger(
+      "maxOutputLines",
+      input.maxOutputLines ?? DEFAULT_OPTIONS.maxOutputLines,
+    ),
+    maxOutputBytes: positiveInteger(
+      "maxOutputBytes",
+      input.maxOutputBytes ?? DEFAULT_OPTIONS.maxOutputBytes,
+    ),
     prompt: input.prompt ?? DEFAULT_OPTIONS.prompt,
   };
 };
@@ -441,9 +461,10 @@ export const formatTmuxOutputForContext = (
   fullOutputPath?: string,
   emptyText = "(no output)",
   showFullOutputPath = false,
+  truncationOptions: TruncationOptions = {},
 ): FormattedOutput => {
   const text = content || emptyText;
-  const truncation = truncateTail(text);
+  const truncation = truncateTail(text, truncationOptions);
   if (!truncation.truncated && (!showFullOutputPath || !fullOutputPath)) {
     return { text, details: undefined };
   }
@@ -460,12 +481,24 @@ export const formatTmuxOutputForContext = (
 
 const formatOutput = formatTmuxOutputForContext;
 
+const outputTruncationOptions = (options: ResolvedOptions): TruncationOptions => ({
+  maxLines: options.maxOutputLines,
+  maxBytes: options.maxOutputBytes,
+});
+
 const formatTrimmedOutput = (
   content: string,
   fullOutputPath?: string,
   showFullOutputPath = false,
+  truncationOptions: TruncationOptions = {},
 ): FormattedOutput =>
-  formatOutput(content.trim(), fullOutputPath, "(no output)", showFullOutputPath);
+  formatOutput(
+    content.trim(),
+    fullOutputPath,
+    "(no output)",
+    showFullOutputPath,
+    truncationOptions,
+  );
 
 export const limitOutputLines = (content: string, lines: number): string => {
   const trimmed = content.trimEnd();
@@ -487,6 +520,9 @@ export const formatCompletionSummary = (
 };
 
 const isFullOutputNoticeLine = (line: string): boolean => /^\[Full output: .+\]$/.test(line.trim());
+
+const isTruncationNoticeLine = (line: string): boolean =>
+  /^\[Showing .+\. Full output: .+\]$/.test(line.trim());
 
 const stripFullOutputNoticeBrackets = (line: string): string =>
   line.replace(/^\[(Full output: .*?)\]$/, "$1");
@@ -562,12 +598,63 @@ export const renderBashCallText = (args: Partial<BashInput>, theme: RenderTheme)
     .map((item) => theme.fg("muted", ` ${item}`))
     .join("")}`;
 
+const stripTrailingEmptyLines = (lines: string[]): string[] => {
+  const reversedLastContentIndex = [...lines].reverse().findIndex((line) => line.trim() !== "");
+  if (reversedLastContentIndex === -1) return [];
+
+  return lines.slice(0, lines.length - reversedLastContentIndex);
+};
+
+const parseCollapsedOutputParts = (raw: string): CollapsedOutputParts => {
+  const lines = raw.split("\n").filter((line) => !isFullOutputNoticeLine(line));
+  const truncationIndex = lines.findIndex(isTruncationNoticeLine);
+  if (truncationIndex === -1) return { outputLines: stripTrailingEmptyLines(lines) };
+
+  return {
+    outputLines: stripTrailingEmptyLines(lines.slice(0, truncationIndex)),
+    truncationNotice: lines[truncationIndex],
+  };
+};
+
+const collapsedElisionLine = (earlierLines: number): string =>
+  `... (${earlierLines} earlier lines, ctrl+o to expand)`;
+
+const collapsedVisibleOutputLineCount = (parts: CollapsedOutputParts): number =>
+  parts.truncationNotice
+    ? TRUNCATED_COLLAPSED_OUTPUT_PREVIEW_LINES
+    : COLLAPSED_OUTPUT_PREVIEW_LINES;
+
 export const formatRenderedBashResult = (raw: string, expanded: boolean): string => {
   if (expanded) return raw;
 
-  const [summary = "", ...detail] = raw.split("\n").filter((line) => !isFullOutputNoticeLine(line));
-  return [summary, ...detail.slice(-5)].join("\n").trimEnd();
+  const parts = parseCollapsedOutputParts(raw);
+  const visibleOutputLineCount = collapsedVisibleOutputLineCount(parts);
+  if (parts.outputLines.length <= visibleOutputLineCount && !parts.truncationNotice) {
+    return parts.outputLines.join("\n").trimEnd();
+  }
+
+  const visibleOutputLines = parts.outputLines.slice(-visibleOutputLineCount);
+  const visibleNoticeLineCount = parts.truncationNotice ? 1 : 0;
+  const earlierLines = Math.max(
+    0,
+    parts.outputLines.length - visibleOutputLines.length - visibleNoticeLineCount,
+  );
+  const truncationNoticeLines = parts.truncationNotice ? ["", parts.truncationNotice] : [];
+  return [collapsedElisionLine(earlierLines), ...visibleOutputLines, ...truncationNoticeLines]
+    .join("\n")
+    .trimEnd();
 };
+
+const isCollapsedElisionLine = (line: string): boolean =>
+  /^\.\.\. \([0-9]+ earlier lines, ctrl\+o to expand\)$/.test(line);
+
+const renderBashOutputText = (output: string, theme: RenderTheme): string =>
+  output
+    .split("\n")
+    .map((line) =>
+      isCollapsedElisionLine(line) ? theme.fg("muted", line) : theme.fg("toolOutput", line),
+    )
+    .join("\n");
 
 const durationSeconds = (ms: number): number => Math.max(0, ms / 1000);
 
@@ -609,9 +696,7 @@ const bashDurationText = (state: BashRenderState, isPartial: boolean): string | 
 
   const label = isPartial ? "Elapsed" : "Took";
   const endTime = state.endedAt ?? Date.now();
-  const duration = isPartial
-    ? formatElapsedDurationSeconds(endTime - state.startedAt)
-    : formatDurationSeconds(endTime - state.startedAt);
+  const duration = formatElapsedDurationSeconds(endTime - state.startedAt);
   return `${label} ${duration}`;
 };
 
@@ -640,7 +725,7 @@ export const renderBashResultText = (
 ): string => {
   const output = formatRenderedBashResult(raw, expanded);
   const duration = bashDurationText(state, isPartial);
-  const renderedOutput = output ? theme.fg("toolOutput", output) : "";
+  const renderedOutput = output ? renderBashOutputText(output, theme) : "";
   const renderedDuration = duration ? theme.fg("muted", duration) : "";
 
   if (!renderedOutput) return isPartial ? `\n${renderedDuration}` : renderedDuration;
@@ -665,6 +750,7 @@ const emitForegroundBashOutputUpdate = (
     commandOutput(windowId, options.captureLines, outputFile),
     outputFile,
     shouldShowOutputPath(options),
+    outputTruncationOptions(options),
   );
   if (output.text === "(no output)" || output.text === lastText) return lastText;
 
@@ -1035,6 +1121,7 @@ const startPoller = (
       commandOutputTail(windowId, outputLines, signalInfo?.outputFile),
       signalInfo?.outputFile,
       shouldShowOutputPath(options),
+      outputTruncationOptions(options),
     ).text;
     if (!completed && output === lastText) return;
 
@@ -1101,6 +1188,7 @@ const handleCompletionSignal = (
     fileOutput === null ? undefined : outputFile,
     "(no output)",
     shouldShowOutputPath(options),
+    outputTruncationOptions(options),
   ).text;
   const code = parseInt(exitCode);
   const durationMs = completionDurationMs(state.signalStartedAt.get(filename));
@@ -1251,7 +1339,13 @@ const peekAction = (
   const captures = capturePaneOutputs(session, target, options.captureLines, filters);
   if (captures.length === 0) return toolText("No matching windows.");
 
-  const output = formatOutput(capturePanes(session, target, options.captureLines, filters));
+  const output = formatOutput(
+    capturePanes(session, target, options.captureLines, filters),
+    undefined,
+    "(no output)",
+    false,
+    outputTruncationOptions(options),
+  );
   const render = renderPeekDetails(captures, options.peekPreviewLines);
   return renderedToolText(output.text, render, { session, ...output.details });
 };
@@ -1488,6 +1582,7 @@ const runBashInTmux = async (
     commandOutput(result.windowId, options.captureLines, result.outputFile),
     result.outputFile,
     shouldShowOutputPath(options),
+    outputTruncationOptions(options),
   );
   const text = output.text;
 
@@ -1713,7 +1808,13 @@ const registerCommands = (pi: ExtensionAPI, options: ResolvedOptions): void => {
         return;
       }
 
-      const output = formatOutput(capturePanes(session, target, options.captureLines, filters));
+      const output = formatOutput(
+        capturePanes(session, target, options.captureLines, filters),
+        undefined,
+        "(no output)",
+        false,
+        outputTruncationOptions(options),
+      );
       pi.sendUserMessage(`Here is the background tmux output:\n\n\`\`\`\n${output.text}\n\`\`\``, {
         deliverAs: "followUp",
       });
@@ -1762,7 +1863,7 @@ const registerBashTool = (
   pi.registerTool({
     name: "bash",
     label: "bash",
-    description: `Execute a bash command in a background tmux window. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB. Defaults to a ${options.defaultTimeoutSeconds}s timeout, max ${options.maxTimeoutSeconds}s; timeoutAction defaults to "background". Use background for long-running commands.`,
+    description: `Execute a bash command in a background tmux window. Output is truncated to last ${options.maxOutputLines} lines or ${options.maxOutputBytes / 1024}KB. Defaults to a ${options.defaultTimeoutSeconds}s timeout, max ${options.maxTimeoutSeconds}s; timeoutAction defaults to "background". Use background for long-running commands.`,
     promptSnippet: "Execute bash commands in background tmux windows",
     promptGuidelines: [
       'Use bash with background: true or timeoutAction: "background" for long-running commands, servers, watchers, REPLs, interactive prompts, and background jobs.',

@@ -27,6 +27,8 @@ const ConfigSchema = z
     defaultPollInterval: z.number().int().nonnegative().optional(),
     defaultPollLines: z.number().int().positive().optional(),
     displayCommandStartMarker: z.string().optional(),
+    maxOutputLines: z.number().int().positive().optional(),
+    maxOutputBytes: z.number().int().positive().optional(),
     prompt: z.string().optional(),
   })
   .refine(

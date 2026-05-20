@@ -62,6 +62,8 @@ describe("tmux-bash output truncation", () => {
     expect(DEFAULT_OPTIONS.preserveOutputFiles).toBe(false);
     expect(DEFAULT_OPTIONS.outputDir).toBe("/tmp/pi-tmux-bash");
     expect(DEFAULT_OPTIONS.displayCommandStartMarker).toBe("# SHIM_END");
+    expect(DEFAULT_OPTIONS.maxOutputLines).toBe(2000);
+    expect(DEFAULT_OPTIONS.maxOutputBytes).toBe(DEFAULT_MAX_BYTES);
   });
 
   it("resolves new tmux scope configuration", () => {
@@ -70,12 +72,16 @@ describe("tmux-bash output truncation", () => {
       tmuxSessionScope: "git-root",
       globalTmuxSessionName: "global-bg",
       tmuxWindowScope: "all",
+      maxOutputLines: 123,
+      maxOutputBytes: 456,
     });
 
     expect(result.gitRootTmuxSessionNameTemplate).toBe("git-{{}}");
     expect(result.tmuxSessionScope).toBe("git-root");
     expect(result.globalTmuxSessionName).toBe("global-bg");
     expect(result.tmuxWindowScope).toBe("all");
+    expect(result.maxOutputLines).toBe(123);
+    expect(result.maxOutputBytes).toBe(456);
   });
 
   it("formats tmux window attach commands for the current environment", () => {
@@ -204,7 +210,7 @@ Elapsed 5.0s`);
 
     expect(result).toBe(`done
 
-Took 5s`);
+Took 5.0s`);
   });
 
   it("renders timeout metadata like the built-in bash tool", () => {

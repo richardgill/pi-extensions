@@ -125,6 +125,12 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Default tmux scrollback lines captured per poll.
   "defaultPollLines": 30,
 
+  // Maximum output lines kept for model context and expanded TUI cards.
+  "maxOutputLines": 2000,
+
+  // Maximum output bytes kept for model context and expanded TUI cards.
+  "maxOutputBytes": 51200,
+
   // Marker used to hide wrapper/shim code from displayed command names/output.
   // Set to "" to disable. Uses the last marker when multiple wrappers are present.
   "displayCommandStartMarker": "# SHIM_END",

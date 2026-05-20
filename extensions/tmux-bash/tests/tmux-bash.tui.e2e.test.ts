@@ -4,6 +4,7 @@ import { createPiE2eProject, type PiE2eProject } from "./testing/e2e-project.js"
 import {
   bash,
   reply,
+  scriptedToolCall,
   type ScriptedStep,
   writeScriptedProvider,
 } from "./testing/scripted-provider.js";
@@ -17,6 +18,15 @@ const createProject = (): PiE2eProject => {
   projects.push(project);
   return project;
 };
+
+const bashTool = (
+  command: string,
+  args: Record<string, unknown> = {},
+  options: { delayMs?: number } = {},
+): ScriptedStep => scriptedToolCall("bash", { command, ...args }, options);
+
+const tmux = (args: Record<string, unknown>, options: { delayMs?: number } = {}): ScriptedStep =>
+  scriptedToolCall("tmux", args, options);
 
 const runTui = (
   project: PiE2eProject,
@@ -41,6 +51,58 @@ const truncatedCommandTitle = (command: string): string => {
   const truncated = compact.length > 80 ? `${compact.slice(0, 79)}…` : compact;
   return `$ ${truncated}`;
 };
+
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE_PATTERN, "");
+
+const trimmedPaneLines = (pane: string): string[] =>
+  pane.split("\n").map((line) => stripAnsi(line).trim());
+
+const bashTranscript = (pane: string): string => {
+  const lines = trimmedPaneLines(pane);
+  const start = lines.findIndex((line) => line.startsWith("$ "));
+  if (start === -1) throw new Error(`Missing bash call in pane:\n${pane}`);
+
+  const end = lines.findIndex((line, index) => index > start && line === doneMarker);
+  if (end === -1) throw new Error(`Missing done marker in pane:\n${pane}`);
+
+  return lines.slice(start, end).join("\n").trimEnd();
+};
+
+const stableBashTranscript = (pane: string): string =>
+  bashTranscript(pane)
+    .replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]")
+    .replace(/Took [0-9]+\.[0-9]s/g, "Took <duration>");
+
+const transcriptUntilLine = (pane: string, startText: string, endText: string): string => {
+  const lines = trimmedPaneLines(pane);
+  const start = lines.findIndex((line) => line === startText);
+  if (start === -1) throw new Error(`Missing transcript start ${startText}:\n${pane}`);
+
+  const end = lines.findIndex((line, index) => index > start && line === endText);
+  if (end === -1) throw new Error(`Missing transcript end ${endText}:\n${pane}`);
+
+  return lines.slice(start, end).join("\n").trimEnd();
+};
+
+const transcriptUntilSeparator = (pane: string, startPrefix: string): string => {
+  const lines = trimmedPaneLines(pane);
+  const start = lines.findIndex((line) => line.startsWith(startPrefix));
+  if (start === -1) throw new Error(`Missing transcript start ${startPrefix}:\n${pane}`);
+
+  const end = lines.findIndex((line, index) => index > start && line.startsWith("─"));
+  return lines
+    .slice(start, end === -1 ? undefined : end)
+    .join("\n")
+    .trimEnd();
+};
+
+const stableTmuxToolTranscript = (pane: string, startText: string): string =>
+  transcriptUntilLine(pane, startText, doneMarker).replace(/@\d+/g, "@<id>");
+
+const stablePollMessageTranscript = (pane: string, windowTitle: string): string =>
+  transcriptUntilSeparator(pane, `↻ tmux poll: ${windowTitle} @`).replace(/@\d+/g, "@<id>");
 
 afterEach(() => {
   projects.forEach((project) => project.cleanup());
@@ -110,7 +172,7 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.checkpoints.streaming).toMatch(/Elapsed [0-9]+\.[0-9]s/);
     expect(result.pane).toContain("foreground-start");
     expect(result.pane).toContain("foreground-done");
-    expect(result.pane).toMatch(/Took [0-9]+s/);
+    expect(result.pane).toMatch(/Took [0-9]+\.[0-9]s/);
   }, 30_000);
 
   it("renders background poll output without requesting another assistant turn", async () => {
@@ -138,24 +200,135 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.pane).not.toContain("No more faux responses queued");
   }, 30_000);
 
-  it("expands collapsed tool output with ctrl-o", async () => {
+  it("renders fully-fitting bash output while collapsed", async () => {
     const project = createProject();
+    const command = "printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'";
+    const result = await runTui(project, [bashTool(command), reply(doneMarker)]);
+
+    expect(stableBashTranscript(result.pane))
+      .toBe(`$ printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'
+fit-line-1
+fit-line-2
+fit-line-3
+
+Took <duration>`);
+  }, 30_000);
+
+  it("renders overflowing bash output while collapsed", async () => {
+    const project = createProject();
+    const command = "for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' \"$i\"; done";
+    const result = await runTui(project, [bashTool(command), reply(doneMarker)]);
+
+    expect(stableBashTranscript(result.pane))
+      .toBe(`$ for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' "$i"; done
+... (395 earlier lines, ctrl+o to expand)
+overflow-line-396
+overflow-line-397
+overflow-line-398
+overflow-line-399
+overflow-line-400
+
+Took <duration>`);
+  }, 30_000);
+
+  it("renders truncated overflowing bash output while collapsed", async () => {
+    const project = createProject();
+    const command = "for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' \"$i\"; done";
+    const result = await runTui(project, [bashTool(command), reply(doneMarker)]);
+
+    expect(stableBashTranscript(result.pane))
+      .toBe(`$ for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' "$i"; done
+... (1997 earlier lines, ctrl+o to expand)
+overflow-line-3999
+overflow-line-4000
+
+[Showing lines 2001-4000 of 4000. Full output: <path>]
+
+Took <duration>`);
+  }, 30_000);
+
+  it("renders fully-fitting peek output while collapsed", async () => {
+    const project = createProject();
+    const command = "printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30";
+    const result = await runTui(project, [
+      bash(command, { background: true, name: "peek-fit" }),
+      tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
+      reply(doneMarker),
+    ]);
+
+    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
+✓ tmux window: peek-fit @<id>
+$ printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30
+peek-line-1
+peek-line-2
+peek-line-3
+
+Attach with: tmux switch-client -t @<id>`);
+  }, 30_000);
+
+  it("expands collapsed overflowing peek output with ctrl-o", async () => {
+    const project = createProject();
+    const command = "for i in $(seq 1 8); do printf 'peek-overflow-%03d\\n' \"$i\"; done; sleep 30";
     const result = await runTui(
       project,
       [
-        bash("for i in $(seq 1 8); do printf 'expand-line-%03d\\n' \"$i\"; done"),
+        bash(command, { background: true, name: "peek-overflow" }),
+        tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
         reply(doneMarker),
       ],
       {
         checkpoints: [{ name: "collapsed", waitFor: doneMarker, keys: ["C-o"], delayMs: 300 }],
-        waitFor: "[Full output:",
+        waitFor: "peek-overflow-002",
       },
     );
 
-    expect(result.checkpoints.collapsed).toContain("expand-line-008");
-    expect(result.checkpoints.collapsed).not.toContain("[Full output:");
-    expect(result.pane).toContain("expand-line-008");
-    expect(result.pane).toContain("[Full output:");
+    expect(stableTmuxToolTranscript(result.checkpoints.collapsed, "tmux peek :all"))
+      .toBe(`tmux peek :all
+✓ tmux window: peek-overflow @<id>
+peek-overflow-004
+peek-overflow-005
+peek-overflow-006
+peek-overflow-007
+peek-overflow-008
+
+Attach with: tmux switch-client -t @<id>`);
+    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
+✓ tmux window: peek-overflow @<id>
+$ for i in $(seq 1 8); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
+peek-overflow-001
+peek-overflow-002
+peek-overflow-003
+peek-overflow-004
+peek-overflow-005
+peek-overflow-006
+peek-overflow-007
+peek-overflow-008
+
+Attach with: tmux switch-client -t @<id>`);
+  }, 30_000);
+
+  it("renders poll action and periodic poll output exactly", async () => {
+    const project = createProject();
+    const command = "for i in $(seq 1 3); do printf 'poll-fit-%s\\n' \"$i\"; done; sleep 30";
+    const result = await runTui(
+      project,
+      [
+        bash(command, { background: true, name: "poll-fit" }),
+        tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
+        reply(doneMarker),
+      ],
+      { waitFor: "poll-fit-3" },
+    );
+
+    expect(stableTmuxToolTranscript(result.pane, "tmux poll :1")).toBe(`tmux poll :1
+✓ Polling poll-fit every 1s.`);
+    expect(stablePollMessageTranscript(result.pane, "poll-fit")).toBe(`↻ tmux poll: poll-fit @<id>
+$ for i in $(seq 1 3); do printf 'poll-fit-%s\\n' "$i"; done; sleep 30
+poll-fit-1
+poll-fit-2
+poll-fit-3
+
+Attach with: tmux switch-client -t @<id>`);
   }, 30_000);
 
   it("truncates long bash call titles", async () => {
