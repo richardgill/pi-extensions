@@ -3,6 +3,7 @@ import {
   DEFAULT_MAX_LINES,
   formatSize,
   truncateTail,
+  type AgentToolUpdateCallback,
   type BashToolDetails,
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -80,12 +81,26 @@ export type TmuxBashOptions = {
 
 type FullscreenCommandResult = { ok: true } | { ok: false; message: string };
 
+type RenderTheme = {
+  fg: (name: "toolTitle" | "toolOutput" | "muted", text: string) => string;
+  bold: (text: string) => string;
+};
+
+type ToolRenderContext<TState, TArgs> = {
+  args: TArgs;
+  state: TState;
+  executionStarted: boolean;
+  isError: boolean;
+  invalidate: () => void;
+};
+
 type ResolvedOptions = Required<Omit<TmuxBashOptions, "sessionNameTemplate">>;
 type SignalInfo = {
   session: string;
   windowId: string;
   windowIndex: number;
   id: string;
+  startedAt?: number;
   outputFile?: string;
 };
 type Poller = {
@@ -101,6 +116,12 @@ type Poller = {
 
 type PollerDetails = Omit<Poller, "timer" | "signalInfo">;
 
+type BashRenderState = {
+  startedAt?: number;
+  endedAt?: number;
+  interval?: NodeJS.Timeout;
+};
+
 type ExtensionState = {
   signalDir: string | null;
   watcher: FSWatcher | null;
@@ -110,6 +131,7 @@ type ExtensionState = {
   activeSession: string | null;
   activeGitRoot: string | null;
   statusContext: ExtensionContext | null;
+  signalStartedAt: Map<string, number>;
 };
 
 type RunWindowResult = { index: number; windowId: string; id: string; outputFile?: string };
@@ -246,6 +268,7 @@ export const createState = (): ExtensionState => ({
   activeSession: null,
   activeGitRoot: null,
   statusContext: null,
+  signalStartedAt: new Map(),
 });
 
 const signalDirPath = (options: ResolvedOptions, id: string): string => join(options.outputDir, id);
@@ -422,11 +445,14 @@ const formatTrimmedOutput = (
 
 export const formatCompletionSummary = (
   windowTitle: string,
+  session: string,
   windowIndex: number,
   exitCode: number,
+  durationMs?: number,
 ): string => {
   const status = exitCode === 0 ? "completed successfully" : `exited with code ${exitCode}`;
-  return `${windowTitle} ${status} in tmux window :${windowIndex}`;
+  const duration = durationMs === undefined ? "" : ` after ${formatDurationSeconds(durationMs)}`;
+  return `Background job "${windowTitle}" ${status}${duration}\ntmux: ${session}:${windowIndex}`;
 };
 
 const isFullOutputNoticeLine = (line: string): boolean => /^\[Full output: .+\]$/.test(line.trim());
@@ -441,6 +467,7 @@ const legacyCompletionSummaryMatch = (summary: string): RegExpMatchArray | null 
   stripTrailingPeriod(summary).match(/^tmux window "(.+)" \(:([0-9]+)\) (.+)$/);
 
 const compactCompletionSummary = (summary: string): string => {
+  const stripped = stripTrailingPeriod(summary);
   const legacy = legacyCompletionSummaryMatch(summary);
   if (legacy) {
     const [, windowTitle = "", windowIndex = "", status = ""] = legacy;
@@ -448,10 +475,7 @@ const compactCompletionSummary = (summary: string): string => {
     return `${windowTitle} ${compactStatus} in tmux window :${windowIndex}`;
   }
 
-  return stripTrailingPeriod(summary).replace(
-    " completed successfully in tmux window ",
-    " completed in tmux window ",
-  );
+  return stripped.replace(" completed successfully", " completed");
 };
 
 const visibleOutputLines = (lines: string[]): string[] =>
@@ -460,15 +484,43 @@ const visibleOutputLines = (lines: string[]): string[] =>
     .filter((line) => !isFullOutputNoticeLine(line))
     .filter((line) => line.trim() !== "");
 
-export const formatRenderedBashCall = (args: Partial<BashInput>): string => {
-  const command = truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
-  const metadata = [
+const isTmuxTargetLine = (line: string): boolean => line.trimStart().startsWith("tmux: ");
+
+const outputLabelText = (line: string): string => (line === "(no output)" ? "no output" : line);
+
+const formatCompletionDetailLines = (lines: string[]): string[] => {
+  const visible = visibleOutputLines(lines);
+  const tmuxTargetLines = visible.filter(isTmuxTargetLine);
+  const outputLines = visible.filter((line) => !isTmuxTargetLine(line));
+
+  if (tmuxTargetLines.length === 0 || outputLines.length === 0) return visible;
+  if (outputLines.length === 1) {
+    return [...tmuxTargetLines, `Output: ${outputLabelText(outputLines[0] ?? "")}`];
+  }
+  return [...tmuxTargetLines, "Output:", ...outputLines];
+};
+
+const indentCompletionDetailLines = (lines: string[]): string[] => {
+  if (!lines.some(isTmuxTargetLine)) return lines;
+  return lines.map((line) => `  ${line}`);
+};
+
+const bashCallCommand = (args: Partial<BashInput>): string =>
+  truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
+
+const bashCallMetadata = (args: Partial<BashInput>): string[] =>
+  [
     args.background === true ? "bg" : undefined,
-    args.timeout !== undefined ? `timeout ${args.timeout}s` : undefined,
+    args.timeout !== undefined ? `(timeout ${args.timeout}s)` : undefined,
   ].filter((item) => item !== undefined);
 
-  return [`$ ${command}`, ...metadata].join("  ");
-};
+export const formatRenderedBashCall = (args: Partial<BashInput>): string =>
+  [`$ ${bashCallCommand(args)}`, ...bashCallMetadata(args)].join(" ");
+
+export const renderBashCallText = (args: Partial<BashInput>, theme: RenderTheme): string =>
+  `${theme.fg("toolTitle", theme.bold(`$ ${bashCallCommand(args)}`))}${bashCallMetadata(args)
+    .map((item) => theme.fg("muted", ` ${item}`))
+    .join("")}`;
 
 export const formatRenderedBashResult = (raw: string, expanded: boolean): string => {
   if (expanded) return raw;
@@ -477,11 +529,83 @@ export const formatRenderedBashResult = (raw: string, expanded: boolean): string
   return [summary, ...detail.slice(-5)].join("\n").trimEnd();
 };
 
+export const formatDurationSeconds = (ms: number): string =>
+  `${Math.max(0, Math.floor(ms / 1000))}s`;
+
+const completionDurationMs = (startedAt: number | undefined): number | undefined =>
+  startedAt === undefined ? undefined : Date.now() - startedAt;
+
+const startBashRenderTiming = (context: ToolRenderContext<BashRenderState, Partial<BashInput>>) => {
+  if (!context.executionStarted || context.state.startedAt !== undefined) return;
+
+  context.state.startedAt = Date.now();
+  context.state.endedAt = undefined;
+};
+
+const updateBashResultTiming = (
+  context: ToolRenderContext<BashRenderState, Partial<BashInput>>,
+  isPartial: boolean,
+): void => {
+  if (context.state.startedAt === undefined) context.state.startedAt = Date.now();
+
+  if (isPartial && !context.state.interval) {
+    context.state.interval = setInterval(() => context.invalidate(), 1000);
+  }
+
+  if (isPartial && !context.isError) return;
+
+  if (context.state.endedAt === undefined) context.state.endedAt = Date.now();
+  if (!context.state.interval) return;
+
+  clearInterval(context.state.interval);
+  context.state.interval = undefined;
+};
+
+const bashDurationText = (state: BashRenderState, isPartial: boolean): string | undefined => {
+  if (state.startedAt === undefined) return undefined;
+
+  const label = isPartial ? "Elapsed" : "Took";
+  const endTime = state.endedAt ?? Date.now();
+  return `${label} ${formatDurationSeconds(endTime - state.startedAt)}`;
+};
+
+const shouldRenderBashDuration = (args: Partial<BashInput>): boolean => args.background !== true;
+
+const bashDurationSeparator = (isPartial: boolean): string => (isPartial ? "\n\n" : "\n");
+
+const renderDurationOnlyText = (renderedDuration: string, isPartial: boolean): string =>
+  isPartial ? `\n${renderedDuration}` : renderedDuration;
+
+export const renderBashResultText = (
+  raw: string,
+  expanded: boolean,
+  isPartial: boolean,
+  state: BashRenderState,
+  theme: RenderTheme,
+): string => {
+  const output = formatRenderedBashResult(raw, expanded);
+  const duration = bashDurationText(state, isPartial);
+  const renderedOutput = output ? theme.fg("toolOutput", output) : "";
+  const renderedDuration = duration ? theme.fg("muted", duration) : "";
+
+  if (!renderedOutput) return renderDurationOnlyText(renderedDuration, isPartial);
+  return [renderedOutput, renderedDuration].filter(Boolean).join(bashDurationSeparator(isPartial));
+};
+
+const emitInitialBashUpdate = (
+  onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
+) => {
+  onUpdate?.({ content: [], details: undefined });
+};
+
 export const formatRenderedCompletionMessage = (raw: string, expanded: boolean): string => {
   if (expanded) return raw;
 
   const [summary = "", ...detail] = raw.split("\n");
-  return [compactCompletionSummary(summary), ...visibleOutputLines(detail).slice(0, 5)].join("\n");
+  const detailLines = formatCompletionDetailLines(detail).slice(0, 5);
+  return [compactCompletionSummary(summary), ...indentCompletionDetailLines(detailLines)].join(
+    "\n",
+  );
 };
 
 const signalFilename = ({ session, windowId, id }: SignalInfo): string =>
@@ -678,6 +802,7 @@ const readSignalExitCode = (state: ExtensionState, signalInfo?: SignalInfo): num
   unlinkSync(signalFile);
   state.bashSignals.delete(filename);
   state.ownedSignals.delete(filename);
+  state.signalStartedAt.delete(filename);
   return exitCode;
 };
 
@@ -795,6 +920,7 @@ const startPoller = (
       shouldShowOutputPath(options),
     ).text;
     const exitCode = readSignalExitCode(state, signalInfo);
+    const durationMs = completionDurationMs(signalInfo?.startedAt);
     const completed = exitCode !== undefined;
     if (completed) stopPoller(state, session, windowId);
 
@@ -802,7 +928,7 @@ const startPoller = (
       {
         customType: completed ? "tmux-bash-completion" : "tmux-bash-poll",
         content: completed
-          ? `${formatCompletionSummary(window.title, window.index, exitCode)}.
+          ? `${formatCompletionSummary(window.title, session, window.index, exitCode, durationMs)}
 
 \`\`\`\n${output}\n\`\`\``
           : `tmux window "${window.title}" (:${window.index}) poll.
@@ -861,12 +987,14 @@ const handleCompletionSignal = (
     shouldShowOutputPath(options),
   ).text;
   const code = parseInt(exitCode);
+  const durationMs = completionDurationMs(state.signalStartedAt.get(filename));
+  state.signalStartedAt.delete(filename);
   stopPoller(state, parsed.session, parsed.windowId);
 
   pi.sendMessage(
     {
       customType: "tmux-bash-completion",
-      content: `${formatCompletionSummary(winName, windowIndex, code)}.\n\n\`\`\`\n${output}\n\`\`\``,
+      content: `${formatCompletionSummary(winName, parsed.session, windowIndex, code, durationMs)}\n\n\`\`\`\n${output}\n\`\`\``,
       display: true,
     },
     { triggerTurn: true, deliverAs: "followUp" },
@@ -925,6 +1053,7 @@ const cleanupState = (state: ExtensionState, options: ResolvedOptions): void => 
   state.pollers.clear();
   state.bashSignals.clear();
   state.ownedSignals.clear();
+  state.signalStartedAt.clear();
   state.statusContext = null;
 
   if (state.signalDir) {
@@ -1129,6 +1258,7 @@ const executeTool = (
 const runBashInTmux = async (
   params: BashInput,
   signal: AbortSignal | undefined,
+  onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   state: ExtensionState,
@@ -1159,10 +1289,12 @@ const runBashInTmux = async (
     windowId: result.windowId,
     windowIndex: result.index,
     id: result.id,
+    startedAt: Date.now(),
     outputFile: result.outputFile,
   };
   const completionSignalFilename = signalFilename(signalInfo);
   state.ownedSignals.add(completionSignalFilename);
+  state.signalStartedAt.set(completionSignalFilename, signalInfo.startedAt);
   state.activeSession = session;
   state.activeGitRoot = gitRoot;
 
@@ -1193,11 +1325,13 @@ const runBashInTmux = async (
     };
   }
 
+  emitInitialBashUpdate(onUpdate);
   state.bashSignals.add(completionSignalFilename);
   const exitCode = await waitForExitCode(signalDir, signal, signalInfo, params.timeout);
   state.bashSignals.delete(completionSignalFilename);
   if (exitCode !== "timeout" || params.timeoutAction !== "background") {
     state.ownedSignals.delete(completionSignalFilename);
+    state.signalStartedAt.delete(completionSignalFilename);
   }
   const output = formatTrimmedOutput(
     commandOutput(result.windowId, options.captureLines, result.outputFile),
@@ -1209,27 +1343,14 @@ const runBashInTmux = async (
   if (exitCode === "aborted") {
     execSafe(`tmux kill-window -t ${shellQuote(result.windowId)}`);
     updateBackgroundProcessStatus(ctx, options);
-    return {
-      content: [{ type: "text" as const, text: `${text}\n\nCommand aborted` }],
-      details: output.details,
-      isError: true,
-    };
+    throw new Error(`${text}\n\nCommand aborted`);
   }
 
   if (exitCode === "timeout") {
     if (params.timeoutAction !== "background") {
       execSafe(`tmux kill-window -t ${shellQuote(result.windowId)}`);
       updateBackgroundProcessStatus(ctx, options);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `${text}\n\nCommand timed out after ${params.timeout} seconds and tmux window :${result.index} was killed.`,
-          },
-        ],
-        details: output.details,
-        isError: true,
-      };
+      throw new Error(`${text}\n\nCommand timed out after ${params.timeout} seconds`);
     }
 
     if (params.pollInterval > 0)
@@ -1260,11 +1381,7 @@ const runBashInTmux = async (
   updateBackgroundProcessStatus(ctx, options);
 
   if (exitCode !== 0) {
-    return {
-      content: [{ type: "text" as const, text: `${text}\n\nCommand exited with code ${exitCode}` }],
-      details: output.details,
-      isError: true,
-    };
+    throw new Error(`${text}\n\nCommand exited with code ${exitCode}`);
   }
 
   return { content: [{ type: "text" as const, text }], details: output.details };
@@ -1487,27 +1604,36 @@ const registerBashTool = (
     promptSnippet: "Execute bash commands in background tmux windows",
     promptGuidelines: [
       'Use bash with background: true or timeoutAction: "background" for long-running commands, servers, watchers, REPLs, interactive prompts, and background jobs.',
-      "Use pollInterval when periodic check-ins would be helpful.",
+      "Background jobs will report automatically when they finish; do not keep polling manually unless you need interim output.",
+      "Use pollInterval only when periodic progress updates are useful.",
       `Use ${options.toolName} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.`,
       ...(options.prompt.trim() ? [options.prompt.trim()] : []),
     ],
     parameters: bashToolCallSchema.typeBoxSchema,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       return bashToolCallSchema.handleInput(params, (input) =>
-        runBashInTmux(input, signal, pi, ctx, state, options),
+        runBashInTmux(input, signal, onUpdate, pi, ctx, state, options),
       );
     },
-    renderCall(args, theme) {
-      return new Text(
-        theme.fg("toolTitle", theme.bold(formatRenderedBashCall(args as Partial<BashInput>))),
-        0,
-        0,
-      );
+    renderCall(args, theme, context) {
+      startBashRenderTiming(context as ToolRenderContext<BashRenderState, Partial<BashInput>>);
+      return new Text(renderBashCallText(args as Partial<BashInput>, theme), 0, 0);
     },
-    renderResult(result, { expanded }, theme) {
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      const bashContext = context as ToolRenderContext<BashRenderState, Partial<BashInput>>;
       const content = result.content?.[0];
       const raw = content?.type === "text" ? content.text : "";
-      return new Text(theme.fg("toolOutput", formatRenderedBashResult(raw, expanded)), 0, 0);
+
+      if (!shouldRenderBashDuration(bashContext.args)) {
+        return new Text(theme.fg("toolOutput", formatRenderedBashResult(raw, expanded)), 0, 0);
+      }
+
+      updateBashResultTiming(bashContext, isPartial);
+      return new Text(
+        renderBashResultText(raw, expanded, isPartial, bashContext.state, theme),
+        0,
+        0,
+      );
     },
   });
 };
