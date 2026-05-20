@@ -170,7 +170,7 @@ const testCases: TmuxBashE2eTestCase[] = [
     ],
     expectedTerminalOutput: "started-ok\n",
     expectedContextOutputName: "background-start-context",
-    expectedContextOutput: () => "Started in tmux window.",
+    expectedContextOutput: () => "Started in background tmux window.",
   },
   {
     name: "background command returns immediately and leaves session running",

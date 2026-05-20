@@ -588,6 +588,16 @@ const bashDurationText = (state: BashRenderState, isPartial: boolean): string | 
 
 const shouldRenderBashDuration = (args: Partial<BashInput>): boolean => args.background !== true;
 
+export const renderBackgroundBashResultText = (
+  raw: string,
+  expanded: boolean,
+  theme: RenderTheme,
+): string => {
+  const output = formatRenderedBashResult(raw, expanded);
+  const renderedOutput = output ? theme.fg("toolOutput", output) : "";
+  return renderedOutput ? `\n${renderedOutput}` : "";
+};
+
 export const renderBashResultText = (
   raw: string,
   expanded: boolean,
@@ -1377,7 +1387,7 @@ const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}.`,
+          text: `Started in background tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}.`,
         },
       ],
       details: undefined,
@@ -1694,7 +1704,7 @@ const registerBashTool = (
       const raw = content?.type === "text" ? content.text : "";
 
       if (!shouldRenderBashDuration(bashContext.args)) {
-        return new Text(theme.fg("toolOutput", formatRenderedBashResult(raw, expanded)), 0, 0);
+        return new Text(renderBackgroundBashResultText(raw, expanded, theme), 0, 0);
       }
 
       updateBashResultTiming(bashContext, isPartial);

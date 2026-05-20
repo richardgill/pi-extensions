@@ -11,6 +11,7 @@ import {
   formatRenderedCompletionMessage,
   formatTmuxOutputForContext,
   limitOutputLines,
+  renderBackgroundBashResultText,
   renderBashCallText,
   renderBashResultText,
   resolveOptions,
@@ -110,11 +111,21 @@ describe("tmux-bash output truncation", () => {
     expect(result).toBe('$ sleep 90 && echo "hello" (background)');
   });
 
-  it("renders background bash start output compactly", () => {
+  it("renders background bash start output with a blank line after the call", () => {
+    const theme = {
+      bold: (text: string) => text,
+      fg: (_name: string, text: string) => text,
+    };
     const call = formatRenderedBashCall({ command: "sleep 90", background: true });
-    const result = formatRenderedBashResult("Started in tmux window.", false);
+    const result = renderBackgroundBashResultText(
+      "Started in background tmux window.",
+      false,
+      theme,
+    );
 
-    expect(`${call}\n${result}`).toBe("$ sleep 90 (background)\nStarted in tmux window.");
+    expect(`${call}\n${result}`).toBe(
+      "$ sleep 90 (background)\n\nStarted in background tmux window.",
+    );
   });
 
   it("does not render timeout metadata for immediately-backgrounded bash calls", () => {
