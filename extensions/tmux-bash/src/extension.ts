@@ -501,17 +501,8 @@ export const limitOutputLines = (content: string, lines: number): string => {
   return trimmed.split("\n").slice(-lines).join("\n");
 };
 
-export const formatCompletionSummary = (
-  windowTitle: string,
-  session: string,
-  windowIndex: number,
-  exitCode: number,
-  durationMs?: number,
-): string => {
-  const status = exitCode === 0 ? "completed successfully" : `exited with code ${exitCode}`;
-  const duration = durationMs === undefined ? "" : ` after ${formatDurationSeconds(durationMs)}`;
-  return `Background job "${windowTitle}" ${status}${duration}\ntmux: ${session}:${windowIndex}`;
-};
+export const formatCompletionSummary = (exitCode: number): string =>
+  exitCode === 0 ? "Background bash finished" : "Background bash failed";
 
 const isFullOutputNoticeLine = (line: string): boolean => /^\[Full output: .+\]$/.test(line.trim());
 
@@ -555,19 +546,8 @@ const visibleOutputLines = (lines: string[]): string[] =>
 
 const isTmuxTargetLine = (line: string): boolean => line.trimStart().startsWith("tmux: ");
 
-const outputLabelText = (line: string): string => (line === "(no output)" ? "no output" : line);
-
-const formatCompletionDetailLines = (lines: string[]): string[] => {
-  const visible = visibleOutputLines(lines);
-  const tmuxTargetLines = visible.filter(isTmuxTargetLine);
-  const outputLines = visible.filter((line) => !isTmuxTargetLine(line));
-
-  if (tmuxTargetLines.length === 0 || outputLines.length === 0) return visible;
-  if (outputLines.length === 1) {
-    return [...tmuxTargetLines, `Output: ${outputLabelText(outputLines[0] ?? "")}`];
-  }
-  return [...tmuxTargetLines, "Output:", ...outputLines];
-};
+const formatCompletionDetailLines = (lines: string[]): string[] =>
+  visibleOutputLines(lines).filter((line) => !isTmuxTargetLine(line));
 
 const indentCompletionDetailLines = (lines: string[]): string[] => indentDisplayLines(lines);
 
@@ -674,9 +654,6 @@ const durationSeconds = (ms: number): number => Math.max(0, ms / 1000);
 export const formatDurationSeconds = (ms: number): string => `${Math.floor(durationSeconds(ms))}s`;
 
 const formatElapsedDurationSeconds = (ms: number): string => `${durationSeconds(ms).toFixed(1)}s`;
-
-const completionDurationMs = (startedAt: number | undefined): number | undefined =>
-  startedAt === undefined ? undefined : Date.now() - startedAt;
 
 const startBashRenderTiming = (context: ToolRenderContext<BashRenderState, Partial<BashInput>>) => {
   if (!context.executionStarted || context.state.startedAt !== undefined) return;
@@ -795,7 +772,9 @@ export const formatRenderedCompletionMessage = (raw: string, expanded: boolean):
   if (expanded) return [summary, ...indentDisplayLines(completionExpandedLines(detail))].join("\n");
 
   const detailLines = formatCompletionDetailLines(detail).slice(0, 5);
-  return [compactCompletionSummary(summary), ...indentCompletionDetailLines(detailLines)].join(
+  if (detailLines.length === 0) return compactCompletionSummary(summary);
+
+  return [compactCompletionSummary(summary), "", ...indentCompletionDetailLines(detailLines)].join(
     "\n",
   );
 };
@@ -1186,7 +1165,6 @@ const startPoller = (
     }
 
     const exitCode = readSignalExitCode(state, signalInfo);
-    const durationMs = completionDurationMs(signalInfo?.startedAt);
     const completed = exitCode !== undefined;
     const outputFile = signalInfo?.outputFile ?? window.outputFile;
     const outputLines = completed ? options.completionTailLines : lines;
@@ -1207,7 +1185,7 @@ const startPoller = (
       {
         customType: completed ? "tmux-bash-completion" : "tmux-bash-poll",
         content: completed
-          ? `${formatCompletionSummary(window.title, session, window.index, exitCode, durationMs)}
+          ? `${formatCompletionSummary(exitCode)}
 
 \`\`\`\n${output}\n\`\`\``
           : formatPollMessage(window, options),
@@ -1248,9 +1226,6 @@ const handleCompletionSignal = (
   if (!/^-?\d+$/.test(exitCode)) return false;
   unlinkSync(filepath);
 
-  const win = getWindows(parsed.session).find((item) => item.id === parsed.windowId);
-  const windowIndex = win?.index ?? parsed.windowIndex;
-  const winName = win?.title ?? `window ${windowIndex}`;
   const outputFile = `${filepath}.out`;
   const fileOutput = readOutputFile(outputFile);
   const rawOutput =
@@ -1266,14 +1241,13 @@ const handleCompletionSignal = (
     outputTruncationOptions(options),
   ).text;
   const code = parseInt(exitCode);
-  const durationMs = completionDurationMs(state.signalStartedAt.get(filename));
   state.signalStartedAt.delete(filename);
   stopPoller(state, parsed.session, parsed.windowId);
 
   pi.sendMessage(
     {
       customType: "tmux-bash-completion",
-      content: `${formatCompletionSummary(winName, parsed.session, windowIndex, code, durationMs)}\n\n\`\`\`\n${output}\n\`\`\``,
+      content: `${formatCompletionSummary(code)}\n\n\`\`\`\n${output}\n\`\`\``,
       display: true,
     },
     { triggerTurn: true, deliverAs: "followUp" },
@@ -1622,7 +1596,7 @@ const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in background tmux window${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Result will be reported when it finishes.\n\n  ${tmuxWindowAttachHint(result.windowId)}`,
+          text: `Started in background tmux window: ${windowNameForCommand(params.command, params.name, options)} ${result.windowId}.${params.pollInterval > 0 ? ` Polling every ${params.pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n  ${tmuxWindowAttachHint(result.windowId)}`,
         },
       ],
       details: undefined,
@@ -1719,9 +1693,9 @@ const registerBashTool = (
     description: `Execute a bash command in a background tmux window. Output is truncated to last ${options.maxOutputLines} lines or ${options.maxOutputBytes / 1024}KB. Defaults to a ${options.defaultTimeoutSeconds}s timeout, max ${options.maxTimeoutSeconds}s; timeoutAction defaults to "background". Use background for long-running commands.`,
     promptSnippet: "Execute bash commands in background tmux windows",
     promptGuidelines: [
-      'Use bash with background: true or timeoutAction: "background" for long-running commands, servers, watchers, REPLs, interactive prompts, and background jobs.',
-      "Background jobs will report automatically when they finish; do not keep polling manually unless you need interim output.",
-      "Use pollInterval only when periodic progress updates are useful.",
+      'Use bash with background: true or timeoutAction: "background" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.',
+      "Background bash commands will report automatically when they finish; do not keep polling manually unless you need interim output.",
+      "Use pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
       `Use ${options.toolName} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.`,
       `Use ${options.toolName} kill only with a stable #{window_id} like @123.`,
       `If asked, you can attach to tmux window using: ${tmuxWindowAttachCommand("@id")}, where \`@id\` is a #{window_id} like @123.`,
@@ -1846,9 +1820,9 @@ const registerRenderers = (pi: ExtensionAPI): void => {
     const content = typeof message.content === "string" ? message.content : "";
     const rendered = formatRenderedCompletionMessage(content, expanded);
     const [summary = "", ...detail] = rendered.split("\n");
-    const icon = content.split("\n")[0]?.includes("successfully")
-      ? theme.fg("success", "✓")
-      : theme.fg("error", "✗");
+    const icon = content.split("\n")[0]?.includes("failed")
+      ? theme.fg("error", "✗")
+      : theme.fg("success", "✓");
     return new Text(
       `${icon} ${summary}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
       0,

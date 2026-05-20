@@ -173,7 +173,7 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "outputDir": "/tmp/pi-tmux-bash",
 
   // Kill the whole background tmux session when pi exits/reloads.
-  // Usually false: preserving background jobs is the point.
+  // Usually false: preserving background bash commands is the point.
   "killSessionOnShutdown": false,
 
   // Replace the built-in bash tool so every bash call runs inside tmux.

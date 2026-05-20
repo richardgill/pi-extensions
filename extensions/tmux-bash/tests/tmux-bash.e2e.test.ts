@@ -65,7 +65,7 @@ const truncatedLongOutputContext = (
 
 const backgroundStartContext = (project: PiE2eProject): string => {
   const window = getWindows(project.tmuxSession()).at(0);
-  return `Started in background tmux window. Result will be reported when it finishes.\n\n  Attach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+  return `Started in background tmux window: ${window?.title} ${window?.id}.\nResult will be reported when it finishes.\n\n  Attach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
 };
 
 const listContext =

@@ -145,8 +145,8 @@ describe("tmux-bash TUI rendering", () => {
     ]);
 
     expect(result.pane).toContain('$ echo "hi" && sleep 80 && echo "bye" (background)');
-    expect(result.pane).toContain(
-      "Started in background tmux window. Result will be reported when it finishes.",
+    expect(result.pane).toMatch(
+      /Started in background tmux window: echo @\d+\.\s+Result will be reported when it finishes\./,
     );
     expect(result.pane).toContain("Attach with: tmux");
     expect(result.pane).not.toContain("bg (timeout 1s)");
@@ -217,6 +217,28 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.pane).not.toContain("$ printf 'poll-title\\n'; sleep 5 (background)\n");
   }, 30_000);
 
+  it("renders background bash completion cards without tmux target labels", async () => {
+    const project = createProject();
+    const result = await runTui(
+      project,
+      [
+        bash("printf 'completion-one\\ncompletion-two\\n'", {
+          background: true,
+          name: "completion-card",
+        }),
+        reply(doneMarker),
+      ],
+      { waitFor: "Background bash finished" },
+    );
+
+    expect(result.pane).toContain("Background bash finished");
+    expect(result.pane).toContain("completion-one");
+    expect(result.pane).toContain("completion-two");
+    expect(result.pane).not.toContain("Background job");
+    expect(result.pane).not.toContain("Output:");
+    expect(result.pane).not.toContain("tmux:");
+  }, 30_000);
+
   it("renders background poll output without requesting another assistant turn", async () => {
     const project = createProject();
     const result = await runTui(
@@ -232,8 +254,8 @@ describe("tmux-bash TUI rendering", () => {
       { waitFor: "poll-two" },
     );
 
-    expect(result.pane).toContain(
-      "Started in background tmux window and polling every 1s. Result will be reported when it finishes.",
+    expect(result.pane).toMatch(
+      /Started in background tmux window: printf @\d+\. Polling every 1s\.\s+Result will be reported when it finishes\./,
     );
     expect(result.pane).toContain("Attach with: tmux");
     expect(result.pane).toContain("poll-one");

@@ -104,26 +104,16 @@ describe("tmux-bash output truncation", () => {
     expect(tmuxWindowAttachCommand("@1065", {})).toBe("tmux attach -t @1065");
   });
 
-  it("formats background completion summaries with a tmux target line", () => {
-    const result = formatCompletionSummary("sleep-90-hello", "pi-background", 5, 0);
+  it("formats successful background bash completion summaries", () => {
+    const result = formatCompletionSummary(0);
 
-    expect(result).toBe(
-      'Background job "sleep-90-hello" completed successfully\ntmux: pi-background:5',
-    );
+    expect(result).toBe("Background bash finished");
   });
 
-  it("formats background failure summaries with a tmux target line", () => {
-    const result = formatCompletionSummary("local-ci", "pi-background", 7, 2);
+  it("formats failed background bash completion summaries", () => {
+    const result = formatCompletionSummary(2);
 
-    expect(result).toBe('Background job "local-ci" exited with code 2\ntmux: pi-background:7');
-  });
-
-  it("formats background completion summaries with duration", () => {
-    const result = formatCompletionSummary("sleep-90", "pi-background", 3, 0, 90_000);
-
-    expect(result).toBe(
-      'Background job "sleep-90" completed successfully after 90s\ntmux: pi-background:3',
-    );
+    expect(result).toBe("Background bash failed");
   });
 
   it("hides full output paths from collapsed bash results", () => {
@@ -154,13 +144,13 @@ describe("tmux-bash output truncation", () => {
     };
     const call = formatRenderedBashCall({ command: "sleep 90", background: true });
     const result = renderBackgroundBashResultText(
-      "Started in background tmux window. Result will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
+      "Started in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
       false,
       theme,
     );
 
     expect(`${call}\n${result}`).toBe(
-      "$ sleep 90 (background)\n\nStarted in background tmux window. Result will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
+      "$ sleep 90 (background)\n\nStarted in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
     );
   });
 
@@ -326,10 +316,9 @@ Took 5.0s`);
     expect(displayCommandForCommand(command)).toBe(command);
   });
 
-  it("renders compact completion messages with the tmux target line", () => {
+  it("renders compact background bash completion messages", () => {
     const raw = [
-      'Background job "sleep-hello" completed successfully after 90s',
-      "tmux: pi-background:5",
+      "Background bash finished",
       "",
       "```",
       "hello",
@@ -338,9 +327,7 @@ Took 5.0s`);
       "```",
     ].join("\n");
 
-    expect(formatRenderedCompletionMessage(raw, false)).toBe(
-      'Background job "sleep-hello" completed after 90s\n  tmux: pi-background:5\n  Output: hello',
-    );
+    expect(formatRenderedCompletionMessage(raw, false)).toBe("Background bash finished\n\n  hello");
   });
 
   it("renders legacy completion messages compactly", () => {
@@ -355,7 +342,7 @@ Took 5.0s`);
     ].join("\n");
 
     expect(formatRenderedCompletionMessage(raw, false)).toBe(
-      "sleep-hello completed in tmux window :5\n  hello",
+      "sleep-hello completed in tmux window :5\n\n  hello",
     );
   });
 

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createPiE2eProject, type PiE2eProject } from "./testing/e2e-project.js";
 import {
   bash,
-  reply,
+  recordLatestToolResult,
   type ScriptedStep,
   writeScriptedProvider,
 } from "./testing/scripted-provider.js";
@@ -18,6 +18,13 @@ type BashParityCase = {
   name: string;
   command: string;
   skipIssueLinks?: string;
+};
+
+type BashParityResult = {
+  vanilla: string;
+  tmuxBash: string;
+  vanillaContext: string;
+  tmuxBashContext: string;
 };
 
 const parityCases: BashParityCase[] = [
@@ -127,6 +134,11 @@ const stableAnsiBashTranscript = (pane: string): string =>
       .replace(/Full output: [^\]\x1b\n]+/g, "Full output: <path>"),
   );
 
+const stableContextOutput = (text: string): string =>
+  normalizeWrappedFullOutputPaths(
+    text.replace(/Full output: [^\]\n]+/g, "Full output: <path>"),
+  ).trimEnd();
+
 const runTui = async (
   project: PiE2eProject,
   script: ScriptedStep[],
@@ -149,16 +161,24 @@ const runTui = async (
   return stableAnsiBashTranscript(result.paneAnsi ?? "");
 };
 
-const runCase = async (
-  testCase: BashParityCase,
-): Promise<{ vanilla: string; tmuxBash: string }> => {
+const contextPath = (project: PiE2eProject): string => project.contextOutputPath("bash-context");
+
+const scriptForProject = (project: PiE2eProject, testCase: BashParityCase): ScriptedStep[] => [
+  bash(testCase.command),
+  recordLatestToolResult(contextPath(project), { toolName: "bash", text: doneMarker }),
+];
+
+const runCase = async (testCase: BashParityCase): Promise<BashParityResult> => {
   const vanillaProject = createProject();
   const tmuxBashProject = createProject();
-  const script = [bash(testCase.command), reply(doneMarker)];
-  const vanilla = await runTui(vanillaProject, script, { tmuxBash: false });
-  const tmuxBash = await runTui(tmuxBashProject, script, { tmuxBash: true });
+  const vanillaScript = scriptForProject(vanillaProject, testCase);
+  const tmuxBashScript = scriptForProject(tmuxBashProject, testCase);
+  const vanilla = await runTui(vanillaProject, vanillaScript, { tmuxBash: false });
+  const tmuxBash = await runTui(tmuxBashProject, tmuxBashScript, { tmuxBash: true });
+  const vanillaContext = stableContextOutput(vanillaProject.readContextOutput("bash-context"));
+  const tmuxBashContext = stableContextOutput(tmuxBashProject.readContextOutput("bash-context"));
 
-  return { vanilla, tmuxBash };
+  return { vanilla, tmuxBash, vanillaContext, tmuxBashContext };
 };
 
 afterEach(() => {
@@ -168,21 +188,23 @@ afterEach(() => {
 
 describe("tmux-bash vanilla pi TUI parity", () => {
   it.each(activeParityCases)(
-    "matches vanilla ANSI bash rendering when $name",
+    "matches vanilla ANSI bash rendering and model context when $name",
     async (testCase) => {
-      const { vanilla, tmuxBash } = await runCase(testCase);
+      const { vanilla, tmuxBash, vanillaContext, tmuxBashContext } = await runCase(testCase);
 
       expect(tmuxBash).toBe(vanilla);
+      expect(tmuxBashContext).toBe(vanillaContext);
     },
     60_000,
   );
 
   it.skip.each(skippedParityCases)(
-    "matches vanilla ANSI bash rendering when $name (blocked by $skipIssueLinks)",
+    "matches vanilla ANSI bash rendering and model context when $name (blocked by $skipIssueLinks)",
     async (testCase) => {
-      const { vanilla, tmuxBash } = await runCase(testCase);
+      const { vanilla, tmuxBash, vanillaContext, tmuxBashContext } = await runCase(testCase);
 
       expect(tmuxBash).toBe(vanilla);
+      expect(tmuxBashContext).toBe(vanillaContext);
     },
     60_000,
   );
