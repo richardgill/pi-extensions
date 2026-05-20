@@ -25,7 +25,6 @@ import {
 } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { join } from "node:path";
-import { clearIdleBashWindows } from "./core.js";
 import {
   backgroundSessionName,
   DEFAULT_SESSION_NAME_TEMPLATE,
@@ -53,8 +52,6 @@ const SHARED_SESSION_NAME = "pi-background";
 const BACKGROUND_BASH_STATUS_KEY = "backgroundBashTmuxCommands";
 const FOREGROUND_BASH_UPDATE_INTERVAL_MS = 250;
 const BASH_DURATION_SEPARATOR = "\n\n";
-const COLLAPSED_OUTPUT_PREVIEW_LINES = 5;
-const TRUNCATED_COLLAPSED_OUTPUT_PREVIEW_LINES = 2;
 const SHELL_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TMUX_ENV_EXPORT_DENYLIST = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"]);
 
@@ -64,13 +61,20 @@ export type TmuxBashOptions = {
   globalTmuxSessionName?: string;
   tmuxWindowScope?: "pi-session" | "git-root" | "all";
   toolName?: string;
-  captureLines?: number;
-  completionCaptureLines?: number;
-  completionTailLines?: number;
-  peekPreviewLines?: number;
+  bashContextLines?: number;
+  bashCompactDisplayLines?: number;
+  bashExpandedDisplayLines?: number;
+  completedContextLines?: number;
+  completedCompactDisplayLines?: number;
+  completedExpandedDisplayLines?: number;
+  pollContextLines?: number;
+  pollCompactDisplayLines?: number;
+  pollExpandedDisplayLines?: number;
+  peekContextLines?: number;
+  peekCompactDisplayLines?: number;
+  peekExpandedDisplayLines?: number;
   windowNameTemplate?: string;
   maxWindowNameLength?: number;
-  autoKillIdleOnStartup?: boolean;
   autoCloseWindowsOnCompletion?: boolean;
   alwaysShowOutputFilePath?: boolean;
   preserveOutputFiles?: boolean;
@@ -80,9 +84,7 @@ export type TmuxBashOptions = {
   defaultTimeoutSeconds?: number;
   maxTimeoutSeconds?: number;
   defaultPollInterval?: number;
-  defaultPollLines?: number;
   displayCommandStartMarker?: string;
-  maxOutputLines?: number;
   maxOutputBytes?: number;
   prompt?: string;
 };
@@ -167,13 +169,20 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   globalTmuxSessionName: SHARED_SESSION_NAME,
   tmuxWindowScope: "pi-session",
   toolName: "tmux",
-  captureLines: 50,
-  completionCaptureLines: 30,
-  completionTailLines: 20,
-  peekPreviewLines: 5,
+  bashContextLines: DEFAULT_MAX_LINES,
+  bashCompactDisplayLines: 5,
+  bashExpandedDisplayLines: DEFAULT_MAX_LINES,
+  completedContextLines: 20,
+  completedCompactDisplayLines: 5,
+  completedExpandedDisplayLines: 20,
+  pollContextLines: 30,
+  pollCompactDisplayLines: 5,
+  pollExpandedDisplayLines: 30,
+  peekContextLines: DEFAULT_MAX_LINES,
+  peekCompactDisplayLines: 5,
+  peekExpandedDisplayLines: DEFAULT_MAX_LINES,
   windowNameTemplate: "{{nameOrCommand}}",
   maxWindowNameLength: 30,
-  autoKillIdleOnStartup: false,
   autoCloseWindowsOnCompletion: true,
   alwaysShowOutputFilePath: false,
   preserveOutputFiles: false,
@@ -183,17 +192,15 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   defaultTimeoutSeconds: 30,
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
-  defaultPollLines: 30,
   displayCommandStartMarker: "# SHIM_END",
-  maxOutputLines: DEFAULT_MAX_LINES,
   maxOutputBytes: DEFAULT_MAX_BYTES,
   prompt: "",
 };
 
 const assertGitRootTmuxSessionNameTemplate = (template: string): string => {
-  if (!template.includes("{{}}")) {
+  if (!template.includes("{gitRootSessionName}")) {
     throw new Error(
-      'gitRootTmuxSessionNameTemplate must include "{{}}" as the git root session placeholder',
+      'gitRootTmuxSessionNameTemplate must include "{gitRootSessionName}" as the git root session placeholder',
     );
   }
 
@@ -242,28 +249,59 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
     ),
     tmuxWindowScope: input.tmuxWindowScope ?? DEFAULT_OPTIONS.tmuxWindowScope,
     toolName: nonEmpty("toolName", input.toolName ?? DEFAULT_OPTIONS.toolName),
-    captureLines: positiveInteger(
-      "captureLines",
-      input.captureLines ?? DEFAULT_OPTIONS.captureLines,
+    bashContextLines: positiveInteger(
+      "bashContextLines",
+      input.bashContextLines ?? DEFAULT_OPTIONS.bashContextLines,
     ),
-    completionCaptureLines: positiveInteger(
-      "completionCaptureLines",
-      input.completionCaptureLines ?? DEFAULT_OPTIONS.completionCaptureLines,
+    bashCompactDisplayLines: positiveInteger(
+      "bashCompactDisplayLines",
+      input.bashCompactDisplayLines ?? DEFAULT_OPTIONS.bashCompactDisplayLines,
     ),
-    completionTailLines: positiveInteger(
-      "completionTailLines",
-      input.completionTailLines ?? DEFAULT_OPTIONS.completionTailLines,
+    bashExpandedDisplayLines: positiveInteger(
+      "bashExpandedDisplayLines",
+      input.bashExpandedDisplayLines ?? DEFAULT_OPTIONS.bashExpandedDisplayLines,
     ),
-    peekPreviewLines: positiveInteger(
-      "peekPreviewLines",
-      input.peekPreviewLines ?? DEFAULT_OPTIONS.peekPreviewLines,
+    completedContextLines: positiveInteger(
+      "completedContextLines",
+      input.completedContextLines ?? DEFAULT_OPTIONS.completedContextLines,
+    ),
+    completedCompactDisplayLines: positiveInteger(
+      "completedCompactDisplayLines",
+      input.completedCompactDisplayLines ?? DEFAULT_OPTIONS.completedCompactDisplayLines,
+    ),
+    completedExpandedDisplayLines: positiveInteger(
+      "completedExpandedDisplayLines",
+      input.completedExpandedDisplayLines ?? DEFAULT_OPTIONS.completedExpandedDisplayLines,
+    ),
+    pollContextLines: positiveInteger(
+      "pollContextLines",
+      input.pollContextLines ?? DEFAULT_OPTIONS.pollContextLines,
+    ),
+    pollCompactDisplayLines: positiveInteger(
+      "pollCompactDisplayLines",
+      input.pollCompactDisplayLines ?? DEFAULT_OPTIONS.pollCompactDisplayLines,
+    ),
+    pollExpandedDisplayLines: positiveInteger(
+      "pollExpandedDisplayLines",
+      input.pollExpandedDisplayLines ?? DEFAULT_OPTIONS.pollExpandedDisplayLines,
+    ),
+    peekContextLines: positiveInteger(
+      "peekContextLines",
+      input.peekContextLines ?? DEFAULT_OPTIONS.peekContextLines,
+    ),
+    peekCompactDisplayLines: positiveInteger(
+      "peekCompactDisplayLines",
+      input.peekCompactDisplayLines ?? DEFAULT_OPTIONS.peekCompactDisplayLines,
+    ),
+    peekExpandedDisplayLines: positiveInteger(
+      "peekExpandedDisplayLines",
+      input.peekExpandedDisplayLines ?? DEFAULT_OPTIONS.peekExpandedDisplayLines,
     ),
     windowNameTemplate: input.windowNameTemplate ?? DEFAULT_OPTIONS.windowNameTemplate,
     maxWindowNameLength: positiveInteger(
       "maxWindowNameLength",
       input.maxWindowNameLength ?? DEFAULT_OPTIONS.maxWindowNameLength,
     ),
-    autoKillIdleOnStartup: input.autoKillIdleOnStartup ?? DEFAULT_OPTIONS.autoKillIdleOnStartup,
     autoCloseWindowsOnCompletion:
       input.autoCloseWindowsOnCompletion ?? DEFAULT_OPTIONS.autoCloseWindowsOnCompletion,
     alwaysShowOutputFilePath:
@@ -278,16 +316,8 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
       "defaultPollInterval",
       input.defaultPollInterval ?? DEFAULT_OPTIONS.defaultPollInterval,
     ),
-    defaultPollLines: positiveInteger(
-      "defaultPollLines",
-      input.defaultPollLines ?? DEFAULT_OPTIONS.defaultPollLines,
-    ),
     displayCommandStartMarker:
       input.displayCommandStartMarker ?? DEFAULT_OPTIONS.displayCommandStartMarker,
-    maxOutputLines: positiveInteger(
-      "maxOutputLines",
-      input.maxOutputLines ?? DEFAULT_OPTIONS.maxOutputLines,
-    ),
     maxOutputBytes: positiveInteger(
       "maxOutputBytes",
       input.maxOutputBytes ?? DEFAULT_OPTIONS.maxOutputBytes,
@@ -425,7 +455,7 @@ const fullOutputSuffix = (fullOutputPath: string | undefined): string =>
 const fullOutputNotice = (fullOutputPath: string): string => `[Full output: ${fullOutputPath}]`;
 
 const shouldShowOutputPath = (options: ResolvedOptions): boolean =>
-  options.alwaysShowOutputFilePath || options.autoCloseWindowsOnCompletion;
+  options.alwaysShowOutputFilePath;
 
 const truncationNotice = (
   content: string,
@@ -481,8 +511,11 @@ export const formatTmuxOutputForContext = (
 
 const formatOutput = formatTmuxOutputForContext;
 
-const outputTruncationOptions = (options: ResolvedOptions): TruncationOptions => ({
-  maxLines: options.maxOutputLines,
+const outputTruncationOptions = (
+  options: ResolvedOptions,
+  maxLines: number,
+): TruncationOptions => ({
+  maxLines,
   maxBytes: options.maxOutputBytes,
 });
 
@@ -583,8 +616,13 @@ const stripTrailingEmptyLines = (lines: string[]): string[] => {
   return lines.slice(0, lines.length - reversedLastContentIndex);
 };
 
-const parseCollapsedOutputParts = (raw: string): CollapsedOutputParts => {
-  const lines = raw.split("\n").filter((line) => !isFullOutputNoticeLine(line));
+const parseCollapsedOutputParts = (
+  raw: string,
+  hideFullOutputNotice: boolean,
+): CollapsedOutputParts => {
+  const lines = raw
+    .split("\n")
+    .filter((line) => !hideFullOutputNotice || !isFullOutputNoticeLine(line));
   const truncationIndex = lines.findIndex(isTruncationNoticeLine);
   if (truncationIndex === -1) return { outputLines: stripTrailingEmptyLines(lines) };
 
@@ -597,16 +635,17 @@ const parseCollapsedOutputParts = (raw: string): CollapsedOutputParts => {
 const collapsedElisionLine = (earlierLines: number): string =>
   `... (${earlierLines} earlier lines, ctrl+o to expand)`;
 
-const collapsedVisibleOutputLineCount = (parts: CollapsedOutputParts): number =>
-  parts.truncationNotice
-    ? TRUNCATED_COLLAPSED_OUTPUT_PREVIEW_LINES
-    : COLLAPSED_OUTPUT_PREVIEW_LINES;
+const expandedElisionLine = (earlierLines: number): string =>
+  `... (${earlierLines} earlier lines omitted)`;
 
-export const formatRenderedBashResult = (raw: string, expanded: boolean): string => {
-  if (expanded) return raw;
-
-  const parts = parseCollapsedOutputParts(raw);
-  const visibleOutputLineCount = collapsedVisibleOutputLineCount(parts);
+export const formatRenderedBashResult = (
+  raw: string,
+  expanded: boolean,
+  compactDisplayLines = DEFAULT_OPTIONS.bashCompactDisplayLines,
+  expandedDisplayLines = DEFAULT_OPTIONS.bashExpandedDisplayLines,
+): string => {
+  const parts = parseCollapsedOutputParts(raw, !expanded);
+  const visibleOutputLineCount = expanded ? expandedDisplayLines : compactDisplayLines;
   if (parts.outputLines.length <= visibleOutputLineCount) {
     return [...parts.outputLines, ...(parts.truncationNotice ? ["", parts.truncationNotice] : [])]
       .join("\n")
@@ -614,15 +653,12 @@ export const formatRenderedBashResult = (raw: string, expanded: boolean): string
   }
 
   const visibleOutputLines = parts.outputLines.slice(-visibleOutputLineCount);
-  const visibleNoticeLineCount = parts.truncationNotice ? 1 : 0;
-  const earlierLines = Math.max(
-    0,
-    parts.outputLines.length - visibleOutputLines.length - visibleNoticeLineCount,
-  );
+  const earlierLines = Math.max(0, parts.outputLines.length - visibleOutputLines.length);
+  const elisionLine = expanded
+    ? expandedElisionLine(earlierLines)
+    : collapsedElisionLine(earlierLines);
   const truncationNoticeLines = parts.truncationNotice ? ["", parts.truncationNotice] : [];
-  return [collapsedElisionLine(earlierLines), ...visibleOutputLines, ...truncationNoticeLines]
-    .join("\n")
-    .trimEnd();
+  return [elisionLine, ...visibleOutputLines, ...truncationNoticeLines].join("\n").trimEnd();
 };
 
 const isCollapsedElisionLine = (line: string): boolean =>
@@ -700,8 +736,14 @@ export const renderBackgroundBashResultText = (
   raw: string,
   expanded: boolean,
   theme: RenderTheme,
+  options = DEFAULT_OPTIONS,
 ): string => {
-  const output = formatRenderedBashResult(raw, expanded);
+  const output = formatRenderedBashResult(
+    raw,
+    expanded,
+    options.bashCompactDisplayLines,
+    options.bashExpandedDisplayLines,
+  );
   const renderedOutput = output ? theme.fg("toolOutput", output) : "";
   return renderedOutput ? `\n${renderedOutput}` : "";
 };
@@ -712,8 +754,14 @@ export const renderBashResultText = (
   isPartial: boolean,
   state: BashRenderState,
   theme: RenderTheme,
+  options = DEFAULT_OPTIONS,
 ): string => {
-  const output = formatRenderedBashResult(raw, expanded);
+  const output = formatRenderedBashResult(
+    raw,
+    expanded,
+    options.bashCompactDisplayLines,
+    options.bashExpandedDisplayLines,
+  );
   const duration = bashDurationText(state, isPartial);
   const renderedOutput = output ? renderBashOutputText(output, theme) : "";
   const renderedDuration = duration ? theme.fg("muted", duration) : "";
@@ -737,10 +785,10 @@ const emitForegroundBashOutputUpdate = (
   if (!onUpdate) return lastText;
 
   const output = formatTrimmedOutput(
-    commandOutput(windowId, options.captureLines, outputFile),
+    commandOutputTail(windowId, options.bashContextLines, outputFile),
     outputFile,
     shouldShowOutputPath(options),
-    outputTruncationOptions(options),
+    outputTruncationOptions(options, options.bashContextLines),
   );
   if (output.text === "(no output)" || output.text === lastText) return lastText;
 
@@ -767,11 +815,22 @@ const startForegroundBashOutputUpdates = (
 const completionExpandedLines = (lines: string[]): string[] =>
   lines.filter((line) => line.trim() !== "```").map(stripFullOutputNoticeBrackets);
 
-export const formatRenderedCompletionMessage = (raw: string, expanded: boolean): string => {
+export const formatRenderedCompletionMessage = (
+  raw: string,
+  expanded: boolean,
+  options = DEFAULT_OPTIONS,
+): string => {
   const [summary = "", ...detail] = raw.split("\n");
-  if (expanded) return [summary, ...indentDisplayLines(completionExpandedLines(detail))].join("\n");
+  if (expanded) {
+    const detailLines = completionExpandedLines(detail).slice(
+      -options.completedExpandedDisplayLines,
+    );
+    return [summary, ...indentDisplayLines(detailLines)].join("\n");
+  }
 
-  const detailLines = formatCompletionDetailLines(detail).slice(0, 5);
+  const detailLines = formatCompletionDetailLines(detail).slice(
+    -options.completedCompactDisplayLines,
+  );
   if (detailLines.length === 0) return compactCompletionSummary(summary);
 
   return [compactCompletionSummary(summary), "", ...indentCompletionDetailLines(detailLines)].join(
@@ -994,9 +1053,6 @@ const waitForExitCode = async (
 const captureWindowOutput = (windowId: string, lines: number): string =>
   execSafe(`tmux capture-pane -t ${shellQuote(windowId)} -p -S -${lines}`) ?? "";
 
-const commandOutput = (windowId: string, lines: number, outputFile?: string): string =>
-  readOutputFile(outputFile) ?? captureWindowOutput(windowId, lines);
-
 const commandOutputTail = (windowId: string, lines: number, outputFile?: string): string => {
   const fileOutput = readOutputFile(outputFile);
   if (fileOutput !== null) return limitOutputLines(fileOutput, lines);
@@ -1010,24 +1066,37 @@ const isBashCreatedWindow = (window: TmuxWindow): boolean =>
 const getBashCreatedWindows = (session: string, filters: TmuxWindowFilters = {}): TmuxWindow[] =>
   getWindows(session, filters).filter(isBashCreatedWindow);
 
-const bashWindowOutput = (window: TmuxWindow): string => readOutputFile(window.outputFile) ?? "";
+const bashWindowOutput = (window: TmuxWindow, lines: number): string =>
+  limitOutputLines(readOutputFile(window.outputFile) ?? "", lines);
 
-const formatBashWindowOutput = (window: TmuxWindow, options: ResolvedOptions): FormattedOutput =>
+const formatBashWindowOutput = (
+  window: TmuxWindow,
+  options: ResolvedOptions,
+  contextLines: number,
+): FormattedOutput =>
   formatOutput(
-    bashWindowOutput(window).trim(),
+    bashWindowOutput(window, contextLines).trim(),
     window.outputFile,
     "(no output)",
     false,
-    outputTruncationOptions(options),
+    outputTruncationOptions(options, contextLines),
   );
 
 const bashWindowDisplayLines = (
   window: TmuxWindow,
   expanded: boolean,
   options: ResolvedOptions,
+  contextLines: number,
+  compactDisplayLines: number,
+  expandedDisplayLines: number,
 ): string[] => [
   `$ ${window.displayCommand ?? window.title}`,
-  ...formatRenderedBashResult(formatBashWindowOutput(window, options).text, expanded).split("\n"),
+  ...formatRenderedBashResult(
+    formatBashWindowOutput(window, options, contextLines).text,
+    expanded,
+    compactDisplayLines,
+    expandedDisplayLines,
+  ).split("\n"),
 ];
 
 const pollerKey = (session: string, windowId: string): string => `${session}:${windowId}`;
@@ -1133,10 +1202,28 @@ const pollerDetails = ({
   lines,
 });
 
-const formatPollMessage = (window: TmuxWindow, options: ResolvedOptions): string =>
+const formatPollMessage = (window: TmuxWindow, options: ResolvedOptions, lines: number): string =>
   `tmux poll: ${window.title} ${window.id}\n${indentDisplayLines(
-    bashWindowDisplayLines(window, false, options),
+    bashWindowDisplayLines(window, true, options, lines, options.pollCompactDisplayLines, lines),
   ).join("\n")}\n\n  ${tmuxWindowAttachHint(window.id)}`;
+
+export const formatRenderedPollMessage = (
+  raw: string,
+  expanded: boolean,
+  options = DEFAULT_OPTIONS,
+): string => {
+  const [summary = "", ...detail] = raw.split("\n");
+  const displayLines = expanded
+    ? options.pollExpandedDisplayLines
+    : options.pollCompactDisplayLines;
+  const compacted = formatRenderedBashResult(
+    detail.join("\n"),
+    expanded,
+    displayLines,
+    displayLines,
+  );
+  return [summary, compacted].filter(Boolean).join("\n");
+};
 
 const startPoller = (
   pi: ExtensionAPI,
@@ -1167,15 +1254,15 @@ const startPoller = (
     const exitCode = readSignalExitCode(state, signalInfo);
     const completed = exitCode !== undefined;
     const outputFile = signalInfo?.outputFile ?? window.outputFile;
-    const outputLines = completed ? options.completionTailLines : lines;
+    const outputLines = completed ? options.completedContextLines : lines;
     const output = completed
       ? formatTrimmedOutput(
           commandOutputTail(windowId, outputLines, outputFile),
           outputFile,
           shouldShowOutputPath(options),
-          outputTruncationOptions(options),
+          outputTruncationOptions(options, outputLines),
         ).text
-      : formatBashWindowOutput(window, options).text;
+      : formatBashWindowOutput(window, options, outputLines).text;
     if (!completed && output === lastText) return;
 
     lastText = output;
@@ -1188,7 +1275,7 @@ const startPoller = (
           ? `${formatCompletionSummary(exitCode)}
 
 \`\`\`\n${output}\n\`\`\``
-          : formatPollMessage(window, options),
+          : formatPollMessage(window, options, lines),
         display: true,
       },
       { triggerTurn: completed, deliverAs: "followUp" },
@@ -1231,14 +1318,14 @@ const handleCompletionSignal = (
   const rawOutput =
     fileOutput ??
     execSafe(
-      `tmux capture-pane -t ${shellQuote(parsed.windowId)} -p -S -${options.completionCaptureLines}`,
+      `tmux capture-pane -t ${shellQuote(parsed.windowId)} -p -S -${options.completedContextLines}`,
     );
   const output = formatOutput(
-    trimOutput(rawOutput, options.completionTailLines),
+    trimOutput(rawOutput, options.completedContextLines),
     fileOutput === null ? undefined : outputFile,
     "(no output)",
     shouldShowOutputPath(options),
-    outputTruncationOptions(options),
+    outputTruncationOptions(options, options.completedContextLines),
   ).text;
   const code = parseInt(exitCode);
   state.signalStartedAt.delete(filename);
@@ -1330,10 +1417,28 @@ const renderedToolText = (
 const toolError = (text: string) => ({ ...toolText(text), isError: true });
 
 const peekWindowExpandedLines = (window: TmuxWindow, options: ResolvedOptions): string[] =>
-  indentDisplayLines(bashWindowDisplayLines(window, true, options));
+  indentDisplayLines(
+    bashWindowDisplayLines(
+      window,
+      true,
+      options,
+      options.peekExpandedDisplayLines,
+      options.peekCompactDisplayLines,
+      options.peekExpandedDisplayLines,
+    ),
+  );
 
 const peekWindowCollapsedLines = (window: TmuxWindow, options: ResolvedOptions): string[] =>
-  indentDisplayLines(bashWindowDisplayLines(window, false, options));
+  indentDisplayLines(
+    bashWindowDisplayLines(
+      window,
+      false,
+      options,
+      options.peekCompactDisplayLines,
+      options.peekCompactDisplayLines,
+      options.peekExpandedDisplayLines,
+    ),
+  );
 
 const renderPeekDetails = (windows: TmuxWindow[], options: ResolvedOptions): TmuxRenderDetails => {
   if (windows.length === 1) {
@@ -1382,7 +1487,14 @@ const peekAction = (
     .map((window) =>
       [
         `tmux window: ${window.title} ${window.id}`,
-        ...bashWindowDisplayLines(window, true, options),
+        ...bashWindowDisplayLines(
+          window,
+          true,
+          options,
+          options.peekContextLines,
+          options.peekCompactDisplayLines,
+          options.peekContextLines,
+        ),
       ].join("\n"),
     )
     .join("\n\n");
@@ -1622,10 +1734,10 @@ const runBashInTmux = async (
     state.signalStartedAt.delete(completionSignalFilename);
   }
   const output = formatTrimmedOutput(
-    commandOutput(result.windowId, options.captureLines, result.outputFile),
+    commandOutputTail(result.windowId, options.bashContextLines, result.outputFile),
     result.outputFile,
     shouldShowOutputPath(options),
-    outputTruncationOptions(options),
+    outputTruncationOptions(options, options.bashContextLines),
   );
   const text = output.text;
 
@@ -1690,7 +1802,7 @@ const registerBashTool = (
   pi.registerTool({
     name: "bash",
     label: "bash",
-    description: `Execute a bash command in a background tmux window. Output is truncated to last ${options.maxOutputLines} lines or ${options.maxOutputBytes / 1024}KB. Defaults to a ${options.defaultTimeoutSeconds}s timeout, max ${options.maxTimeoutSeconds}s; timeoutAction defaults to "background". Use background for long-running commands.`,
+    description: `Execute a bash command in a background tmux window. Output is truncated to last ${options.bashContextLines} lines or ${options.maxOutputBytes / 1024}KB. Defaults to a ${options.defaultTimeoutSeconds}s timeout, max ${options.maxTimeoutSeconds}s; timeoutAction defaults to "background". Use background for long-running commands.`,
     promptSnippet: "Execute bash commands in background tmux windows",
     promptGuidelines: [
       'Use bash with background: true or timeoutAction: "background" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.',
@@ -1717,12 +1829,12 @@ const registerBashTool = (
       const raw = content?.type === "text" ? content.text : "";
 
       if (!shouldRenderBashDuration(bashContext.args, raw)) {
-        return new Text(renderBackgroundBashResultText(raw, expanded, theme), 0, 0);
+        return new Text(renderBackgroundBashResultText(raw, expanded, theme, options), 0, 0);
       }
 
       updateBashResultTiming(bashContext, isPartial);
       return new Text(
-        `\n${renderBashResultText(raw, expanded, isPartial, bashContext.state, theme)}`,
+        `\n${renderBashResultText(raw, expanded, isPartial, bashContext.state, theme, options)}`,
         0,
         0,
       );
@@ -1805,10 +1917,11 @@ const registerTool = (pi: ExtensionAPI, state: ExtensionState, options: Resolved
   });
 };
 
-const registerRenderers = (pi: ExtensionAPI): void => {
-  pi.registerMessageRenderer("tmux-bash-poll", (message, _options, theme) => {
+const registerRenderers = (pi: ExtensionAPI, options: ResolvedOptions): void => {
+  pi.registerMessageRenderer("tmux-bash-poll", (message, { expanded }, theme) => {
     const content = typeof message.content === "string" ? message.content : "";
-    const [summary = "", ...detail] = content.split("\n");
+    const rendered = formatRenderedPollMessage(content, expanded, options);
+    const [summary = "", ...detail] = rendered.split("\n");
     return new Text(
       `${theme.fg("success", "↻")} ${summary}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
       0,
@@ -1818,7 +1931,7 @@ const registerRenderers = (pi: ExtensionAPI): void => {
 
   pi.registerMessageRenderer("tmux-bash-completion", (message, { expanded }, theme) => {
     const content = typeof message.content === "string" ? message.content : "";
-    const rendered = formatRenderedCompletionMessage(content, expanded);
+    const rendered = formatRenderedCompletionMessage(content, expanded, options);
     const [summary = "", ...detail] = rendered.split("\n");
     const icon = content.split("\n")[0]?.includes("failed")
       ? theme.fg("error", "✗")
@@ -1844,14 +1957,6 @@ export const tmuxBash = (input: TmuxBashOptions = {}) => {
       state.activeGitRoot = gitRoot;
       state.activePiSessionId = ctx.sessionManager.getSessionId();
       state.activeSession = gitRoot ? tmuxSessionNameForGitRoot(gitRoot, options) : null;
-      if (state.activeSession && options.autoKillIdleOnStartup && gitRoot) {
-        const filters = tmuxWindowFiltersForScope(
-          gitRoot,
-          ctx.sessionManager.getSessionId(),
-          options,
-        );
-        clearIdleBashWindows({ gitRoot, session: state.activeSession, filters });
-      }
       updateBackgroundProcessStatus(ctx, options);
     });
 
@@ -1865,6 +1970,6 @@ export const tmuxBash = (input: TmuxBashOptions = {}) => {
 
     registerBashTool(pi, state, options);
     registerTool(pi, state, options);
-    registerRenderers(pi);
+    registerRenderers(pi, options);
   };
 };

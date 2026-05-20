@@ -5,7 +5,7 @@ const options = {
   defaultTimeoutSeconds: 30,
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
-  defaultPollLines: 30,
+  pollContextLines: 30,
 };
 
 const invalidInput = (message: string) => ({ error: message });

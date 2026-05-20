@@ -432,7 +432,7 @@ describe("tmux-bash e2e", () => {
   it("honors custom git-root tmux session name templates", async () => {
     const project = createProject({
       tmuxSessionScope: "git-root",
-      gitRootTmuxSessionNameTemplate: "custom-{{}}",
+      gitRootTmuxSessionNameTemplate: "custom-{gitRootSessionName}",
     });
 
     const result = await project.run({
@@ -441,7 +441,9 @@ describe("tmux-bash e2e", () => {
     });
 
     expectPiSuccess(result);
-    expect(project.tmuxSession()).toBe(backgroundSessionName(project.projectDir, "custom-{{}}"));
+    expect(project.tmuxSession()).toBe(
+      backgroundSessionName(project.projectDir, "custom-{gitRootSessionName}"),
+    );
     expect(windowTitles(project)).toContain("custom-git-root");
   }, 20_000);
 

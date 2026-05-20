@@ -66,7 +66,7 @@ describe("tmux-bash output truncation", () => {
   });
 
   it("closes completed windows by default", () => {
-    expect(DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate).toBe("{{}}-bg");
+    expect(DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate).toBe("{gitRootSessionName}-bg");
     expect(DEFAULT_OPTIONS.tmuxSessionScope).toBe("global");
     expect(DEFAULT_OPTIONS.globalTmuxSessionName).toBe("pi-background");
     expect(DEFAULT_OPTIONS.tmuxWindowScope).toBe("pi-session");
@@ -75,25 +75,36 @@ describe("tmux-bash output truncation", () => {
     expect(DEFAULT_OPTIONS.preserveOutputFiles).toBe(false);
     expect(DEFAULT_OPTIONS.outputDir).toBe("/tmp/pi-tmux-bash");
     expect(DEFAULT_OPTIONS.displayCommandStartMarker).toBe("# SHIM_END");
-    expect(DEFAULT_OPTIONS.maxOutputLines).toBe(2000);
+    expect(DEFAULT_OPTIONS.bashContextLines).toBe(2000);
+    expect(DEFAULT_OPTIONS.bashCompactDisplayLines).toBe(5);
+    expect(DEFAULT_OPTIONS.bashExpandedDisplayLines).toBe(2000);
+    expect(DEFAULT_OPTIONS.completedContextLines).toBe(20);
+    expect(DEFAULT_OPTIONS.completedCompactDisplayLines).toBe(5);
+    expect(DEFAULT_OPTIONS.completedExpandedDisplayLines).toBe(20);
+    expect(DEFAULT_OPTIONS.pollContextLines).toBe(30);
+    expect(DEFAULT_OPTIONS.pollCompactDisplayLines).toBe(5);
+    expect(DEFAULT_OPTIONS.pollExpandedDisplayLines).toBe(30);
+    expect(DEFAULT_OPTIONS.peekContextLines).toBe(2000);
+    expect(DEFAULT_OPTIONS.peekCompactDisplayLines).toBe(5);
+    expect(DEFAULT_OPTIONS.peekExpandedDisplayLines).toBe(2000);
     expect(DEFAULT_OPTIONS.maxOutputBytes).toBe(DEFAULT_MAX_BYTES);
   });
 
   it("resolves new tmux scope configuration", () => {
     const result = resolveOptions({
-      gitRootTmuxSessionNameTemplate: "git-{{}}",
+      gitRootTmuxSessionNameTemplate: "git-{gitRootSessionName}",
       tmuxSessionScope: "git-root",
       globalTmuxSessionName: "global-bg",
       tmuxWindowScope: "all",
-      maxOutputLines: 123,
+      bashContextLines: 123,
       maxOutputBytes: 456,
     });
 
-    expect(result.gitRootTmuxSessionNameTemplate).toBe("git-{{}}");
+    expect(result.gitRootTmuxSessionNameTemplate).toBe("git-{gitRootSessionName}");
     expect(result.tmuxSessionScope).toBe("git-root");
     expect(result.globalTmuxSessionName).toBe("global-bg");
     expect(result.tmuxWindowScope).toBe("all");
-    expect(result.maxOutputLines).toBe(123);
+    expect(result.bashContextLines).toBe(123);
     expect(result.maxOutputBytes).toBe(456);
   });
 
@@ -241,7 +252,7 @@ Took 5.0s`);
     );
 
     expect(result).toContain(
-      "<muted>... (3 earlier lines, </muted><dim>ctrl+o</dim><muted> to expand)</muted>",
+      "<muted>... (1 earlier lines, </muted><dim>ctrl+o</dim><muted> to expand)</muted>",
     );
     expect(result).toContain("<toolOutput>line-6</toolOutput>");
     expect(result).toContain(

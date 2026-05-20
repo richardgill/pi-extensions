@@ -43,7 +43,7 @@ export const getGitRoot = (cwd: string): string | null => {
   }
 };
 
-export const DEFAULT_SESSION_NAME_TEMPLATE = "{{}}-bg";
+export const DEFAULT_SESSION_NAME_TEMPLATE = "{gitRootSessionName}-bg";
 
 const projectSessionName = (gitRoot: string): string => {
   const slug = gitRoot.split("/").pop()?.slice(0, 16).toLowerCase() ?? "project";
@@ -54,7 +54,7 @@ const projectSessionName = (gitRoot: string): string => {
 export const backgroundSessionName = (
   gitRoot: string,
   template = DEFAULT_SESSION_NAME_TEMPLATE,
-): string => template.replaceAll("{{}}", projectSessionName(gitRoot));
+): string => template.replaceAll("{gitRootSessionName}", projectSessionName(gitRoot));
 
 export const sessionExists = (name: string): boolean =>
   execSafe(`tmux has-session -t ${shellQuote(name)} 2>/dev/null && echo yes`) === "yes";

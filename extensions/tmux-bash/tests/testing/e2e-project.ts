@@ -44,13 +44,19 @@ export const expectPiSuccess = (result: RunPiResult): void => {
   expect(result.code, result.stdout + result.stderr).toBe(0);
 };
 
+const configString = (value: unknown, fallback: string): string =>
+  typeof value === "string" ? value : fallback;
+
 const tmuxSessionNameForProject = (project: TempPiProject): string => {
   if (project.tmuxBashConfig.tmuxSessionScope === "git-root") {
-    const template = String(project.tmuxBashConfig.gitRootTmuxSessionNameTemplate ?? "{{}}-bg");
+    const template = configString(
+      project.tmuxBashConfig.gitRootTmuxSessionNameTemplate,
+      "{gitRootSessionName}-bg",
+    );
     return backgroundSessionName(project.projectDir, template);
   }
 
-  return String(project.tmuxBashConfig.globalTmuxSessionName ?? "pi-background");
+  return configString(project.tmuxBashConfig.globalTmuxSessionName, "pi-background");
 };
 
 const extensionsForProject = (project: TempPiProject, script: ScriptedStep[]): string[] => {

@@ -5,7 +5,7 @@ type SchemaOptions = {
   defaultTimeoutSeconds: number;
   maxTimeoutSeconds: number;
   defaultPollInterval: number;
-  defaultPollLines: number;
+  pollContextLines: number;
 };
 
 type InvalidInput<TInvalidResult> = (message: string) => TInvalidResult;
@@ -55,7 +55,7 @@ const pollLines = (options: SchemaOptions) =>
     .number()
     .int()
     .positive()
-    .default(options.defaultPollLines)
+    .default(options.pollContextLines)
     .describe("Lines captured per check-in.");
 
 const timeoutAction = z
@@ -123,7 +123,7 @@ export const buildTmuxInputSchema = (options: SchemaOptions) =>
         .number()
         .int()
         .positive()
-        .default(options.defaultPollLines)
+        .default(options.pollContextLines)
         .describe("Lines captured per check-in."),
     }),
     z.object({ action: tmuxAction("unpoll"), window: tmuxWindow }),
