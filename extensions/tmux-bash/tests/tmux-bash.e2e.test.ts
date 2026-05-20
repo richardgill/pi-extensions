@@ -77,7 +77,7 @@ const listContext =
 
 const peekContextOutput = (project: PiE2eProject): string => {
   const window = getWindows(project.tmuxSession()).find((item) => item.title === "peek-test");
-  return `tmux window: peek-test ${window?.id}\n$ printf 'peek-me\\n'; sleep 30\npeek-me\n\nAttach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+  return `tmux window: peek-test ${window?.id}\n$ printf 'peek-me\\n'; sleep 30\npeek-me`;
 };
 
 const contextPath = (project: PiE2eProject, name: string): string =>
@@ -347,8 +347,11 @@ describe("tmux-bash e2e", () => {
     expect(pollMessage?.content).toMatch(/^tmux poll: .* @\d+/);
     expect(pollMessage?.content).toContain("Attach with: tmux");
     expect(pollMessage?.content).not.toContain("(:");
-    expect(pollMessage?.content).not.toContain("line-1");
-    expect(pollMessage?.content).not.toContain("line-2");
+    expect(pollMessage?.content).toContain(
+      "$ printf 'line-1\\nline-2\\nline-3\\nline-4\\n'; sleep 5",
+    );
+    expect(pollMessage?.content).toContain("line-1");
+    expect(pollMessage?.content).toContain("line-2");
     expect(pollMessage?.content).toContain("line-3");
     expect(pollMessage?.content).toContain("line-4");
     expect(pollMessage?.triggerTurn).toBe(false);
@@ -482,7 +485,14 @@ describe("tmux-bash e2e", () => {
 
   it("kills a scoped background tmux window by window id", async () => {
     const project = createProject({ tmuxWindowScope: "all" });
-    const windowId = seedTmuxWindow(project, { title: "kill-id" });
+    const startResult = await project.run({
+      script: [bash("sleep 30", { background: true, name: "kill-id" }), scriptedText("started")],
+      prompt: "start kill window",
+    });
+    const windowId = getWindows(project.tmuxSession()).find(
+      (window) => window.title === "kill-id",
+    )?.id;
+    if (!windowId) throw new Error("Expected kill-id window to exist");
 
     const result = await project.run({
       script: [
@@ -492,6 +502,7 @@ describe("tmux-bash e2e", () => {
       prompt: "kill window id",
     });
 
+    expectPiSuccess(startResult);
     expectPiSuccess(result);
     expect(project.readContextOutput("kill-window-id")).toBe(
       `Killed background tmux window: kill-id ${windowId}.`,
@@ -517,7 +528,7 @@ describe("tmux-bash e2e", () => {
 
     expectPiSuccess(result);
     expect(project.readContextOutput("default-window-scope-kill")).toBe(
-      `No tmux window ${windowId} in session ${project.tmuxSession()}.`,
+      `No bash-created tmux window ${windowId} in session ${project.tmuxSession()}.`,
     );
     expect(windowTitles(project)).toEqual(["foreign"]);
   }, 20_000);
@@ -541,7 +552,7 @@ describe("tmux-bash e2e", () => {
 
     expectPiSuccess(result);
     expect(project.readContextOutput("git-root-window-scope-list")).toContain("own-git-root");
-    expect(project.readContextOutput("git-root-window-scope-list")).toContain(
+    expect(project.readContextOutput("git-root-window-scope-list")).not.toContain(
       "foreign-same-git-root",
     );
   }, 20_000);
@@ -561,7 +572,7 @@ describe("tmux-bash e2e", () => {
 
     expectPiSuccess(result);
     expect(project.readContextOutput("all-window-scope-list")).toContain("own-all");
-    expect(project.readContextOutput("all-window-scope-list")).toContain("untagged");
+    expect(project.readContextOutput("all-window-scope-list")).not.toContain("untagged");
   }, 20_000);
 
   it("distinguishes git-root and all window scopes in git-root tmux sessions", async () => {
@@ -597,7 +608,7 @@ describe("tmux-bash e2e", () => {
     expect(gitRootScoped.readContextOutput("git-root-scope-list")).toContain("own-git-root-scope");
     expect(gitRootScoped.readContextOutput("git-root-scope-list")).not.toContain("untagged-hidden");
     expect(allScoped.readContextOutput("all-scope-list")).toContain("own-all-scope");
-    expect(allScoped.readContextOutput("all-scope-list")).toContain("untagged-visible");
+    expect(allScoped.readContextOutput("all-scope-list")).not.toContain("untagged-visible");
   }, 30_000);
 
   it.each(testCases)(

@@ -71,9 +71,7 @@ const bashTranscript = (pane: string): string => {
 };
 
 const stableBashTranscript = (pane: string): string =>
-  bashTranscript(pane)
-    .replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]")
-    .replace(/Took [0-9]+\.[0-9]s/g, "Took <duration>");
+  stableFullOutputPath(bashTranscript(pane)).replace(/Took [0-9]+\.[0-9]s/g, "Took <duration>");
 
 const transcriptUntilLine = (pane: string, startText: string, endText: string): string => {
   const lines = trimmedPaneLines(pane);
@@ -98,11 +96,23 @@ const transcriptUntilSeparator = (pane: string, startPrefix: string): string => 
     .trimEnd();
 };
 
+const stableFullOutputPath = (text: string): string =>
+  text.replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]");
+
 const stableTmuxToolTranscript = (pane: string, startText: string): string =>
-  transcriptUntilLine(pane, startText, doneMarker).replace(/@\d+/g, "@<id>");
+  stableFullOutputPath(transcriptUntilLine(pane, startText, doneMarker)).replace(/@\d+/g, "@<id>");
 
 const stablePollMessageTranscript = (pane: string, windowTitle: string): string =>
-  transcriptUntilSeparator(pane, `↻ tmux poll: ${windowTitle} @`).replace(/@\d+/g, "@<id>");
+  stableFullOutputPath(transcriptUntilSeparator(pane, `↻ tmux poll: ${windowTitle} @`)).replace(
+    /@\d+/g,
+    "@<id>",
+  );
+
+const numberedLines = (prefix: string, start: number, end: number): string =>
+  Array.from(
+    { length: end - start + 1 },
+    (_, index) => `${prefix}-${String(start + index).padStart(3, "0")}`,
+  ).join("\n");
 
 afterEach(() => {
   projects.forEach((project) => project.cleanup());
@@ -285,6 +295,8 @@ Attach with: tmux switch-client -t @<id>`);
     expect(stableTmuxToolTranscript(result.checkpoints.collapsed, "tmux peek :all"))
       .toBe(`tmux peek :all
 ✓ tmux window: peek-overflow @<id>
+$ for i in $(seq 1 8); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
+... (3 earlier lines, ctrl+o to expand)
 peek-overflow-004
 peek-overflow-005
 peek-overflow-006
@@ -303,6 +315,47 @@ peek-overflow-005
 peek-overflow-006
 peek-overflow-007
 peek-overflow-008
+
+Attach with: tmux switch-client -t @<id>`);
+  }, 30_000);
+
+  it("renders overflowing peek output while collapsed", async () => {
+    const project = createProject();
+    const command =
+      "for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' \"$i\"; done; sleep 30";
+    const result = await runTui(project, [
+      bash(command, { background: true, name: "peek-overflow-400" }),
+      tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
+      reply(doneMarker),
+    ]);
+
+    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
+✓ tmux window: peek-overflow-400 @<id>
+$ for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
+... (395 earlier lines, ctrl+o to expand)
+${numberedLines("peek-overflow", 396, 400)}
+
+Attach with: tmux switch-client -t @<id>`);
+  }, 30_000);
+
+  it("renders truncated overflowing peek output while collapsed", async () => {
+    const project = createProject();
+    const command =
+      "for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' \"$i\"; done; sleep 30";
+    const result = await runTui(project, [
+      bash(command, { background: true, name: "peek-truncated" }),
+      tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
+      reply(doneMarker),
+    ]);
+
+    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
+✓ tmux window: peek-truncated @<id>
+$ for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' "$i"; done; sleep 30
+... (1997 earlier lines, ctrl+o to expand)
+peek-truncated-3999
+peek-truncated-4000
+
+[Showing lines 2001-4000 of 4000. Full output: <path>]
 
 Attach with: tmux switch-client -t @<id>`);
   }, 30_000);
@@ -327,6 +380,55 @@ $ for i in $(seq 1 3); do printf 'poll-fit-%s\\n' "$i"; done; sleep 30
 poll-fit-1
 poll-fit-2
 poll-fit-3
+
+Attach with: tmux switch-client -t @<id>`);
+  }, 30_000);
+
+  it("renders overflowing periodic poll output exactly", async () => {
+    const project = createProject();
+    const command =
+      "for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' \"$i\"; done; sleep 30";
+    const result = await runTui(
+      project,
+      [
+        bash(command, { background: true, name: "poll-overflow" }),
+        tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
+        reply(doneMarker),
+      ],
+      { waitFor: "poll-overflow-400" },
+    );
+
+    expect(stablePollMessageTranscript(result.pane, "poll-overflow"))
+      .toBe(`↻ tmux poll: poll-overflow @<id>
+$ for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' "$i"; done; sleep 30
+... (395 earlier lines, ctrl+o to expand)
+${numberedLines("poll-overflow", 396, 400)}
+
+Attach with: tmux switch-client -t @<id>`);
+  }, 30_000);
+
+  it("renders truncated overflowing periodic poll output exactly", async () => {
+    const project = createProject();
+    const command =
+      "for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' \"$i\"; done; sleep 30";
+    const result = await runTui(
+      project,
+      [
+        bash(command, { background: true, name: "poll-truncated" }),
+        tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
+        reply(doneMarker),
+      ],
+      { waitFor: "poll-truncated-4000" },
+    );
+
+    expect(stablePollMessageTranscript(result.pane, "poll-truncated"))
+      .toBe(`↻ tmux poll: poll-truncated @<id>
+$ for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' "$i"; done; sleep 30
+... (1997 earlier lines, ctrl+o to expand)
+poll-truncated-3999
+poll-truncated-4000
+
+[Showing lines 2001-4000 of 4000. Full output: <path>]
 
 Attach with: tmux switch-client -t @<id>`);
   }, 30_000);

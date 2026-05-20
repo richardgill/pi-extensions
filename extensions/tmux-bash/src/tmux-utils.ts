@@ -9,11 +9,8 @@ export type TmuxWindow = {
   createdAt?: number;
   gitRoot?: string;
   piSessionId?: string;
-};
-
-export type TmuxPaneCapture = {
-  window: TmuxWindow;
-  output: string;
+  outputFile?: string;
+  displayCommand?: string;
 };
 
 export type TmuxWindowFilters = {
@@ -71,7 +68,7 @@ const matchesWindowFilters = (window: TmuxWindow, filters: TmuxWindowFilters): b
 
 export const getWindows = (name: string, filters?: string | TmuxWindowFilters): TmuxWindow[] => {
   const raw = execSafe(
-    `tmux list-windows -t ${shellQuote(name)} -F '#{window_id}|||#{window_index}|||#{window_name}|||#{window_active}|||#{@pi-tmux-bash-started-at}|||#{@pi-tmux-bash-git-root}|||#{@pi-tmux-bash-pi-session-id}'`,
+    `tmux list-windows -t ${shellQuote(name)} -F '#{window_id}|||#{window_index}|||#{window_name}|||#{window_active}|||#{@pi-tmux-bash-started-at}|||#{@pi-tmux-bash-git-root}|||#{@pi-tmux-bash-pi-session-id}|||#{@pi-tmux-bash-output-file}|||#{@pi-tmux-bash-display-command}'`,
   );
   if (!raw) return [];
 
@@ -87,6 +84,8 @@ export const getWindows = (name: string, filters?: string | TmuxWindowFilters): 
         createdAt = "",
         windowGitRoot = "",
         piSessionId = "",
+        outputFile = "",
+        displayCommand = "",
       ] = line.split("|||");
       return {
         id,
@@ -96,6 +95,8 @@ export const getWindows = (name: string, filters?: string | TmuxWindowFilters): 
         ...(createdAt ? { createdAt: parseInt(createdAt) } : {}),
         ...(windowGitRoot ? { gitRoot: windowGitRoot } : {}),
         ...(piSessionId ? { piSessionId } : {}),
+        ...(outputFile ? { outputFile } : {}),
+        ...(displayCommand ? { displayCommand } : {}),
       };
     })
     .filter((window) => matchesWindowFilters(window, windowFilters));
@@ -129,37 +130,3 @@ export const formatWindowLines = (windows: TmuxWindow[]): string[] =>
     const age = formatWindowAge(window);
     return `  ${window.title} ${window.id}${age ? ` (${age})` : ""}`;
   });
-
-export const capturePaneOutputs = (
-  name: string,
-  window: number | "all",
-  lines = 50,
-  filters?: string | TmuxWindowFilters,
-): TmuxPaneCapture[] => {
-  const windows = getWindows(name, filters);
-  const targets = window === "all" ? windows : windows.filter((item) => item.index === window);
-
-  return targets.map((item) => {
-    const output = execSafe(
-      `tmux capture-pane -t ${shellQuote(`${name}:${item.index}`)} -p -S -${lines}`,
-    );
-    return { window: item, output: output ?? "(empty)" };
-  });
-};
-
-export const capturePanes = (
-  name: string,
-  window: number | "all",
-  lines = 50,
-  filters?: string | TmuxWindowFilters,
-): string => {
-  const captures = capturePaneOutputs(name, window, lines, filters);
-  if (captures.length === 0) return "No matching windows.";
-
-  return captures
-    .map(
-      (item) =>
-        `tmux window: ${item.window.title} ${item.window.id}\n${item.output}\n\n${tmuxWindowAttachHint(item.window.id)}`,
-    )
-    .join("\n\n");
-};
