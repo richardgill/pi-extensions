@@ -7,6 +7,7 @@ import {
   formatRenderedBashCall,
   formatRenderedBashResult,
   formatRenderedCompletionMessage,
+  formatRenderedPollMessage,
   formatTmuxOutputForContext,
   limitOutputLines,
   renderBackgroundBashResultText,
@@ -192,13 +193,13 @@ describe("tmux-bash unit", () => {
         background: true,
       });
       const result = renderBackgroundBashResultText(
-        "Started in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
+        "Started in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
         false,
         plainTheme,
       );
 
       expect(`${call}\n${result}`).toBe(
-        "$ sleep 90 (background)\n\nStarted in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\n  Attach with: tmux switch-client -t @1065",
+        "$ sleep 90 (background)\n\nStarted in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
       );
     });
 
@@ -367,15 +368,29 @@ Took 5.0s`);
       ].join("\n");
 
       expect(formatRenderedCompletionMessage(raw, false)).toBe(
-        "Background bash finished\n\n  hello",
+        "Background bash finished\n\n hello",
       );
     });
 
-    it("renders expanded completion messages with indented output", () => {
+    it("renders expanded completion messages with one-space indented output", () => {
       const raw = "Background bash finished\n\n```\nhello\n```";
 
-      expect(formatRenderedCompletionMessage(raw, true)).toBe(
-        "Background bash finished\n\n  hello",
+      expect(formatRenderedCompletionMessage(raw, true)).toBe("Background bash finished\n\n hello");
+    });
+  });
+
+  describe("formatRenderedPollMessage", () => {
+    it("renders poll messages without icon and with one-space indented output", () => {
+      const raw = [
+        "tmux poll: poll-fit @1065",
+        " $ printf 'hello\\n'",
+        " hello",
+        "",
+        " Attach with: tmux switch-client -t @1065",
+      ].join("\n");
+
+      expect(formatRenderedPollMessage(raw, false)).toBe(
+        "tmux poll: poll-fit @1065\n\n $ printf 'hello\\n'\n hello\n\n Attach with: tmux switch-client -t @1065",
       );
     });
   });

@@ -55,7 +55,7 @@ const backgroundStartContext = (workspace: PiE2eWorkspace): string => {
     `Started in background tmux window: ${window?.title} ${window?.id}.`,
     "Result will be reported when it finishes.",
     "",
-    `  Attach with: ${attachCommand}`,
+    `Attach with: ${attachCommand}`,
   ].join("\n");
 };
 
@@ -446,7 +446,7 @@ describe("tmux-bash e2e", () => {
   }, 30_000);
 
   it("does not trigger assistant turns for background poll messages", async () => {
-    const workspace = createWorkspace();
+    const workspace = createWorkspace({ pollDelivery: "display" });
     const result = await workspace.runBashTool(
       {
         command: "printf 'line-1\\nline-2\\nline-3\\nline-4\\n'; sleep 5",
@@ -472,11 +472,11 @@ describe("tmux-bash e2e", () => {
     expect(pollMessage?.content).toContain("line-3");
     expect(pollMessage?.content).toContain("line-4");
     expect(pollMessage?.triggerTurn).toBe(false);
-    expect(pollMessage?.deliverAs).toBe("followUp");
+    expect(pollMessage?.deliverAs).toBeUndefined();
   }, 20_000);
 
   it("does not resend unchanged background poll output", async () => {
-    const workspace = createWorkspace();
+    const workspace = createWorkspace({ pollDelivery: "display" });
     const result = await workspace.runBashTool(
       {
         command: "printf 'same\\n'; sleep 5",
@@ -494,6 +494,29 @@ describe("tmux-bash e2e", () => {
     );
 
     expect(pollMessages).toHaveLength(1);
+  }, 20_000);
+
+  it("resends unchanged model-delivered background poll output", async () => {
+    const workspace = createWorkspace({ minimumPollIntervalSeconds: 1 });
+    const result = await workspace.runBashTool(
+      {
+        command: "printf 'same-model\\n'; sleep 5",
+        timeout: 10,
+        timeoutAction: "background",
+        background: true,
+        pollInterval: 1,
+        pollLines: 5,
+      },
+      { waitAfterExecuteMs: 2_200 },
+    );
+
+    const pollMessages = result.messages.filter(
+      (message) => message.customType === "tmux-bash-poll",
+    );
+
+    expect(pollMessages.length).toBeGreaterThanOrEqual(2);
+    expect(pollMessages.every((message) => message.triggerTurn === true)).toBe(true);
+    expect(pollMessages.every((message) => message.deliverAs === "followUp")).toBe(true);
   }, 20_000);
 
   it("uses global tmux session scope by default", async () => {

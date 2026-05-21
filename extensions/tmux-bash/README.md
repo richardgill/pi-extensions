@@ -170,6 +170,12 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Default seconds between automatic poll check-ins. 0 disables default polling.
   "defaultPollInterval": 0, // default; non-negative integer
 
+  // Whether poll cards trigger model turns or display only in the TUI.
+  "pollDelivery": "model", // "model" (default) | "display"
+
+  // Minimum seconds between model-delivered poll turns. Does not throttle display-only polls.
+  "minimumPollIntervalSeconds": 10, // default; positive integer
+
   // Maximum output bytes kept for model context and TUI cards.
   "maxOutputBytes": 51200, // default; positive integer
 

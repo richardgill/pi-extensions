@@ -89,6 +89,8 @@ export type TmuxBashOptions = {
   defaultTimeoutSeconds?: number;
   maxTimeoutSeconds?: number;
   defaultPollInterval?: number;
+  pollDelivery?: "model" | "display";
+  minimumPollIntervalSeconds?: number;
   displayCommandStartMarker?: string;
   maxOutputBytes?: number;
   systemPrompt?: boolean;
@@ -155,6 +157,7 @@ type ExtensionState = {
   bashSignals: Set<string>;
   ownedSignals: Set<string>;
   pollers: Map<string, Poller>;
+  pendingPollMessageTimers: Set<NodeJS.Timeout>;
   activeSession: string | null;
   activeGitRoot: string | null;
   activePiSessionId: string | null;
@@ -222,6 +225,8 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   defaultTimeoutSeconds: 30,
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
+  pollDelivery: "model",
+  minimumPollIntervalSeconds: 10,
   displayCommandStartMarker: "# SHIM_END",
   maxOutputBytes: DEFAULT_MAX_BYTES,
   systemPrompt: true,
@@ -365,6 +370,11 @@ export const resolveOptions = (input: TmuxBashOptions = {}): ResolvedOptions => 
       "defaultPollInterval",
       input.defaultPollInterval ?? DEFAULT_OPTIONS.defaultPollInterval,
     ),
+    pollDelivery: input.pollDelivery ?? DEFAULT_OPTIONS.pollDelivery,
+    minimumPollIntervalSeconds: positiveInteger(
+      "minimumPollIntervalSeconds",
+      input.minimumPollIntervalSeconds ?? DEFAULT_OPTIONS.minimumPollIntervalSeconds,
+    ),
     displayCommandStartMarker:
       input.displayCommandStartMarker ?? DEFAULT_OPTIONS.displayCommandStartMarker,
     maxOutputBytes: positiveInteger(
@@ -386,6 +396,7 @@ export const createState = (): ExtensionState => ({
   bashSignals: new Set(),
   ownedSignals: new Set(),
   pollers: new Map(),
+  pendingPollMessageTimers: new Set(),
   activeSession: null,
   activeGitRoot: null,
   activePiSessionId: null,
@@ -604,7 +615,7 @@ const stripFullOutputNoticeBrackets = (line: string): string =>
   line.replace(/^\[(Full output: .*?)\]$/, "$1");
 
 const indentDisplayLine = (line: string): string =>
-  line.trim() ? `  ${stripFullOutputNoticeBrackets(line)}` : "";
+  line.trim() ? ` ${stripFullOutputNoticeBrackets(line)}` : "";
 
 const indentDisplayLines = (lines: string[]): string[] => lines.map(indentDisplayLine);
 
@@ -622,7 +633,9 @@ const isTmuxTargetLine = (line: string): boolean => line.trimStart().startsWith(
 const formatCompletionDetailLines = (lines: string[]): string[] =>
   visibleOutputLines(lines).filter((line) => !isTmuxTargetLine(line));
 
-const indentCompletionDetailLines = (lines: string[]): string[] => indentDisplayLines(lines);
+const unindentDisplayLine = (line: string): string => (line.startsWith(" ") ? line.slice(1) : line);
+
+const unindentDisplayLines = (lines: string[]): string[] => lines.map(unindentDisplayLine);
 
 const bashCallCommand = (args: Partial<BashInput>): string =>
   truncateText((args.command ?? "...").replace(/\s+/g, " ").trim(), 80);
@@ -887,7 +900,7 @@ export const formatRenderedCompletionMessage = (
   const detailLines = formatCompletionDetailLines(output.split("\n"));
   if (detailLines.length === 0) return summary;
 
-  return [summary, "", ...indentCompletionDetailLines(detailLines)].join("\n");
+  return [summary, "", ...indentDisplayLines(detailLines)].join("\n");
 };
 
 const signalFilename = ({ session, windowId, id }: SignalInfo): string =>
@@ -1296,7 +1309,7 @@ const pollWindowLines = (window: TmuxWindow, options: ResolvedOptions): string[]
 ];
 
 const formatPollMessage = (window: TmuxWindow, options: ResolvedOptions, _lines: number): string =>
-  `tmux poll: ${window.title} ${window.id}\n${indentDisplayLines(pollWindowLines(window, options)).join("\n")}\n\n  ${tmuxWindowAttachHint(window.id, process.env, options.tmuxBinary)}`;
+  `tmux poll: ${window.title} ${window.id}\n${indentDisplayLines(pollWindowLines(window, options)).join("\n")}\n\n${indentDisplayLine(tmuxWindowAttachHint(window.id, process.env, options.tmuxBinary))}`;
 
 const isAttachLine = (line: string): boolean => line.trimStart().startsWith("Attach with:");
 
@@ -1316,7 +1329,7 @@ const formatRenderedPollOutput = (
   displayLines: number,
   options: ResolvedOptions,
 ): string => {
-  const [command = "", ...detail] = output;
+  const [command = "", ...detail] = unindentDisplayLines(output);
   const compacted = formatRenderedBashResult(
     detail.join("\n"),
     expanded,
@@ -1324,7 +1337,7 @@ const formatRenderedPollOutput = (
     displayLines,
     options.pollTruncatedCompactDisplayLines,
   );
-  return [command, compacted].filter(Boolean).join("\n");
+  return indentDisplayLines([command, compacted].filter(Boolean).join("\n").split("\n")).join("\n");
 };
 
 export const formatRenderedPollMessage = (
@@ -1338,8 +1351,32 @@ export const formatRenderedPollMessage = (
     : options.pollCompactDisplayLines;
   const split = splitPollDetailLines(detail);
   const output = formatRenderedPollOutput(split.output, expanded, displayLines, options);
-  const rendered = [summary, output].filter(Boolean).join("\n");
+  const rendered = [summary, output].filter(Boolean).join("\n\n");
   return split.attach.length > 0 ? `${rendered}\n${split.attach.join("\n")}` : rendered;
+};
+
+type CustomMessageInput = Parameters<ExtensionAPI["sendMessage"]>[0];
+
+const effectivePollInterval = (interval: number, options: ResolvedOptions): number =>
+  options.pollDelivery === "model"
+    ? Math.max(interval, options.minimumPollIntervalSeconds)
+    : interval;
+
+const sendPollMessageWhenIdle = (
+  pi: ExtensionAPI,
+  state: ExtensionState,
+  message: CustomMessageInput,
+): void => {
+  if (state.statusContext?.isIdle?.() !== false) {
+    pi.sendMessage(message, { triggerTurn: false });
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    state.pendingPollMessageTimers.delete(timer);
+    sendPollMessageWhenIdle(pi, state, message);
+  }, 100);
+  state.pendingPollMessageTimers.add(timer);
 };
 
 const startPoller = (
@@ -1382,23 +1419,28 @@ const startPoller = (
           outputTruncationOptions(options, outputLines),
         ).text
       : formatBashWindowOutput(window, options, outputLines).text;
-    if (!completed && output === lastText) return;
+    if (!completed && options.pollDelivery === "display" && output === lastText) return;
 
     lastText = output;
     if (completed) stopPoller(state, session, windowId);
 
-    pi.sendMessage(
-      {
-        customType: completed ? "tmux-bash-completion" : "tmux-bash-poll",
-        content: completed
-          ? `${formatCompletionSummary(exitCode)}
+    const message = {
+      customType: completed ? "tmux-bash-completion" : "tmux-bash-poll",
+      content: completed
+        ? `${formatCompletionSummary(exitCode)}
 
 \`\`\`\n${output}\n\`\`\``
-          : formatPollMessage(window, options, lines),
-        display: true,
-      },
-      { triggerTurn: completed, deliverAs: "followUp" },
-    );
+        : formatPollMessage(window, options, lines),
+      display: true,
+    };
+
+    if (completed) {
+      pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+    } else if (options.pollDelivery === "model") {
+      pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+    } else {
+      sendPollMessageWhenIdle(pi, state, message);
+    }
     if (completed) {
       closeWindowOnCompletion(windowId, options);
       updateStoredBackgroundProcessStatus(state, options);
@@ -1510,6 +1552,8 @@ const cleanupState = (state: ExtensionState, options: ResolvedOptions): void => 
   state.watcher = null;
   for (const poller of state.pollers.values()) clearInterval(poller.timer);
   state.pollers.clear();
+  for (const timer of state.pendingPollMessageTimers.values()) clearTimeout(timer);
+  state.pendingPollMessageTimers.clear();
   state.bashSignals.clear();
   state.ownedSignals.clear();
   state.signalStartedAt.clear();
@@ -1570,7 +1614,7 @@ const renderPeekDetails = (windows: TmuxWindow[], options: ResolvedOptions): Tmu
       collapsedLines: peekWindowCollapsedLines(window, options),
       attachLines: [
         "",
-        `  ${tmuxWindowAttachHint(window?.id ?? "", process.env, options.tmuxBinary)}`,
+        indentDisplayLine(tmuxWindowAttachHint(window?.id ?? "", process.env, options.tmuxBinary)),
       ],
     };
   }
@@ -1695,19 +1739,20 @@ const pollAction = (
   if (params.pollInterval <= 0)
     return toolError("Error: pollInterval must be greater than 0 for poll action.");
 
+  const pollInterval = effectivePollInterval(params.pollInterval, options);
   startPoller(
     pi,
     state,
     session,
     window.id,
     windowIndex,
-    params.pollInterval,
+    pollInterval,
     params.pollLines,
     options,
     gitRoot,
     piSessionId,
   );
-  return toolText(`Polling ${window.title} every ${params.pollInterval}s.`);
+  return toolText(`Polling ${window.title} every ${pollInterval}s.`);
 };
 
 const unpollAction = (
@@ -1836,6 +1881,7 @@ const runBashInTmux = async (
   updateBackgroundProcessStatus(ctx, options);
 
   if (params.background === true) {
+    const pollInterval = effectivePollInterval(params.pollInterval, options);
     if (params.pollInterval > 0)
       startPoller(
         pi,
@@ -1843,7 +1889,7 @@ const runBashInTmux = async (
         session,
         result.windowId,
         result.index,
-        params.pollInterval,
+        pollInterval,
         params.pollLines,
         options,
         gitRoot,
@@ -1854,7 +1900,7 @@ const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in background tmux window: ${windowNameForCommand(params.command, params.name, options)} ${result.windowId}.${params.pollInterval > 0 ? ` Polling every ${params.pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n  ${tmuxWindowAttachHint(result.windowId, process.env, options.tmuxBinary)}`,
+          text: `Started in background tmux window: ${windowNameForCommand(params.command, params.name, options)} ${result.windowId}.${params.pollInterval > 0 ? ` Polling every ${pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n${tmuxWindowAttachHint(result.windowId, process.env, options.tmuxBinary)}`,
         },
       ],
       details: undefined,
@@ -1900,6 +1946,7 @@ const runBashInTmux = async (
       throw new Error(`${text}\n\nCommand timed out after ${params.timeout} seconds`);
     }
 
+    const pollInterval = effectivePollInterval(params.pollInterval, options);
     if (params.pollInterval > 0)
       startPoller(
         pi,
@@ -1907,14 +1954,14 @@ const runBashInTmux = async (
         session,
         result.windowId,
         result.index,
-        params.pollInterval,
+        pollInterval,
         params.pollLines,
         options,
         gitRoot,
         piSessionId,
         signalInfo,
       );
-    const timeoutText = `Still running after ${params.timeout}s in background tmux${params.pollInterval > 0 ? ` and polling every ${params.pollInterval}s` : ""}. Use ${options.tmuxToolName} peek/list/kill to inspect or stop it. Result will be reported when it finishes.`;
+    const timeoutText = `Still running after ${params.timeout}s in background tmux${params.pollInterval > 0 ? ` and polling every ${pollInterval}s` : ""}. Use ${options.tmuxToolName} peek/list/kill to inspect or stop it. Result will be reported when it finishes.`;
     return {
       content: [
         {
@@ -2106,7 +2153,7 @@ const registerRenderers = (pi: ExtensionAPI, options: ResolvedOptions): void => 
     const rendered = formatRenderedPollMessage(content, expanded, options);
     const [summary = "", ...detail] = rendered.split("\n");
     return new Text(
-      `${theme.fg("success", "↻")} ${summary}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
+      `${theme.fg("success", indentDisplayLine(summary))}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
       0,
       0,
     );
@@ -2116,11 +2163,9 @@ const registerRenderers = (pi: ExtensionAPI, options: ResolvedOptions): void => 
     const content = typeof message.content === "string" ? message.content : "";
     const rendered = formatRenderedCompletionMessage(content, expanded, options);
     const [summary = "", ...detail] = rendered.split("\n");
-    const icon = content.split("\n")[0]?.includes("failed")
-      ? theme.fg("error", "✗")
-      : theme.fg("success", "✓");
+    const summaryColor = content.split("\n")[0]?.includes("failed") ? "error" : "success";
     return new Text(
-      `${icon} ${summary}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
+      `${theme.fg(summaryColor, indentDisplayLine(summary))}${detail.length > 0 ? `\n${theme.fg("dim", detail.join("\n"))}` : ""}`,
       0,
       0,
     );

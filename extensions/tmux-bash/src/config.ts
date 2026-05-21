@@ -39,6 +39,8 @@ export const TmuxBashConfigSchema = z
     defaultTimeoutSeconds: z.number().int().positive().optional(),
     maxTimeoutSeconds: z.number().int().positive().optional(),
     defaultPollInterval: z.number().int().nonnegative().optional(),
+    pollDelivery: z.enum(["model", "display"]).optional(),
+    minimumPollIntervalSeconds: z.number().int().positive().optional(),
     displayCommandStartMarker: z.string().optional(),
     maxOutputBytes: z.number().int().positive().optional(),
     systemPrompt: z.boolean().optional(),
