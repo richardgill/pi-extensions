@@ -7,9 +7,13 @@ import {
   type DirectBashRunOptions,
   type DirectBashRunResult,
 } from "./direct-tool.js";
-import { runPi, type RunPiResult } from "./pi.js";
+import { runPi, type RunPiResult } from "./pi-dash-p.js";
 import { type ScriptedStep, writeScriptedProvider } from "./scripted-provider.js";
-import { createTempPiProject, tmuxSessionExists, type TempPiProject } from "./temp-project.js";
+import {
+  createPiTestWorkspace,
+  tmuxSessionExists,
+  type PiTestWorkspace,
+} from "./pi-test-workspace.js";
 
 export type PiE2eRunOptions = {
   script: ScriptedStep[];
@@ -17,24 +21,24 @@ export type PiE2eRunOptions = {
   timeoutMs?: number;
 };
 
-export type PiE2eProject = TempPiProject & {
+export type PiE2eWorkspace = PiTestWorkspace & {
   run: (options: PiE2eRunOptions) => Promise<RunPiResult>;
   runBashTool: (input: BashInput, options?: DirectBashRunOptions) => Promise<DirectBashRunResult>;
   tmuxSession: () => string;
   tmuxSessionExists: () => boolean;
 };
 
-export const createPiE2eProject = (
+export const createPiE2eWorkspace = (
   options: { tmuxBashConfig?: Record<string, unknown> } = {},
-): PiE2eProject => {
-  const project = createTempPiProject(options);
-  const tmuxSession = tmuxSessionNameForProject(project);
-  project.trackTmuxSession(tmuxSession);
+): PiE2eWorkspace => {
+  const workspace = createPiTestWorkspace(options);
+  const tmuxSession = tmuxSessionNameForWorkspace(workspace);
+  workspace.trackTmuxSession(tmuxSession);
 
   return {
-    ...project,
-    run: (options) => runPiForProject(project, options),
-    runBashTool: (input, options) => runBashToolDirectly(project, input, options),
+    ...workspace,
+    run: (options) => runPiForWorkspace(workspace, options),
+    runBashTool: (input, options) => runBashToolDirectly(workspace, input, options),
     tmuxSession: () => tmuxSession,
     tmuxSessionExists: () => tmuxSessionExists(tmuxSession),
   };
@@ -47,28 +51,31 @@ export const expectPiSuccess = (result: RunPiResult): void => {
 const configString = (value: unknown, fallback: string): string =>
   typeof value === "string" ? value : fallback;
 
-const tmuxSessionNameForProject = (project: TempPiProject): string => {
-  if (project.tmuxBashConfig.tmuxSessionScope === "git-root") {
+const tmuxSessionNameForWorkspace = (workspace: PiTestWorkspace): string => {
+  if (workspace.tmuxBashConfig.tmuxSessionScope === "git-root") {
     const template = configString(
-      project.tmuxBashConfig.gitRootTmuxSessionNameTemplate,
+      workspace.tmuxBashConfig.gitRootTmuxSessionNameTemplate,
       "{gitRootSessionName}-bg",
     );
-    return backgroundSessionName(project.projectDir, template);
+    return backgroundSessionName(workspace.projectDir, template);
   }
 
-  return configString(project.tmuxBashConfig.globalTmuxSessionName, "pi-background");
+  return configString(workspace.tmuxBashConfig.globalTmuxSessionName, "pi-background");
 };
 
-const extensionsForProject = (project: TempPiProject, script: ScriptedStep[]): string[] => {
-  const scriptedProvider = writeScriptedProvider(project.tempRoot, script);
+const extensionsForWorkspace = (workspace: PiTestWorkspace, script: ScriptedStep[]): string[] => {
+  const scriptedProvider = writeScriptedProvider(workspace.tempRoot, script);
   return [path.resolve("extensions/tmux-bash/src/index.ts"), scriptedProvider];
 };
 
-const runPiForProject = (project: TempPiProject, options: PiE2eRunOptions): Promise<RunPiResult> =>
+const runPiForWorkspace = (
+  workspace: PiTestWorkspace,
+  options: PiE2eRunOptions,
+): Promise<RunPiResult> =>
   runPi({
-    cwd: project.projectDir,
-    agentDir: project.agentDir,
-    extensions: extensionsForProject(project, options.script),
+    cwd: workspace.projectDir,
+    agentDir: workspace.agentDir,
+    extensions: extensionsForWorkspace(workspace, options.script),
     prompt: options.prompt ?? "run",
     timeoutMs: options.timeoutMs,
   });

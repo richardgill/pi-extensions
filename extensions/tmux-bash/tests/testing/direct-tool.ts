@@ -1,3 +1,4 @@
+// Direct test harness for the tmux-bash bash tool, without launching pi.
 import type {
   AgentToolUpdateCallback,
   BashToolDetails,
@@ -6,7 +7,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { tmuxBash } from "../../src/extension.js";
 import type { BashInput } from "../../src/tool-call-schemas.js";
-import type { TempPiProject } from "./temp-project.js";
+import type { PiTestWorkspace } from "./pi-test-workspace.js";
 
 export type TimedToolUpdate = {
   elapsedMs: number;
@@ -86,9 +87,9 @@ const createFakePi = (): FakePi => {
   } as unknown as FakePi;
 };
 
-const createContext = (project: TempPiProject): ExtensionContext =>
+const createContext = (workspace: PiTestWorkspace): ExtensionContext =>
   ({
-    cwd: project.projectDir,
+    cwd: workspace.projectDir,
     hasUI: false,
     sessionManager: { getSessionId: () => "direct-tool-test" },
     ui: { setStatus: () => {} },
@@ -109,19 +110,19 @@ const registeredBashTool = (pi: FakePi): RegisteredTool => {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const runBashToolDirectly = async (
-  project: TempPiProject,
+  workspace: PiTestWorkspace,
   input: BashInput,
   options: DirectBashRunOptions = {},
 ): Promise<DirectBashRunResult> => {
   const pi = createFakePi();
-  const ctx = createContext(project);
+  const ctx = createContext(workspace);
   const updates: TimedToolUpdate[] = [];
   const startedAt = Date.now();
   const onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> = (update) => {
     updates.push({ elapsedMs: Date.now() - startedAt, text: updateText(update) });
   };
 
-  tmuxBash(project.tmuxBashConfig)(pi);
+  tmuxBash(workspace.tmuxBashConfig)(pi);
   await emit(pi, "session_start", ctx);
 
   try {

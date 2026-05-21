@@ -4,7 +4,7 @@ pi extension which replaces pi's native `bash` tool with background tmux invocat
 
 ## `bash` tool
 
-Runs bash commands in a tmux window. If it hits `timeout`, either leave it running in the background or kill it.
+Runs all bash commands in a tmux window. If it hits `timeout`, either leave it running in the background or kill it.
 
 ```jsonc
 {
@@ -69,6 +69,7 @@ Stop periodic output check-ins for a window.
 
 Create `~/.pi/agent/tmux-bash.jsonc`:
 
+
 ```jsonc
 {
   // Use a global tmux session, or a per-git-root tmux session.
@@ -84,14 +85,23 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Background tmux session name when tmuxSessionScope is "global".
   "globalTmuxSessionName": "pi-background", // default
 
-  // Tool name exposed to the agent. Change if another extension registers "tmux".
-  "toolName": "tmux", // default
+  // Bash tool name exposed to the agent. Change if another extension registers "bash".
+  "bashToolName": "bash", // default
+
+  // Tmux inspection/control tool name exposed to the agent.
+  "tmuxToolName": "tmux", // default
+
+  // tmux binary/path used for all tmux invocations.
+  "tmuxBinary": "tmux", // default
 
   // Foreground bash output lines sent to model context.
   "bashContextLines": 2000, // default; positive integer
 
   // Foreground bash output lines shown in compact TUI cards.
   "bashCompactDisplayLines": 5, // default; positive integer
+
+  // Foreground bash output lines shown in compact TUI cards when output is truncated.
+  "bashTruncatedCompactDisplayLines": 2, // default; positive integer
 
   // Foreground bash output lines shown in expanded/uncompacted TUI cards.
   "bashExpandedDisplayLines": 2000, // default; positive integer
@@ -102,6 +112,9 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Completed background command lines shown in compact TUI cards.
   "completedCompactDisplayLines": 5, // default; positive integer
 
+  // Completed background command lines shown in compact TUI cards when output is truncated.
+  "completedTruncatedCompactDisplayLines": 2, // default; positive integer
+
   // Completed background command lines shown in expanded/uncompacted TUI cards.
   "completedExpandedDisplayLines": 20, // default; positive integer
 
@@ -111,6 +124,9 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Poll output lines shown in compact TUI cards.
   "pollCompactDisplayLines": 5, // default; positive integer
 
+  // Poll output lines shown in compact TUI cards when output is truncated.
+  "pollTruncatedCompactDisplayLines": 2, // default; positive integer
+
   // Poll output lines shown in expanded/uncompacted TUI cards.
   "pollExpandedDisplayLines": 30, // default; positive integer
 
@@ -119,6 +135,9 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
 
   // Peek output lines shown in compact TUI cards.
   "peekCompactDisplayLines": 5, // default; positive integer
+
+  // Peek output lines shown in compact TUI cards when output is truncated.
+  "peekTruncatedCompactDisplayLines": 2, // default; positive integer
 
   // Peek output lines shown in expanded/uncompacted TUI cards.
   "peekExpandedDisplayLines": 2000, // default; positive integer
@@ -137,17 +156,10 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "alwaysShowOutputFilePath": false, // true | false (default)
 
   // Keep .out files on pi shutdown instead of deleting the signal/output dir.
-  "preserveOutputFiles": false, // true | false (default)
+  "preserveOutputFiles": true, // true (default) | false
 
   // Base directory for per-session signal files, generated scripts, and .out files.
   "outputDir": "/tmp/pi-tmux-bash", // default
-
-  // Kill the whole background tmux session when pi exits/reloads.
-  // Usually false: preserving background bash commands is the point.
-  "killSessionOnShutdown": false, // true | false (default)
-
-  // Replace the built-in bash tool so every bash call runs inside tmux.
-  "replaceBashTool": true, // true (default) | false
 
   // Default seconds to wait for bash-in-tmux before applying timeoutAction.
   "defaultTimeoutSeconds": 30, // default; positive integer
@@ -165,11 +177,46 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Set to "" to disable. Uses the last marker when multiple wrappers are present.
   "displayCommandStartMarker": "# SHIM_END", // default; use "" to disable
 
-  // Extra prompt guidance appended to the bash and tmux tool instructions.
-  "prompt": "", // default
+  // Controls whether tmux-bash contributes to Pi's generated system prompt.
+  // This does not replace Pi's whole system prompt; use Pi's SYSTEM.md or
+  // --system-prompt for full prompt replacement.
+  // Set to false to omit all tmux-bash Available tools entries and guidelines.
+  "systemPrompt": true, // true (default) | false
+
+  // Available tools entries for Pi's generated system prompt.
+  // Omit systemPromptAvailableTools, or omit one key, to use defaults.
+  // Set an entry to false to hide only that tool from Available tools.
+  // Keys: "{bashTool}" for the configured bash tool, "{tmuxTool}" for the configured tmux tool.
+  // Values support the template variables listed above this config block.
+  "systemPromptAvailableTools": {
+    "{bashTool}": "Execute bash commands in background tmux windows", // string | false
+    "{tmuxTool}": "Inspect and control the background tmux sessions created by bash tool" // string | false
+  },
+
+  // Guideline bullets added to Pi's generated system prompt.
+  // Omit systemPromptGuidelines to use defaults.
+  // Set to [] or false to disable tmux-bash guidelines.
+  // Strings support the template variables listed above this config block.
+//  `systemPrompt` template variables:
+  // `{bashTool}`: configured `bashToolName`, default `bash`
+  // `{tmuxTool}`: configured `tmuxToolName`, default `tmux`
+  // `{attachCommand}`:
+  //   Uses `tmux switch-client -t @123` when Pi is already inside tmux. Otherwise `tmux attach -t @123`. 
+  //   Uses configured `tmuxBinary`.
+  // `{defaultTimeoutSeconds}` / `{maxTimeoutSeconds}`
+  // `{bashContextLines}` / `{maxOutputKb}`
+
+  "systemPromptGuidelines": [ // string[] | false
+    "Use {bashTool} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
+    "Background bash commands will report automatically when they finish; do not keep polling manually unless you need interim output.",
+    "Use pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
+    "Use {tmuxTool} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.",
+    "Use {tmuxTool} kill only with a stable #{window_id} like @123.",
+    "If asked, you can attach to tmux window using: {attachCommand}, where @123 is a #{window_id}.",
+    "Use {tmuxTool} poll/unpoll to start or stop periodic check-ins for an existing background window."
+  ]
 }
 ```
-
 
 It is based on [`pi-tmux`](https://github.com/indigoviolet/pi-tmux), but runs agent commands in sidecar tmux sessions instead of the user's normal tmux session. By default it uses one global background tmux session and filters visible windows to the current Pi session.
 

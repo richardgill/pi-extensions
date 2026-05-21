@@ -1,6 +1,6 @@
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createPiE2eProject, type PiE2eProject } from "./testing/e2e-project.js";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils.js";
 import {
   bash,
   reply,
@@ -8,15 +8,24 @@ import {
   type ScriptedStep,
   writeScriptedProvider,
 } from "./testing/scripted-provider.js";
-import { runPiTui, type RunPiTuiCheckpoint, type RunPiTuiResult } from "./testing/tui-pi.js";
+import {
+  runPiTui,
+  type RunPiTuiCheckpoint,
+  type RunPiTuiResult,
+} from "./testing/pi-interactive.js";
+import {
+  ansiBashTranscript,
+  ANSI_ESCAPE_PATTERN,
+  stableFullOutputPath,
+  stripAnsi,
+} from "./testing/tui-transcript.js";
 
-const projects: PiE2eProject[] = [];
 const doneMarker = "PI-TUI-DONE";
 
-const createProject = (): PiE2eProject => {
-  const project = createPiE2eProject();
-  projects.push(project);
-  return project;
+const createWorkspace = (): PiE2eWorkspace => {
+  const workspace = createPiE2eWorkspace();
+  onTestFinished(() => workspace.cleanup());
+  return workspace;
 };
 
 const bashTool = (
@@ -29,7 +38,7 @@ const tmux = (args: Record<string, unknown>, options: { delayMs?: number } = {})
   scriptedToolCall("tmux", args, options);
 
 const runTui = (
-  project: PiE2eProject,
+  workspace: PiE2eWorkspace,
   script: ScriptedStep[],
   options: {
     waitFor?: string | RegExp;
@@ -37,11 +46,11 @@ const runTui = (
     captureAnsi?: boolean;
   } = {},
 ): Promise<RunPiTuiResult> => {
-  const scriptedProvider = writeScriptedProvider(project.tempRoot, script);
+  const scriptedProvider = writeScriptedProvider(workspace.tempRoot, script);
 
   return runPiTui({
-    cwd: project.projectDir,
-    agentDir: project.agentDir,
+    cwd: workspace.projectDir,
+    agentDir: workspace.agentDir,
     extensions: [path.resolve("extensions/tmux-bash/src/index.ts"), scriptedProvider],
     prompt: "run scripted tool call",
     waitFor: options.waitFor ?? doneMarker,
@@ -57,10 +66,6 @@ const truncatedCommandTitle = (command: string): string => {
   return `$ ${truncated}`;
 };
 
-const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
-
-const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE_PATTERN, "");
-
 const trimmedPaneLines = (pane: string): string[] =>
   pane.split("\n").map((line) => stripAnsi(line).trim());
 
@@ -71,18 +76,6 @@ const bashTranscript = (pane: string): string => {
 
   const end = lines.findIndex((line, index) => index > start && line === doneMarker);
   if (end === -1) throw new Error(`Missing done marker in pane:\n${pane}`);
-
-  return lines.slice(start, end).join("\n").trimEnd();
-};
-
-const ansiBashTranscript = (pane: string): string => {
-  const lines = pane.split("\n");
-  const visibleLines = lines.map((line) => stripAnsi(line).trim());
-  const start = visibleLines.findIndex((line) => line.startsWith("$ "));
-  if (start === -1) throw new Error(`Missing ANSI bash call in pane:\n${pane}`);
-
-  const end = visibleLines.findIndex((line, index) => index > start && line === doneMarker);
-  if (end === -1) throw new Error(`Missing ANSI done marker in pane:\n${pane}`);
 
   return lines.slice(start, end).join("\n").trimEnd();
 };
@@ -113,9 +106,6 @@ const transcriptUntilSeparator = (pane: string, startPrefix: string): string => 
     .trimEnd();
 };
 
-const stableFullOutputPath = (text: string): string =>
-  text.replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]");
-
 const stableTmuxToolTranscript = (pane: string, startText: string): string =>
   stableFullOutputPath(transcriptUntilLine(pane, startText, doneMarker)).replace(/@\d+/g, "@<id>");
 
@@ -131,15 +121,178 @@ const numberedLines = (prefix: string, start: number, end: number): string =>
     (_, index) => `${prefix}-${String(start + index).padStart(3, "0")}`,
   ).join("\n");
 
-afterEach(() => {
-  projects.forEach((project) => project.cleanup());
-  projects.length = 0;
-});
+type BashOutputCase = {
+  name: string;
+  command: string;
+  expectedTranscript: string;
+};
+
+type TmuxOutputCase = BashOutputCase & {
+  windowName: string;
+  waitFor?: string;
+  expectedActionTranscript?: string;
+};
+
+const runBashCard = (command: string): Promise<RunPiTuiResult> => {
+  const workspace = createWorkspace();
+  return runTui(workspace, [bashTool(command), reply(doneMarker)]);
+};
+
+const runPeekCard = (testCase: TmuxOutputCase): Promise<RunPiTuiResult> => {
+  const workspace = createWorkspace();
+  return runTui(workspace, [
+    bash(testCase.command, { background: true, name: testCase.windowName }),
+    tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
+    reply(doneMarker),
+  ]);
+};
+
+const runPollCard = (testCase: TmuxOutputCase): Promise<RunPiTuiResult> => {
+  const workspace = createWorkspace();
+  return runTui(
+    workspace,
+    [
+      bash(testCase.command, { background: true, name: testCase.windowName }),
+      tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
+      reply(doneMarker),
+    ],
+    { waitFor: testCase.waitFor },
+  );
+};
+
+const bashOutputCases: BashOutputCase[] = [
+  {
+    name: "fully-fitting",
+    command: "printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'",
+    expectedTranscript: `$ printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'
+
+fit-line-1
+fit-line-2
+fit-line-3
+
+Took <duration>`,
+  },
+  {
+    name: "overflowing",
+    command: "for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' \"$i\"; done",
+    expectedTranscript: `$ for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' "$i"; done
+
+... (395 earlier lines, ctrl+o to expand)
+overflow-line-396
+overflow-line-397
+overflow-line-398
+overflow-line-399
+overflow-line-400
+
+Took <duration>`,
+  },
+  {
+    name: "truncated overflowing",
+    command: "for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' \"$i\"; done",
+    expectedTranscript: `$ for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' "$i"; done
+
+... (1997 earlier lines, ctrl+o to expand)
+overflow-line-3999
+overflow-line-4000
+
+[Showing lines 2002-4001 of 4001. Full output: <path>]
+
+Took <duration>`,
+  },
+];
+
+const peekOutputCases: TmuxOutputCase[] = [
+  {
+    name: "fully-fitting",
+    windowName: "peek-fit",
+    command: "printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30",
+    expectedTranscript: `tmux peek :all
+✓ tmux window: peek-fit @<id>
+$ printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30
+peek-line-1
+peek-line-2
+peek-line-3
+
+Attach with: tmux switch-client -t @<id>`,
+  },
+  {
+    name: "overflowing",
+    windowName: "peek-overflow-400",
+    command: "for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' \"$i\"; done; sleep 30",
+    expectedTranscript: `tmux peek :all
+✓ tmux window: peek-overflow-400 @<id>
+$ for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
+... (395 earlier lines, ctrl+o to expand)
+${numberedLines("peek-overflow", 396, 400)}
+
+Attach with: tmux switch-client -t @<id>`,
+  },
+  {
+    name: "truncated overflowing",
+    windowName: "peek-truncated",
+    command: "for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' \"$i\"; done; sleep 30",
+    expectedTranscript: `tmux peek :all
+✓ tmux window: peek-truncated @<id>
+$ for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' "$i"; done; sleep 30
+... (1997 earlier lines, ctrl+o to expand)
+peek-truncated-3999
+peek-truncated-4000
+
+[Showing lines 2002-4001 of 4001. Full output: <path>]
+
+Attach with: tmux switch-client -t @<id>`,
+  },
+];
+
+const pollOutputCases: TmuxOutputCase[] = [
+  {
+    name: "fully-fitting",
+    windowName: "poll-fit",
+    command: "for i in $(seq 1 3); do printf 'poll-fit-%s\\n' \"$i\"; done; sleep 30",
+    waitFor: "poll-fit-3",
+    expectedActionTranscript: `tmux poll :1
+✓ Polling poll-fit every 1s.`,
+    expectedTranscript: `↻ tmux poll: poll-fit @<id>
+$ for i in $(seq 1 3); do printf 'poll-fit-%s\\n' "$i"; done; sleep 30
+poll-fit-1
+poll-fit-2
+poll-fit-3
+
+Attach with: tmux switch-client -t @<id>`,
+  },
+  {
+    name: "overflowing",
+    windowName: "poll-overflow",
+    command: "for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' \"$i\"; done; sleep 30",
+    waitFor: "poll-overflow-400",
+    expectedTranscript: `↻ tmux poll: poll-overflow @<id>
+$ for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' "$i"; done; sleep 30
+... (395 earlier lines, ctrl+o to expand)
+${numberedLines("poll-overflow", 396, 400)}
+
+Attach with: tmux switch-client -t @<id>`,
+  },
+  {
+    name: "truncated overflowing",
+    windowName: "poll-truncated",
+    command: "for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' \"$i\"; done; sleep 30",
+    waitFor: "poll-truncated-4000",
+    expectedTranscript: `↻ tmux poll: poll-truncated @<id>
+$ for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' "$i"; done; sleep 30
+... (1997 earlier lines, ctrl+o to expand)
+poll-truncated-3999
+poll-truncated-4000
+
+[Showing lines 2002-4001 of 4001. Full output: <path>]
+
+Attach with: tmux switch-client -t @<id>`,
+  },
+];
 
 describe("tmux-bash TUI rendering", () => {
   it("renders immediately-backgrounded bash calls without timeout metadata", async () => {
-    const project = createProject();
-    const result = await runTui(project, [
+    const workspace = createWorkspace();
+    const result = await runTui(workspace, [
       bash('echo "hi" && sleep 80 && echo "bye"', { background: true, timeout: 1 }),
       reply(doneMarker),
     ]);
@@ -154,8 +307,8 @@ describe("tmux-bash TUI rendering", () => {
   }, 30_000);
 
   it("renders foreground timeout metadata when timeout controls execution", async () => {
-    const project = createProject();
-    const result = await runTui(project, [
+    const workspace = createWorkspace();
+    const result = await runTui(workspace, [
       bash("printf starting && sleep 5", {
         background: false,
         timeout: 1,
@@ -173,9 +326,9 @@ describe("tmux-bash TUI rendering", () => {
   }, 30_000);
 
   it("renders foreground streaming progress before completion", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
     const result = await runTui(
-      project,
+      workspace,
       [
         bash("printf 'foreground-start\\n'; sleep 3; printf 'foreground-%s\\n' done", {
           timeout: 10,
@@ -203,8 +356,8 @@ describe("tmux-bash TUI rendering", () => {
   }, 30_000);
 
   it("renders background poll metadata in the bash call title", async () => {
-    const project = createProject();
-    const result = await runTui(project, [
+    const workspace = createWorkspace();
+    const result = await runTui(workspace, [
       bash("printf 'poll-title\\n'; sleep 5", {
         background: true,
         pollInterval: 1,
@@ -218,9 +371,9 @@ describe("tmux-bash TUI rendering", () => {
   }, 30_000);
 
   it("renders background bash completion cards without tmux target labels", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
     const result = await runTui(
-      project,
+      workspace,
       [
         bash("printf 'completion-one\\ncompletion-two\\n'", {
           background: true,
@@ -240,9 +393,9 @@ describe("tmux-bash TUI rendering", () => {
   }, 30_000);
 
   it("renders background poll output without requesting another assistant turn", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
     const result = await runTui(
-      project,
+      workspace,
       [
         bash("printf 'poll-one\\npoll-two\\n'; sleep 5", {
           background: true,
@@ -264,28 +417,23 @@ describe("tmux-bash TUI rendering", () => {
     expect(result.pane).not.toContain("No more faux responses queued");
   }, 30_000);
 
-  it("renders fully-fitting bash output while collapsed", async () => {
-    const project = createProject();
-    const command = "printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'";
-    const result = await runTui(project, [bashTool(command), reply(doneMarker)]);
+  it.each(bashOutputCases)(
+    "renders $name bash output while collapsed",
+    async (testCase) => {
+      const result = await runBashCard(testCase.command);
 
-    expect(stableBashTranscript(result.pane))
-      .toBe(`$ printf 'fit-line-1\\nfit-line-2\\nfit-line-3\\n'
-
-fit-line-1
-fit-line-2
-fit-line-3
-
-Took <duration>`);
-  }, 30_000);
+      expect(stableBashTranscript(result.pane)).toBe(testCase.expectedTranscript);
+    },
+    30_000,
+  );
 
   it("can capture ANSI-colored bash output", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
     const command = "printf 'color-line\\n'";
-    const result = await runTui(project, [bashTool(command), reply(doneMarker)], {
+    const result = await runTui(workspace, [bashTool(command), reply(doneMarker)], {
       captureAnsi: true,
     });
-    const transcript = ansiBashTranscript(result.paneAnsi ?? "");
+    const transcript = ansiBashTranscript(result.paneAnsi ?? "", doneMarker);
 
     expect(result.paneAnsi).toContain(String.fromCharCode(27));
     expect(trimmedPaneLines(transcript).join("\n")).toContain(`$ printf 'color-line\\n'
@@ -296,65 +444,23 @@ Took`);
     expect(transcript).toMatch(ANSI_ESCAPE_PATTERN);
   }, 30_000);
 
-  it("renders overflowing bash output while collapsed", async () => {
-    const project = createProject();
-    const command = "for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' \"$i\"; done";
-    const result = await runTui(project, [bashTool(command), reply(doneMarker)]);
+  it.each(peekOutputCases)(
+    "renders $name peek output while collapsed",
+    async (testCase) => {
+      const result = await runPeekCard(testCase);
 
-    expect(stableBashTranscript(result.pane))
-      .toBe(`$ for i in $(seq 1 400); do printf 'overflow-line-%03d\\n' "$i"; done
-
-... (395 earlier lines, ctrl+o to expand)
-overflow-line-396
-overflow-line-397
-overflow-line-398
-overflow-line-399
-overflow-line-400
-
-Took <duration>`);
-  }, 30_000);
-
-  it("renders truncated overflowing bash output while collapsed", async () => {
-    const project = createProject();
-    const command = "for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' \"$i\"; done";
-    const result = await runTui(project, [bashTool(command), reply(doneMarker)]);
-
-    expect(stableBashTranscript(result.pane))
-      .toBe(`$ for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' "$i"; done
-
-... (1997 earlier lines, ctrl+o to expand)
-overflow-line-3999
-overflow-line-4000
-
-[Showing lines 2001-4000 of 4000. Full output: <path>]
-
-Took <duration>`);
-  }, 30_000);
-
-  it("renders fully-fitting peek output while collapsed", async () => {
-    const project = createProject();
-    const command = "printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30";
-    const result = await runTui(project, [
-      bash(command, { background: true, name: "peek-fit" }),
-      tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
-      reply(doneMarker),
-    ]);
-
-    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
-✓ tmux window: peek-fit @<id>
-$ printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30
-peek-line-1
-peek-line-2
-peek-line-3
-
-Attach with: tmux switch-client -t @<id>`);
-  }, 30_000);
+      expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(
+        testCase.expectedTranscript,
+      );
+    },
+    30_000,
+  );
 
   it("expands collapsed overflowing peek output with ctrl-o", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
     const command = "for i in $(seq 1 8); do printf 'peek-overflow-%03d\\n' \"$i\"; done; sleep 30";
     const result = await runTui(
-      project,
+      workspace,
       [
         bash(command, { background: true, name: "peek-overflow" }),
         tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
@@ -393,125 +499,28 @@ peek-overflow-008
 Attach with: tmux switch-client -t @<id>`);
   }, 30_000);
 
-  it("renders overflowing peek output while collapsed", async () => {
-    const project = createProject();
-    const command =
-      "for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' \"$i\"; done; sleep 30";
-    const result = await runTui(project, [
-      bash(command, { background: true, name: "peek-overflow-400" }),
-      tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
-      reply(doneMarker),
-    ]);
+  it.each(pollOutputCases)(
+    "renders $name periodic poll output exactly",
+    async (testCase) => {
+      const result = await runPollCard(testCase);
 
-    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
-✓ tmux window: peek-overflow-400 @<id>
-$ for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
-... (395 earlier lines, ctrl+o to expand)
-${numberedLines("peek-overflow", 396, 400)}
-
-Attach with: tmux switch-client -t @<id>`);
-  }, 30_000);
-
-  it("renders truncated overflowing peek output while collapsed", async () => {
-    const project = createProject();
-    const command =
-      "for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' \"$i\"; done; sleep 30";
-    const result = await runTui(project, [
-      bash(command, { background: true, name: "peek-truncated" }),
-      tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
-      reply(doneMarker),
-    ]);
-
-    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
-✓ tmux window: peek-truncated @<id>
-$ for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' "$i"; done; sleep 30
-... (1997 earlier lines, ctrl+o to expand)
-peek-truncated-3999
-peek-truncated-4000
-
-[Showing lines 2001-4000 of 4000. Full output: <path>]
-
-Attach with: tmux switch-client -t @<id>`);
-  }, 30_000);
-
-  it("renders poll action and periodic poll output exactly", async () => {
-    const project = createProject();
-    const command = "for i in $(seq 1 3); do printf 'poll-fit-%s\\n' \"$i\"; done; sleep 30";
-    const result = await runTui(
-      project,
-      [
-        bash(command, { background: true, name: "poll-fit" }),
-        tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
-        reply(doneMarker),
-      ],
-      { waitFor: "poll-fit-3" },
-    );
-
-    expect(stableTmuxToolTranscript(result.pane, "tmux poll :1")).toBe(`tmux poll :1
-✓ Polling poll-fit every 1s.`);
-    expect(stablePollMessageTranscript(result.pane, "poll-fit")).toBe(`↻ tmux poll: poll-fit @<id>
-$ for i in $(seq 1 3); do printf 'poll-fit-%s\\n' "$i"; done; sleep 30
-poll-fit-1
-poll-fit-2
-poll-fit-3
-
-Attach with: tmux switch-client -t @<id>`);
-  }, 30_000);
-
-  it("renders overflowing periodic poll output exactly", async () => {
-    const project = createProject();
-    const command =
-      "for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' \"$i\"; done; sleep 30";
-    const result = await runTui(
-      project,
-      [
-        bash(command, { background: true, name: "poll-overflow" }),
-        tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
-        reply(doneMarker),
-      ],
-      { waitFor: "poll-overflow-400" },
-    );
-
-    expect(stablePollMessageTranscript(result.pane, "poll-overflow"))
-      .toBe(`↻ tmux poll: poll-overflow @<id>
-$ for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' "$i"; done; sleep 30
-... (395 earlier lines, ctrl+o to expand)
-${numberedLines("poll-overflow", 396, 400)}
-
-Attach with: tmux switch-client -t @<id>`);
-  }, 30_000);
-
-  it("renders truncated overflowing periodic poll output exactly", async () => {
-    const project = createProject();
-    const command =
-      "for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' \"$i\"; done; sleep 30";
-    const result = await runTui(
-      project,
-      [
-        bash(command, { background: true, name: "poll-truncated" }),
-        tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
-        reply(doneMarker),
-      ],
-      { waitFor: "poll-truncated-4000" },
-    );
-
-    expect(stablePollMessageTranscript(result.pane, "poll-truncated"))
-      .toBe(`↻ tmux poll: poll-truncated @<id>
-$ for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' "$i"; done; sleep 30
-... (1997 earlier lines, ctrl+o to expand)
-poll-truncated-3999
-poll-truncated-4000
-
-[Showing lines 2001-4000 of 4000. Full output: <path>]
-
-Attach with: tmux switch-client -t @<id>`);
-  }, 30_000);
+      if (testCase.expectedActionTranscript !== undefined) {
+        expect(stableTmuxToolTranscript(result.pane, "tmux poll :1")).toBe(
+          testCase.expectedActionTranscript,
+        );
+      }
+      expect(stablePollMessageTranscript(result.pane, testCase.windowName)).toBe(
+        testCase.expectedTranscript,
+      );
+    },
+    30_000,
+  );
 
   it("truncates long bash call titles", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
     const command =
       "printf 'long-title-ok\\n'; printf 'abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz\\n' >/dev/null";
-    const result = await runTui(project, [bash(command), reply(doneMarker)]);
+    const result = await runTui(workspace, [bash(command), reply(doneMarker)]);
 
     expect(result.pane).toContain(truncatedCommandTitle(command));
     expect(result.pane).toContain("long-title-ok");

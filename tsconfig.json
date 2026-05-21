@@ -21,7 +21,8 @@
       "@richardgill/pi-sub-pi-skill": ["./extensions/sub-pi-skill/src/extension.ts"],
       "pi-bash-timeout-guard": ["./extensions/bash-timeout-guard/src/extension.ts"],
       "@richardgill/pi-config": ["./packages/pi-config/src/index.ts"],
-      "@richardgill/pi-zod-tool-call": ["./packages/pi-zod-tool-call/src/index.ts"]
+      "@richardgill/pi-zod-tool-call": ["./packages/pi-zod-tool-call/src/index.ts"],
+      "@richardgill/lib": ["./packages/lib/src/index.ts"]
     }
   },
   "include": [

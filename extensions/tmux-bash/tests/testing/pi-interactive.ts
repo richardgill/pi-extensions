@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
+import { sleep } from "@richardgill/lib";
 import { shellQuote } from "../../src/tmux-utils.js";
+
+// Runs Pi interactively inside tmux and captures tmux pane output
 
 export type RunPiTuiCheckpoint = {
   name: string;
@@ -31,10 +34,6 @@ export type RunPiTuiResult = {
   checkpointsAnsi?: Record<string, string>;
 };
 
-const tmuxSessionName = (): string => `pi-tui-test-${process.pid}-${Date.now()}`;
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 const buildPiArgs = (extensions: string[]): string[] => [
   "--no-extensions",
   "--no-skills",
@@ -63,31 +62,26 @@ const buildPiCommand = (options: RunPiTuiOptions): string => {
 
 const tmux = (args: string[]): string => execFileSync("tmux", args, { encoding: "utf8" });
 
-const capturePane = (session: string, options: { ansi?: boolean } = {}): string =>
+const captureTmuxPane = (session: string, options: { ansi?: boolean } = {}): string =>
   tmux(["capture-pane", "-p", ...(options.ansi ? ["-e"] : []), "-J", "-S", "-", "-t", session]);
 
 const paneMatches = (pane: string, matcher: string | RegExp): boolean =>
   typeof matcher === "string" ? pane.includes(matcher) : matcher.test(pane);
 
-const waitForPaneUntil = async (
-  session: string,
-  matcher: string | RegExp,
-  deadline: number,
-): Promise<string> => {
-  const pane = capturePane(session);
-  if (paneMatches(pane, matcher)) return pane;
-  if (Date.now() >= deadline)
-    throw new Error(`Timed out waiting for TUI output: ${String(matcher)}\n\n${pane}`);
-
-  await sleep(200);
-  return waitForPaneUntil(session, matcher, deadline);
-};
-
-const waitForPane = (
+const waitForPane = async (
   session: string,
   matcher: string | RegExp,
   timeoutMs: number,
-): Promise<string> => waitForPaneUntil(session, matcher, Date.now() + timeoutMs);
+  deadline = Date.now() + timeoutMs,
+): Promise<string> => {
+  const paneCapture = captureTmuxPane(session);
+  if (paneMatches(paneCapture, matcher)) return paneCapture;
+  if (Date.now() >= deadline)
+    throw new Error(`Timed out waiting for TUI output: ${String(matcher)}\n\n${paneCapture}`);
+
+  await sleep(200);
+  return waitForPane(session, matcher, timeoutMs, deadline);
+};
 
 const writeScriptedModelSettings = (agentDir: string): void => {
   writeFileSync(
@@ -141,7 +135,7 @@ const captureCheckpoint = async (
     checkpoint.waitFor,
     checkpoint.timeoutMs ?? defaultTimeoutMs,
   );
-  const paneAnsi = captureAnsi ? capturePane(session, { ansi: true }) : undefined;
+  const paneAnsi = captureAnsi ? captureTmuxPane(session, { ansi: true }) : undefined;
   sendKeys(session, checkpoint.keys);
   if (checkpoint.delayMs !== undefined) await sleep(checkpoint.delayMs);
   return [[checkpoint.name, pane], paneAnsi ? [checkpoint.name, paneAnsi] : undefined];
@@ -152,7 +146,10 @@ const captureCheckpoints = async (
   checkpoints: RunPiTuiCheckpoint[] | undefined,
   defaultTimeoutMs: number,
   captureAnsi: boolean,
-): Promise<{ plain: Record<string, string>; ansi?: Record<string, string> }> => {
+): Promise<{
+  plain: Record<string, string>;
+  ansi?: Record<string, string>;
+}> => {
   const plainEntries = [];
   const ansiEntries = [];
   for (const checkpoint of checkpoints ?? []) {
@@ -180,29 +177,32 @@ const killTmuxSession = (session: string): void => {
 };
 
 export const runPiTui = async (options: RunPiTuiOptions): Promise<RunPiTuiResult> => {
-  const session = tmuxSessionName();
+  const sessionName = `pi-tui-test-${process.pid}-${Date.now()}`;
 
   try {
     writeScriptedModelSettings(options.agentDir);
-    startPiTui(session, options);
+    startPiTui(sessionName, options);
     await sleep(1_000);
-    sendPrompt(session, options.prompt);
+    sendPrompt(sessionName, options.prompt);
     const timeoutMs = options.timeoutMs ?? 20_000;
     const checkpoints = await captureCheckpoints(
-      session,
+      sessionName,
       options.checkpoints,
       timeoutMs,
       Boolean(options.captureAnsi),
     );
-    const pane = await waitForPane(session, options.waitFor, timeoutMs);
+    const pane = await waitForPane(sessionName, options.waitFor, timeoutMs);
     return {
       pane,
       checkpoints: checkpoints.plain,
       ...(options.captureAnsi
-        ? { paneAnsi: capturePane(session, { ansi: true }), checkpointsAnsi: checkpoints.ansi }
+        ? {
+            paneAnsi: captureTmuxPane(sessionName, { ansi: true }),
+            checkpointsAnsi: checkpoints.ansi,
+          }
         : {}),
     };
   } finally {
-    killTmuxSession(session);
+    killTmuxSession(sessionName);
   }
 };

@@ -179,6 +179,9 @@ importers:
       '@mariozechner/pi-tui':
         specifier: '*'
         version: 0.70.6
+      '@richardgill/lib':
+        specifier: workspace:*
+        version: link:../../packages/lib
       '@richardgill/pi-config':
         specifier: workspace:*
         version: link:../../packages/pi-config
@@ -191,6 +194,8 @@ importers:
       zod:
         specifier: 4.3.6
         version: 4.3.6
+
+  packages/lib: {}
 
   packages/pi-config:
     dependencies:

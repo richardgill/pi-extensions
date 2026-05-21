@@ -13,6 +13,7 @@ export type TmuxBashContext = {
   gitRoot: string;
   session: string;
   filters: TmuxWindowFilters;
+  tmuxBinary: string;
 };
 
 type ResolveTmuxBashContextInput = {
@@ -61,6 +62,7 @@ export const resolveTmuxBashContext = ({
     gitRoot,
     session: tmuxSessionNameForGitRoot(gitRoot, options),
     filters: tmuxWindowFiltersForScope(gitRoot, piSessionId, options),
+    tmuxBinary: options.tmuxBinary,
   };
 };
 
@@ -72,4 +74,6 @@ export const resolveTmuxBashContext = ({
 //
 // Lists only bash-created windows matching the resolved scope.
 export const listBashWindows = (context: TmuxBashContext): TmuxWindow[] =>
-  getWindows(context.session, context.filters).filter((window) => window.outputFile);
+  getWindows(context.session, context.filters, context.tmuxBinary).filter(
+    (window) => window.outputFile,
+  );

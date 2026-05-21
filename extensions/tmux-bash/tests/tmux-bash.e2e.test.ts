@@ -1,87 +1,71 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { formatDurationSeconds } from "../src/extension.js";
 import {
   backgroundSessionName,
-  formatWindowAge,
   getWindows,
   sessionExists,
   tmuxWindowAttachCommand,
 } from "../src/tmux-utils.js";
-import { createPiE2eProject, expectPiSuccess, type PiE2eProject } from "./testing/e2e-project.js";
+import {
+  createPiE2eWorkspace,
+  expectPiSuccess,
+  type PiE2eWorkspace,
+} from "./testing/pi-test-utils.js";
 import {
   bash,
   recordLatestToolResult,
+  recordSystemPrompt,
   scriptedText,
   scriptedToolCall,
   type ScriptedStep,
 } from "./testing/scripted-provider.js";
 
-const projects: PiE2eProject[] = [];
-const longLines = Array.from(
-  { length: 2100 },
-  (_, index) => `line-${String(index + 1).padStart(4, "0")}`,
-);
-const longOutput = `${longLines.join("\n")}\n`;
-const longOutputCommand = "for i in $(seq 1 2100); do printf 'line-%04d\\n' \"$i\"; done";
+type ExpectedModelText =
+  | string
+  | ((workspace: PiE2eWorkspace, outputFile: string | undefined) => string);
+
+type ExpectedModelTextPart = string | ((workspace: PiE2eWorkspace) => string);
 
 type TmuxBashE2eTestCase = {
   name: string;
-  script: (project: PiE2eProject) => ScriptedStep[];
-  expectedTerminalOutput: string;
-  expectedContextOutputName?: string;
-  expectedContextOutput?: (project: PiE2eProject, outputFile: string | undefined) => string;
+  tmuxBashConfig?: Record<string, unknown>;
+  steps: ScriptedStep[];
+  captureTool?: string;
+  expectedModelText?: ExpectedModelText;
+  expectedModelTextIncludes?: ExpectedModelTextPart[];
   expectedOutputFileContent?: string;
   expectedLatestToolResult?: { toolName: string; isError: boolean };
   expectedTmuxSessionExists?: boolean;
   timeoutMs?: number;
 };
 
-const createProject = (tmuxBashConfig: Record<string, unknown> = {}): PiE2eProject => {
-  const project = createPiE2eProject({ tmuxBashConfig });
-  projects.push(project);
-  return project;
+const createWorkspace = (tmuxBashConfig: Record<string, unknown> = {}): PiE2eWorkspace => {
+  const workspace = createPiE2eWorkspace({ tmuxBashConfig });
+  onTestFinished(() => workspace.cleanup());
+  return workspace;
 };
 
-const fullOutputNotice = (outputFile: string | undefined): string => `[Full output: ${outputFile}]`;
+const backgroundStartContext = (workspace: PiE2eWorkspace): string => {
+  const window = getWindows(workspace.tmuxSession()).at(0);
+  const attachCommand = tmuxWindowAttachCommand(window?.id ?? "");
 
-const bashOutputContext =
-  (text: string) =>
-  (_project: PiE2eProject, outputFile: string | undefined): string =>
-    `${text}\n\n${fullOutputNotice(outputFile)}`;
-
-const failedBashContext = (_project: PiE2eProject, outputFile: string | undefined): string =>
-  `bad\n\n${fullOutputNotice(outputFile)}\n\nCommand exited with code 7`;
-
-const timeoutBashContext = (_project: PiE2eProject, outputFile: string | undefined): string =>
-  `starting\n\n${fullOutputNotice(outputFile)}\n\nCommand timed out after 1 seconds`;
-
-const truncatedLongOutputContext = (
-  _project: PiE2eProject,
-  outputFile: string | undefined,
-): string =>
-  `${longLines.slice(100).join("\n")}\n\n[Showing lines 101-2100 of 2100. Full output: ${outputFile}]`;
-
-const backgroundStartContext = (project: PiE2eProject): string => {
-  const window = getWindows(project.tmuxSession()).at(0);
-  return `Started in background tmux window: ${window?.title} ${window?.id}.\nResult will be reported when it finishes.\n\n  Attach with: ${tmuxWindowAttachCommand(window?.id ?? "")}`;
+  return [
+    `Started in background tmux window: ${window?.title} ${window?.id}.`,
+    "Result will be reported when it finishes.",
+    "",
+    `  Attach with: ${attachCommand}`,
+  ].join("\n");
 };
 
-const listContext =
-  (title: string) =>
-  (project: PiE2eProject): string => {
-    const window = getWindows(project.tmuxSession()).find((item) => item.title === title);
-    return `Background session ${project.tmuxSession()} — 1 window(s)\n\n  ${title} ${window?.id} (${window ? formatWindowAge(window) : "0s"})`;
-  };
-
-const peekContextOutput = (project: PiE2eProject): string => {
-  const window = getWindows(project.tmuxSession()).find((item) => item.title === "peek-test");
+const peekContextOutput = (workspace: PiE2eWorkspace): string => {
+  const window = getWindows(workspace.tmuxSession()).find((item) => item.title === "peek-test");
   return `tmux window: peek-test ${window?.id}\n$ printf 'peek-me\\n'; sleep 30\npeek-me`;
 };
 
-const contextPath = (project: PiE2eProject, name: string): string =>
-  project.contextOutputPath(name);
+const contextPath = (workspace: PiE2eWorkspace, name: string): string =>
+  workspace.contextOutputPath(name);
 
 const firstUpdateMatching = (
   updates: { text: string; elapsedMs: number }[],
@@ -89,21 +73,82 @@ const firstUpdateMatching = (
 ): { text: string; elapsedMs: number } | undefined =>
   updates.find((update) => pattern.test(update.text));
 
-const recordContext = (
-  project: PiE2eProject,
-  name: string,
-  toolName: string,
-  text: string,
-): ScriptedStep => recordLatestToolResult(contextPath(project, name), { toolName, text });
+type CaptureLatestToolResultOptions = {
+  outputName: string;
+  toolName: string;
+  assistantReply: string;
+};
 
-type SeedWindowOptions = {
+const captureLatestToolResult = (
+  workspace: PiE2eWorkspace,
+  options: CaptureLatestToolResultOptions,
+): ScriptedStep =>
+  recordLatestToolResult(workspace.contextOutputPath(options.outputName), {
+    toolName: options.toolName,
+    text: options.assistantReply,
+  });
+
+const captureName = (testName: string): string =>
+  testName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+const scriptForTestCase = (
+  workspace: PiE2eWorkspace,
+  testCase: TmuxBashE2eTestCase,
+): ScriptedStep[] => {
+  if (
+    testCase.expectedModelText === undefined &&
+    testCase.expectedModelTextIncludes === undefined
+  ) {
+    return testCase.steps;
+  }
+
+  return [
+    ...testCase.steps,
+    captureLatestToolResult(workspace, {
+      outputName: captureName(testCase.name),
+      toolName: testCase.captureTool ?? "bash",
+      assistantReply: "ok",
+    }),
+  ];
+};
+
+const resolveExpectedModelText = (
+  expected: ExpectedModelText,
+  workspace: PiE2eWorkspace,
+  outputFile: string | undefined,
+): string => {
+  if (typeof expected === "string") {
+    return expected;
+  }
+
+  return expected(workspace, outputFile);
+};
+
+const resolveExpectedModelTextPart = (
+  expected: ExpectedModelTextPart,
+  workspace: PiE2eWorkspace,
+): string => {
+  if (typeof expected === "string") {
+    return expected;
+  }
+
+  return expected(workspace);
+};
+
+type PreexistingTmuxWindowOptions = {
   title: string;
   gitRoot?: string;
   piSessionId?: string;
 };
 
-const seedTmuxWindow = (project: PiE2eProject, options: SeedWindowOptions): string => {
-  const session = project.tmuxSession();
+const createPreexistingTmuxWindow = (
+  workspace: PiE2eWorkspace,
+  options: PreexistingTmuxWindowOptions,
+): string => {
+  const session = workspace.tmuxSession();
   const args = sessionExists(session)
     ? [
         "new-window",
@@ -155,153 +200,204 @@ const seedTmuxWindow = (project: PiE2eProject, options: SeedWindowOptions): stri
   return windowId;
 };
 
-const windowTitles = (project: PiE2eProject): string[] =>
-  getWindows(project.tmuxSession())
+const windowTitles = (workspace: PiE2eWorkspace): string[] =>
+  getWindows(workspace.tmuxSession())
     .map((window) => window.title)
     .sort();
 
-const findOutputFileWithContent = (project: PiE2eProject, content: string): string => {
-  const match = project.outputFiles().find((file) => readFileSync(file, "utf8") === content);
-  expect(match, `Output files: ${project.outputFiles().join(", ")}`).toBeDefined();
+const findOutputFileWithContent = (workspace: PiE2eWorkspace, content: string): string => {
+  const match = workspace.outputFiles().find((file) => readFileSync(file, "utf8") === content);
+  expect(match, `Output files: ${workspace.outputFiles().join(", ")}`).toBeDefined();
   return match!;
 };
 
-const testCases: TmuxBashE2eTestCase[] = [
+type TmuxBashE2eRun = {
+  workspace: PiE2eWorkspace;
+  result: Awaited<ReturnType<PiE2eWorkspace["run"]>>;
+};
+
+const capturesModelText = (testCase: TmuxBashE2eTestCase): boolean =>
+  testCase.expectedModelText !== undefined || testCase.expectedModelTextIncludes !== undefined;
+
+const expectedOutputFileFor = (
+  workspace: PiE2eWorkspace,
+  testCase: TmuxBashE2eTestCase,
+): string | undefined => {
+  if (testCase.expectedOutputFileContent === undefined) return undefined;
+
+  return findOutputFileWithContent(workspace, testCase.expectedOutputFileContent);
+};
+
+const capturedModelTextFor = (
+  workspace: PiE2eWorkspace,
+  testCase: TmuxBashE2eTestCase,
+): string | undefined => {
+  if (!capturesModelText(testCase)) return undefined;
+
+  return workspace.readContextOutput(captureName(testCase.name));
+};
+
+const runTestCase = async (testCase: TmuxBashE2eTestCase): Promise<TmuxBashE2eRun> => {
+  const workspace = createWorkspace(testCase.tmuxBashConfig);
+  const result = await workspace.run({
+    script: scriptForTestCase(workspace, testCase),
+    prompt: testCase.name,
+    timeoutMs: testCase.timeoutMs,
+  });
+
+  return { workspace, result };
+};
+
+const expectTmuxSessionState = (workspace: PiE2eWorkspace, testCase: TmuxBashE2eTestCase): void => {
+  if (testCase.expectedTmuxSessionExists === undefined) return;
+
+  expect(workspace.tmuxSessionExists()).toBe(testCase.expectedTmuxSessionExists);
+};
+
+const expectExactModelText = (
+  workspace: PiE2eWorkspace,
+  testCase: TmuxBashE2eTestCase,
+  modelText: string | undefined,
+  outputFile: string | undefined,
+): void => {
+  if (testCase.expectedModelText === undefined) return;
+
+  expect(modelText).toBe(
+    resolveExpectedModelText(testCase.expectedModelText, workspace, outputFile),
+  );
+};
+
+const expectModelTextParts = (
+  workspace: PiE2eWorkspace,
+  testCase: TmuxBashE2eTestCase,
+  modelText: string | undefined,
+): void => {
+  testCase.expectedModelTextIncludes?.forEach((expected) => {
+    expect(modelText).toContain(resolveExpectedModelTextPart(expected, workspace));
+  });
+};
+
+const expectLatestToolResult = (workspace: PiE2eWorkspace, testCase: TmuxBashE2eTestCase): void => {
+  if (testCase.expectedLatestToolResult === undefined) return;
+
+  const expected = testCase.expectedLatestToolResult;
+  expect(workspace.latestToolResult(expected.toolName)?.isError).toBe(expected.isError);
+};
+
+const expectTestCase = (testCase: TmuxBashE2eTestCase, run: TmuxBashE2eRun): void => {
+  expectPiSuccess(run.result);
+  expectTmuxSessionState(run.workspace, testCase);
+
+  const outputFile = expectedOutputFileFor(run.workspace, testCase);
+  const modelText = capturedModelTextFor(run.workspace, testCase);
+
+  expectExactModelText(run.workspace, testCase, modelText, outputFile);
+  expectModelTextParts(run.workspace, testCase, modelText);
+  expectLatestToolResult(run.workspace, testCase);
+};
+
+const foregroundCommandCases: TmuxBashE2eTestCase[] = [
   {
     name: "prints stdout exactly",
-    script: (project) => [
-      bash("printf 'hello\\n'"),
-      recordContext(project, "stdout-context", "bash", "stdout-ok"),
-    ],
-    expectedTerminalOutput: "stdout-ok\n",
-    expectedContextOutputName: "stdout-context",
-    expectedContextOutput: bashOutputContext("hello"),
+    steps: [bash("printf 'hello\\n'")],
+    expectedModelText: "hello",
     expectedOutputFileContent: "hello\n",
     expectedLatestToolResult: { toolName: "bash", isError: false },
     expectedTmuxSessionExists: false,
   },
   {
     name: "captures stderr exactly",
-    script: (project) => [
-      bash("printf 'oops\\n' >&2"),
-      recordContext(project, "stderr-context", "bash", "stderr-ok"),
-    ],
-    expectedTerminalOutput: "stderr-ok\n",
-    expectedContextOutputName: "stderr-context",
-    expectedContextOutput: bashOutputContext("oops"),
+    steps: [bash("printf 'oops\\n' >&2")],
+    expectedModelText: "oops",
     expectedOutputFileContent: "oops\n",
     expectedTmuxSessionExists: false,
   },
   {
     name: "captures delayed foreground stdout exactly",
-    script: (project) => [
-      bash('echo "hello" && sleep 5 && echo "bye"', { timeout: 10 }),
-      recordContext(project, "delayed-stdout-context", "bash", "delayed-ok"),
-    ],
-    expectedTerminalOutput: "delayed-ok\n",
-    expectedContextOutputName: "delayed-stdout-context",
-    expectedContextOutput: bashOutputContext("hello\nbye"),
+    steps: [bash('echo "hello" && sleep 5 && echo "bye"', { timeout: 10 })],
+    expectedModelText: "hello\nbye",
     expectedOutputFileContent: "hello\nbye\n",
     expectedTmuxSessionExists: false,
     timeoutMs: 20_000,
   },
   {
     name: "reports non-zero exit codes",
-    script: (project) => [
-      bash("printf 'bad\\n'; exit 7"),
-      recordContext(project, "failed-context", "bash", "failed-ok"),
-    ],
-    expectedTerminalOutput: "failed-ok\n",
-    expectedContextOutputName: "failed-context",
-    expectedContextOutput: failedBashContext,
+    steps: [bash("printf 'bad\\n'; exit 7")],
+    expectedModelText: "bad\n\nCommand exited with code 7",
     expectedOutputFileContent: "bad\n",
     expectedLatestToolResult: { toolName: "bash", isError: true },
     expectedTmuxSessionExists: false,
   },
   {
     name: "kills timed-out foreground command",
-    script: (project) => [
+    steps: [
       bash("printf 'starting\\n'; sleep 5", {
         timeout: 1,
         timeoutAction: "kill",
       }),
-      recordContext(project, "timeout-context", "bash", "timeout-ok"),
     ],
-    expectedTerminalOutput: "timeout-ok\n",
-    expectedContextOutputName: "timeout-context",
-    expectedContextOutput: timeoutBashContext,
+    expectedModelText: "starting\n\nCommand timed out after 1 seconds",
     expectedOutputFileContent: "starting\n",
     expectedLatestToolResult: { toolName: "bash", isError: true },
     expectedTmuxSessionExists: false,
   },
+];
+
+const backgroundCommandCases: TmuxBashE2eTestCase[] = [
   {
     name: "background command renders start output",
-    script: (project) => [
-      bash("sleep 90", { background: true }),
-      recordContext(project, "background-start-context", "bash", "started-ok"),
-    ],
-    expectedTerminalOutput: "started-ok\n",
-    expectedContextOutputName: "background-start-context",
-    expectedContextOutput: backgroundStartContext,
+    steps: [bash("sleep 90", { background: true })],
+    expectedModelText: backgroundStartContext,
   },
   {
     name: "background command returns immediately and leaves session running",
-    script: (project) => [
+    steps: [
       bash("sleep 30", { background: true, name: "server" }),
       scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-      recordContext(project, "server-list-context", "tmux", "listed-ok"),
     ],
-    expectedTerminalOutput: "listed-ok\n",
-    expectedContextOutputName: "server-list-context",
-    expectedContextOutput: listContext("server"),
+    captureTool: "tmux",
+    expectedModelTextIncludes: ["Background session", "1 window(s)", "server"],
     expectedTmuxSessionExists: true,
   },
   {
     name: "lists background tmux windows",
-    script: (project) => [
+    steps: [
       bash("sleep 30", { background: true, name: "worker" }),
       scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-      recordContext(project, "worker-list-context", "tmux", "worker-listed"),
     ],
-    expectedTerminalOutput: "worker-listed\n",
-    expectedContextOutputName: "worker-list-context",
-    expectedContextOutput: listContext("worker"),
+    captureTool: "tmux",
+    expectedModelTextIncludes: ["Background session", "1 window(s)", "worker"],
     expectedTmuxSessionExists: true,
   },
   {
     name: "peeks background tmux output",
-    script: (project) => [
+    steps: [
       bash("printf 'peek-me\\n'; sleep 30", {
         background: true,
         name: "peek-test",
       }),
       scriptedToolCall("tmux", { action: "peek", window: "all" }, { delayMs: 500 }),
-      recordContext(project, "peek-context", "tmux", "peek-ok"),
     ],
-    expectedTerminalOutput: "peek-ok\n",
-    expectedContextOutputName: "peek-context",
-    expectedContextOutput: peekContextOutput,
+    captureTool: "tmux",
+    expectedModelText: peekContextOutput,
     expectedOutputFileContent: "peek-me\n",
     expectedTmuxSessionExists: true,
   },
+];
+
+const contextLimitCases: TmuxBashE2eTestCase[] = [
   {
     name: "truncates bash context output but preserves full output file",
-    script: (project) => [
-      bash(longOutputCommand),
-      recordContext(project, "truncated-bash-context", "bash", "truncated-ok"),
-    ],
-    expectedTerminalOutput: "truncated-ok\n",
-    expectedContextOutputName: "truncated-bash-context",
-    expectedContextOutput: truncatedLongOutputContext,
-    expectedOutputFileContent: longOutput,
+    tmuxBashConfig: { bashContextLines: 3 },
+    steps: [bash("printf 'line-1\\nline-2\\nline-3\\nline-4\\nline-5\\n'")],
+    expectedModelText: (_workspace, outputFile) =>
+      `line-4\nline-5\n\n\n[Showing lines 4-6 of 6. Full output: ${outputFile}]`,
+    expectedOutputFileContent: "line-1\nline-2\nline-3\nline-4\nline-5\n",
     expectedTmuxSessionExists: false,
   },
 ];
 
-afterEach(() => {
-  projects.forEach((project) => project.cleanup());
-  projects.length = 0;
-});
+const testCases = [...foregroundCommandCases, ...backgroundCommandCases, ...contextLimitCases];
 
 describe("tmux-bash e2e", () => {
   it("formats foreground bash duration without trailing decimal", () => {
@@ -309,9 +405,30 @@ describe("tmux-bash e2e", () => {
     expect(formatDurationSeconds(10_000)).toBe("10s");
   });
 
+  it("applies system prompt configuration", async () => {
+    const workspace = createWorkspace({
+      tmuxToolName: "mux",
+      systemPromptAvailableTools: {
+        "{bashTool}": "CUSTOM bash {defaultTimeoutSeconds}/{maxTimeoutSeconds}/{maxOutputKb}",
+        "{tmuxTool}": false,
+      },
+      systemPromptGuidelines: ["Use {tmuxTool} with {attachCommand} and @123."],
+    });
+    const outputPath = contextPath(workspace, "system-prompt");
+
+    const result = await workspace.run({ script: [recordSystemPrompt(outputPath, "ok")] });
+
+    expectPiSuccess(result);
+    const prompt = readFileSync(outputPath, "utf8");
+    expect(prompt).toContain("- bash: CUSTOM bash 30/60/50");
+    expect(prompt).not.toContain("- mux: Inspect and control");
+    expect(prompt).toContain("- Use mux with tmux");
+    expect(prompt).toContain("@123");
+  });
+
   it("streams foreground stdout before command completion", async () => {
-    const project = createProject();
-    const result = await project.runBashTool({
+    const workspace = createWorkspace();
+    const result = await workspace.runBashTool({
       command: 'echo "hello" && sleep 5 && echo "bye"',
       timeout: 10,
       timeoutAction: "background",
@@ -329,8 +446,8 @@ describe("tmux-bash e2e", () => {
   }, 30_000);
 
   it("does not trigger assistant turns for background poll messages", async () => {
-    const project = createProject();
-    const result = await project.runBashTool(
+    const workspace = createWorkspace();
+    const result = await workspace.runBashTool(
       {
         command: "printf 'line-1\\nline-2\\nline-3\\nline-4\\n'; sleep 5",
         timeout: 10,
@@ -359,8 +476,8 @@ describe("tmux-bash e2e", () => {
   }, 20_000);
 
   it("does not resend unchanged background poll output", async () => {
-    const project = createProject();
-    const result = await project.runBashTool(
+    const workspace = createWorkspace();
+    const result = await workspace.runBashTool(
       {
         command: "printf 'same\\n'; sleep 5",
         timeout: 10,
@@ -380,22 +497,22 @@ describe("tmux-bash e2e", () => {
   }, 20_000);
 
   it("uses global tmux session scope by default", async () => {
-    const project = createProject();
+    const workspace = createWorkspace();
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [bash("sleep 30", { background: true, name: "default-global" }), scriptedText("ok")],
       prompt: "default global session",
     });
 
     expectPiSuccess(result);
-    expect(project.tmuxSession()).not.toBe(backgroundSessionName(project.projectDir));
-    expect(windowTitles(project)).toContain("default-global");
+    expect(workspace.tmuxSession()).not.toBe(backgroundSessionName(workspace.projectDir));
+    expect(windowTitles(workspace)).toContain("default-global");
   }, 20_000);
 
   it("uses git-root tmux session scope when configured", async () => {
-    const project = createProject({ tmuxSessionScope: "git-root" });
+    const workspace = createWorkspace({ tmuxSessionScope: "git-root" });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         bash("sleep 30", { background: true, name: "git-root-session" }),
         scriptedText("ok"),
@@ -404,203 +521,239 @@ describe("tmux-bash e2e", () => {
     });
 
     expectPiSuccess(result);
-    expect(project.tmuxSession()).toBe(backgroundSessionName(project.projectDir));
-    expect(windowTitles(project)).toContain("git-root-session");
+    expect(workspace.tmuxSession()).toBe(backgroundSessionName(workspace.projectDir));
+    expect(windowTitles(workspace)).toContain("git-root-session");
   }, 20_000);
 
   it("honors custom global tmux session names", async () => {
     const customGlobalSession = `pi-tmux-bash-custom-global-${process.pid}`;
-    const project = createProject({ globalTmuxSessionName: customGlobalSession });
+    const workspace = createWorkspace({ globalTmuxSessionName: customGlobalSession });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         bash("sleep 30", { background: true, name: "custom-global" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(project, "custom-global-list", "tmux", "listed"),
+        captureLatestToolResult(workspace, {
+          outputName: "custom-global-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "custom global session",
     });
 
     expectPiSuccess(result);
-    expect(project.tmuxSession()).toBe(customGlobalSession);
-    expect(project.readContextOutput("custom-global-list")).toContain(
+    expect(workspace.tmuxSession()).toBe(customGlobalSession);
+    expect(workspace.readContextOutput("custom-global-list")).toContain(
       `Background session ${customGlobalSession}`,
     );
-    expect(project.readContextOutput("custom-global-list")).toContain("custom-global");
+    expect(workspace.readContextOutput("custom-global-list")).toContain("custom-global");
   }, 20_000);
 
   it("honors custom git-root tmux session name templates", async () => {
-    const project = createProject({
+    const workspace = createWorkspace({
       tmuxSessionScope: "git-root",
       gitRootTmuxSessionNameTemplate: "custom-{gitRootSessionName}",
     });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [bash("sleep 30", { background: true, name: "custom-git-root" }), scriptedText("ok")],
       prompt: "custom git root session",
     });
 
     expectPiSuccess(result);
-    expect(project.tmuxSession()).toBe(
-      backgroundSessionName(project.projectDir, "custom-{gitRootSessionName}"),
+    expect(workspace.tmuxSession()).toBe(
+      backgroundSessionName(workspace.projectDir, "custom-{gitRootSessionName}"),
     );
-    expect(windowTitles(project)).toContain("custom-git-root");
+    expect(windowTitles(workspace)).toContain("custom-git-root");
   }, 20_000);
 
   it("honors configured window name templates", async () => {
-    const project = createProject({ windowNameTemplate: "bg-{{nameOrCommand}}" });
+    const workspace = createWorkspace({ windowNameTemplate: "bg-{{nameOrCommand}}" });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         bash("sleep 30", { background: true, name: "named" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(project, "custom-window-name-list", "tmux", "listed"),
+        captureLatestToolResult(workspace, {
+          outputName: "custom-window-name-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "custom window name",
     });
 
     expectPiSuccess(result);
-    expect(project.readContextOutput("custom-window-name-list")).toContain("bg-named");
+    expect(workspace.readContextOutput("custom-window-name-list")).toContain("bg-named");
   }, 20_000);
 
   it("defaults tmux window scope to the current pi session", async () => {
-    const project = createProject();
-    seedTmuxWindow(project, {
+    const workspace = createWorkspace();
+    createPreexistingTmuxWindow(workspace, {
       title: "foreign",
-      gitRoot: project.projectDir,
+      gitRoot: workspace.projectDir,
       piSessionId: "foreign-session",
     });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         bash("sleep 30", { background: true, name: "own" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(project, "default-window-scope-list", "tmux", "listed"),
+        captureLatestToolResult(workspace, {
+          outputName: "default-window-scope-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "default pi-session window scope",
     });
 
     expectPiSuccess(result);
-    expect(project.readContextOutput("default-window-scope-list")).toContain("own");
-    expect(project.readContextOutput("default-window-scope-list")).not.toContain("foreign");
+    expect(workspace.readContextOutput("default-window-scope-list")).toContain("own");
+    expect(workspace.readContextOutput("default-window-scope-list")).not.toContain("foreign");
   }, 20_000);
 
   it("kills a scoped background tmux window by window id", async () => {
-    const project = createProject({ tmuxWindowScope: "all" });
-    const startResult = await project.run({
+    const workspace = createWorkspace({ tmuxWindowScope: "all" });
+    const startResult = await workspace.run({
       script: [bash("sleep 30", { background: true, name: "kill-id" }), scriptedText("started")],
       prompt: "start kill window",
     });
-    const windowId = getWindows(project.tmuxSession()).find(
+    const windowId = getWindows(workspace.tmuxSession()).find(
       (window) => window.title === "kill-id",
     )?.id;
     if (!windowId) throw new Error("Expected kill-id window to exist");
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         scriptedToolCall("tmux", { action: "kill", window: windowId }, { delayMs: 500 }),
-        recordContext(project, "kill-window-id", "tmux", "killed"),
+        captureLatestToolResult(workspace, {
+          outputName: "kill-window-id",
+          toolName: "tmux",
+          assistantReply: "killed",
+        }),
       ],
       prompt: "kill window id",
     });
 
     expectPiSuccess(startResult);
     expectPiSuccess(result);
-    expect(project.readContextOutput("kill-window-id")).toBe(
+    expect(workspace.readContextOutput("kill-window-id")).toBe(
       `Killed background tmux window: kill-id ${windowId}.`,
     );
-    expect(windowTitles(project)).toEqual([]);
+    expect(windowTitles(workspace)).toEqual([]);
   }, 20_000);
 
   it("does not kill windows outside the current scope", async () => {
-    const project = createProject();
-    const windowId = seedTmuxWindow(project, {
+    const workspace = createWorkspace();
+    const windowId = createPreexistingTmuxWindow(workspace, {
       title: "foreign",
-      gitRoot: project.projectDir,
+      gitRoot: workspace.projectDir,
       piSessionId: "foreign-session",
     });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         scriptedToolCall("tmux", { action: "kill", window: windowId }, { delayMs: 500 }),
-        recordContext(project, "default-window-scope-kill", "tmux", "not-killed"),
+        captureLatestToolResult(workspace, {
+          outputName: "default-window-scope-kill",
+          toolName: "tmux",
+          assistantReply: "not-killed",
+        }),
       ],
       prompt: "default pi-session window kill scope",
     });
 
     expectPiSuccess(result);
-    expect(project.readContextOutput("default-window-scope-kill")).toBe(
-      `No bash-created tmux window ${windowId} in session ${project.tmuxSession()}.`,
+    expect(workspace.readContextOutput("default-window-scope-kill")).toBe(
+      `No bash-created tmux window ${windowId} in session ${workspace.tmuxSession()}.`,
     );
-    expect(windowTitles(project)).toEqual(["foreign"]);
+    expect(windowTitles(workspace)).toEqual(["foreign"]);
   }, 20_000);
 
   it("can scope global tmux windows by git root", async () => {
-    const project = createProject({ tmuxWindowScope: "git-root" });
-    seedTmuxWindow(project, {
+    const workspace = createWorkspace({ tmuxWindowScope: "git-root" });
+    createPreexistingTmuxWindow(workspace, {
       title: "foreign-same-git-root",
-      gitRoot: project.projectDir,
+      gitRoot: workspace.projectDir,
       piSessionId: "foreign-session",
     });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         bash("sleep 30", { background: true, name: "own-git-root" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(project, "git-root-window-scope-list", "tmux", "listed"),
+        captureLatestToolResult(workspace, {
+          outputName: "git-root-window-scope-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "git root window scope",
     });
 
     expectPiSuccess(result);
-    expect(project.readContextOutput("git-root-window-scope-list")).toContain("own-git-root");
-    expect(project.readContextOutput("git-root-window-scope-list")).not.toContain(
+    expect(workspace.readContextOutput("git-root-window-scope-list")).toContain("own-git-root");
+    expect(workspace.readContextOutput("git-root-window-scope-list")).not.toContain(
       "foreign-same-git-root",
     );
   }, 20_000);
 
   it("can scope global tmux windows to all windows", async () => {
-    const project = createProject({ tmuxWindowScope: "all" });
-    seedTmuxWindow(project, { title: "untagged" });
+    const workspace = createWorkspace({ tmuxWindowScope: "all" });
+    createPreexistingTmuxWindow(workspace, { title: "untagged" });
 
-    const result = await project.run({
+    const result = await workspace.run({
       script: [
         bash("sleep 30", { background: true, name: "own-all" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(project, "all-window-scope-list", "tmux", "listed"),
+        captureLatestToolResult(workspace, {
+          outputName: "all-window-scope-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "all window scope",
     });
 
     expectPiSuccess(result);
-    expect(project.readContextOutput("all-window-scope-list")).toContain("own-all");
-    expect(project.readContextOutput("all-window-scope-list")).not.toContain("untagged");
+    expect(workspace.readContextOutput("all-window-scope-list")).toContain("own-all");
+    expect(workspace.readContextOutput("all-window-scope-list")).not.toContain("untagged");
   }, 20_000);
 
   it("distinguishes git-root and all window scopes in git-root tmux sessions", async () => {
-    const gitRootScoped = createProject({
+    const gitRootScoped = createWorkspace({
       tmuxSessionScope: "git-root",
       tmuxWindowScope: "git-root",
     });
-    seedTmuxWindow(gitRootScoped, { title: "untagged-hidden" });
+    createPreexistingTmuxWindow(gitRootScoped, { title: "untagged-hidden" });
 
     const gitRootResult = await gitRootScoped.run({
       script: [
         bash("sleep 30", { background: true, name: "own-git-root-scope" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(gitRootScoped, "git-root-scope-list", "tmux", "listed"),
+        captureLatestToolResult(gitRootScoped, {
+          outputName: "git-root-scope-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "git-root scoped git-root session",
     });
 
-    const allScoped = createProject({ tmuxSessionScope: "git-root", tmuxWindowScope: "all" });
-    seedTmuxWindow(allScoped, { title: "untagged-visible" });
+    const allScoped = createWorkspace({ tmuxSessionScope: "git-root", tmuxWindowScope: "all" });
+    createPreexistingTmuxWindow(allScoped, { title: "untagged-visible" });
 
     const allResult = await allScoped.run({
       script: [
         bash("sleep 30", { background: true, name: "own-all-scope" }),
         scriptedToolCall("tmux", { action: "list" }, { delayMs: 500 }),
-        recordContext(allScoped, "all-scope-list", "tmux", "listed"),
+        captureLatestToolResult(allScoped, {
+          outputName: "all-scope-list",
+          toolName: "tmux",
+          assistantReply: "listed",
+        }),
       ],
       prompt: "all scoped git-root session",
     });
@@ -616,38 +769,7 @@ describe("tmux-bash e2e", () => {
   it.each(testCases)(
     "$name",
     async (testCase) => {
-      const project = createProject();
-
-      const result = await project.run({
-        script: testCase.script(project),
-        prompt: testCase.name,
-        timeoutMs: testCase.timeoutMs,
-      });
-
-      expectPiSuccess(result);
-      expect(result.terminalOutput).toBe(testCase.expectedTerminalOutput);
-      if (testCase.expectedTmuxSessionExists !== undefined) {
-        expect(project.tmuxSessionExists()).toBe(testCase.expectedTmuxSessionExists);
-      }
-
-      const outputFile = testCase.expectedOutputFileContent
-        ? findOutputFileWithContent(project, testCase.expectedOutputFileContent)
-        : undefined;
-
-      if (testCase.expectedOutputFileContent && outputFile) {
-        expect(readFileSync(outputFile, "utf8")).toBe(testCase.expectedOutputFileContent);
-      }
-
-      if (testCase.expectedContextOutputName) {
-        expect(project.readContextOutput(testCase.expectedContextOutputName)).toBe(
-          testCase.expectedContextOutput?.(project, outputFile),
-        );
-      }
-
-      if (testCase.expectedLatestToolResult) {
-        const expected = testCase.expectedLatestToolResult;
-        expect(project.latestToolResult(expected.toolName)?.isError).toBe(expected.isError);
-      }
+      expectTestCase(testCase, await runTestCase(testCase));
     },
     40_000,
   );

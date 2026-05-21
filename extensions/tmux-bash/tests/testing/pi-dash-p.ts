@@ -1,6 +1,22 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
+const buildPiArgs = (extensions: string[], prompt: string): string[] => [
+  "--no-extensions",
+  "--no-skills",
+  "--no-prompt-templates",
+  "--no-themes",
+  "--no-context-files",
+  "--offline",
+  ...extensions.flatMap((extension) => ["-e", extension]),
+  "--provider",
+  "scripted",
+  "--model",
+  "scripted",
+  "-p",
+  prompt,
+];
+
 export type RunPiOptions = {
   cwd: string;
   agentDir: string;
@@ -16,7 +32,9 @@ export type RunPiResult = {
   code: number | null;
 };
 
-export const runPi = async (options: RunPiOptions): Promise<RunPiResult> => {
+export const runPi = async (rawOptions: RunPiOptions): Promise<RunPiResult> => {
+  const options = { ...rawOptions, timeoutMs: rawOptions.timeoutMs ?? 30_000 };
+
   const piBin = path.resolve("node_modules/.bin/pi");
   const args = buildPiArgs(options.extensions, options.prompt);
 
@@ -33,7 +51,7 @@ export const runPi = async (options: RunPiOptions): Promise<RunPiResult> => {
     const timeout = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error("pi timed out"));
-    }, options.timeoutMs ?? 30_000);
+    }, options.timeoutMs);
     let stdout = "";
     let stderr = "";
     const terminalChunks: string[] = [];
@@ -60,19 +78,3 @@ export const runPi = async (options: RunPiOptions): Promise<RunPiResult> => {
     });
   });
 };
-
-const buildPiArgs = (extensions: string[], prompt: string): string[] => [
-  "--no-extensions",
-  "--no-skills",
-  "--no-prompt-templates",
-  "--no-themes",
-  "--no-context-files",
-  "--offline",
-  ...extensions.flatMap((extension) => ["-e", extension]),
-  "--provider",
-  "scripted",
-  "--model",
-  "scripted",
-  "-p",
-  prompt,
-];

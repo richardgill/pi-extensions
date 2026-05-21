@@ -2,24 +2,33 @@ import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { z } from "zod";
 import { DEFAULT_OPTIONS, type ResolvedOptions } from "./extension.js";
 
+const promptToolEntrySchema = z.union([z.string(), z.literal(false)]);
+const promptGuidelinesSchema = z.union([z.array(z.string()), z.literal(false)]);
+
 export const TmuxBashConfigSchema = z
   .object({
     gitRootTmuxSessionNameTemplate: z.string().includes("{gitRootSessionName}").optional(),
     tmuxSessionScope: z.enum(["git-root", "global"]).optional(),
     globalTmuxSessionName: z.string().min(1).optional(),
     tmuxWindowScope: z.enum(["pi-session", "git-root", "all"]).optional(),
-    toolName: z.string().min(1).optional(),
+    bashToolName: z.string().min(1).optional(),
+    tmuxToolName: z.string().min(1).optional(),
+    tmuxBinary: z.string().min(1).optional(),
     bashContextLines: z.number().int().positive().optional(),
     bashCompactDisplayLines: z.number().int().positive().optional(),
+    bashTruncatedCompactDisplayLines: z.number().int().positive().optional(),
     bashExpandedDisplayLines: z.number().int().positive().optional(),
     completedContextLines: z.number().int().positive().optional(),
     completedCompactDisplayLines: z.number().int().positive().optional(),
+    completedTruncatedCompactDisplayLines: z.number().int().positive().optional(),
     completedExpandedDisplayLines: z.number().int().positive().optional(),
     pollContextLines: z.number().int().positive().optional(),
     pollCompactDisplayLines: z.number().int().positive().optional(),
+    pollTruncatedCompactDisplayLines: z.number().int().positive().optional(),
     pollExpandedDisplayLines: z.number().int().positive().optional(),
     peekContextLines: z.number().int().positive().optional(),
     peekCompactDisplayLines: z.number().int().positive().optional(),
+    peekTruncatedCompactDisplayLines: z.number().int().positive().optional(),
     peekExpandedDisplayLines: z.number().int().positive().optional(),
     windowNameTemplate: z.string().optional(),
     maxWindowNameLength: z.number().int().positive().optional(),
@@ -27,14 +36,14 @@ export const TmuxBashConfigSchema = z
     alwaysShowOutputFilePath: z.boolean().optional(),
     preserveOutputFiles: z.boolean().optional(),
     outputDir: z.string().min(1).optional(),
-    killSessionOnShutdown: z.boolean().optional(),
-    replaceBashTool: z.boolean().optional(),
     defaultTimeoutSeconds: z.number().int().positive().optional(),
     maxTimeoutSeconds: z.number().int().positive().optional(),
     defaultPollInterval: z.number().int().nonnegative().optional(),
     displayCommandStartMarker: z.string().optional(),
     maxOutputBytes: z.number().int().positive().optional(),
-    prompt: z.string().optional(),
+    systemPrompt: z.boolean().optional(),
+    systemPromptAvailableTools: z.record(z.string(), promptToolEntrySchema).optional(),
+    systemPromptGuidelines: promptGuidelinesSchema.optional(),
   })
   .refine(
     (config) =>

@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-export type TempPiProject = {
+export type PiTestWorkspace = {
   tempRoot: string;
   projectDir: string;
   agentDir: string;
@@ -33,9 +33,9 @@ type ToolResultMessage = {
   content: { type: string; text?: string }[];
 };
 
-export const createTempPiProject = (
+export const createPiTestWorkspace = (
   options: { tmuxBashConfig?: Record<string, unknown> } = {},
-): TempPiProject => {
+): PiTestWorkspace => {
   const tempRoot = mkdtempSync(path.join(tmpdir(), "pi-tmux-bash-e2e-"));
   const projectDir = path.join(tempRoot, "project");
   const agentDir = path.join(tempRoot, "agent");

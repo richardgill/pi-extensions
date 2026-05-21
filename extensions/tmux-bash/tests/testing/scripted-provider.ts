@@ -5,7 +5,8 @@ export type ScriptedStep =
   | ScriptedToolCallStep
   | ScriptedTextStep
   | ScriptedExpectLatestToolResultStep
-  | ScriptedRecordLatestToolResultStep;
+  | ScriptedRecordLatestToolResultStep
+  | ScriptedRecordSystemPromptStep;
 
 type ScriptedToolCallStep = {
   type: "toolCall";
@@ -36,6 +37,12 @@ type ScriptedRecordLatestToolResultStep = {
   outputPath: string;
   text: string;
   toolName?: string;
+};
+
+type ScriptedRecordSystemPromptStep = {
+  type: "recordSystemPrompt";
+  outputPath: string;
+  text: string;
 };
 
 type RecordLatestToolResultOptions = {
@@ -83,6 +90,12 @@ export const recordLatestToolResult = (
   outputPath,
   text: options.text ?? "",
   ...(options.toolName === undefined ? {} : { toolName: options.toolName }),
+});
+
+export const recordSystemPrompt = (outputPath: string, text = ""): ScriptedStep => ({
+  type: "recordSystemPrompt",
+  outputPath,
+  text,
 });
 
 export const writeScriptedProvider = (root: string, steps: ScriptedStep[]): string => {
@@ -179,6 +192,7 @@ const scriptedStepSource = (step: ScriptedStep): string => {
   if (step.type === "toolCall") return scriptedToolCallSource(step);
   if (step.type === "expectLatestToolResult") return scriptedExpectLatestToolResultSource(step);
   if (step.type === "recordLatestToolResult") return scriptedRecordLatestToolResultSource(step);
+  if (step.type === "recordSystemPrompt") return scriptedRecordSystemPromptSource(step);
   return `fauxAssistantMessage(${JSON.stringify(step.text)})`;
 };
 
@@ -193,3 +207,6 @@ const scriptedExpectLatestToolResultSource = (step: ScriptedExpectLatestToolResu
 
 const scriptedRecordLatestToolResultSource = (step: ScriptedRecordLatestToolResultStep): string =>
   `(context) => { writeText(${JSON.stringify(step.outputPath)}, latestToolResultText(context, ${JSON.stringify(step.toolName)})); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
+
+const scriptedRecordSystemPromptSource = (step: ScriptedRecordSystemPromptStep): string =>
+  `(context) => { writeText(${JSON.stringify(step.outputPath)}, context.systemPrompt ?? ""); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
