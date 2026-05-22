@@ -81,7 +81,9 @@ const normalizeWrappedFullOutputPaths = (text: string): string => {
 };
 
 export const stableFullOutputPath = (text: string): string =>
-  text.replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]");
+  text
+    .replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]")
+    .replace(/"\\\$([A-Za-z_][A-Za-z0-9_]*)"/g, '"$$$1"');
 
 export const stableAnsiBashTranscript = (pane: string, doneMarker: string): string =>
   normalizeWrappedFullOutputPaths(

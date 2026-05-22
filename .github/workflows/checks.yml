@@ -37,6 +37,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tmux
+          mkdir -p ~/.config/tmux
+          printf 'set -g extended-keys on\n' >> ~/.config/tmux/tmux.conf
+          tmux -f ~/.config/tmux/tmux.conf new-session -d -s ci-tmux-options 'sleep 3600'
+          tmux show-options -g extended-keys
 
       - name: Run checks in parallel
         id: parallel
