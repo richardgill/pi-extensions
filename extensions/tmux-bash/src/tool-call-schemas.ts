@@ -2,8 +2,8 @@ import { defineZodToolCall } from "@richardgill/pi-zod-tool-call";
 import { z } from "zod";
 
 type SchemaOptions = {
-  bashToolName?: string;
-  tmuxToolName?: string;
+  bashToolName: string;
+  tmuxToolName: string;
   defaultTimeoutSeconds: number;
   maxTimeoutSeconds: number;
   defaultPollInterval: number;
@@ -115,7 +115,7 @@ export const buildBashToolCallSchema = <TInvalidResult>(
   invalidInput: InvalidInput<TInvalidResult>,
 ) =>
   defineZodToolCall({
-    toolName: options.bashToolName ?? "bash",
+    toolName: options.bashToolName,
     zodSchema: buildBashInputSchema(options),
     invalidInput,
   });
@@ -125,7 +125,7 @@ export const buildTmuxToolCallSchema = <TInvalidResult>(
   invalidInput: InvalidInput<TInvalidResult>,
 ) =>
   defineZodToolCall({
-    toolName: options.tmuxToolName ?? "tmux",
+    toolName: options.tmuxToolName,
     zodSchema: buildTmuxInputSchema(options),
     invalidInput,
   });
