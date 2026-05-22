@@ -123,14 +123,10 @@ const getRunDir = (state: ExtensionState, options: ResolvedOptions): string => {
 export const resetRunDir = (
   state: ExtensionState,
   options: ResolvedOptions,
-  sessionId?: string,
+  sessionId: string,
 ): void => {
-  const encodedSessionId = sessionId
-    ? Buffer.from(sessionId).toString("base64url").slice(0, 24)
-    : null;
-  const id = encodedSessionId
-    ? `${encodedSessionId}-${process.pid}-${randomBytes(4).toString("hex")}`
-    : randomBytes(8).toString("hex");
+  const encodedSessionId = Buffer.from(sessionId).toString("base64url").slice(0, 24);
+  const id = `${encodedSessionId}-${process.pid}-${randomBytes(4).toString("hex")}`;
   state.runDir = runDirPath(options, id);
   mkdirSync(state.runDir, { recursive: true, mode: 0o700 });
   chmodSync(state.runDir, 0o700);
