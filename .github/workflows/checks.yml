@@ -33,10 +33,22 @@ jobs:
             ]
           status: in_progress
 
-      - name: Install tmux
+      - name: Install tmux 3.6a
         run: |
+          TMUX_VERSION=3.6a
           sudo apt-get update
-          sudo apt-get install -y tmux
+          sudo apt-get install -y build-essential pkg-config libevent-dev libncurses-dev bison
+          curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz" -o /tmp/tmux.tar.gz
+          mkdir -p /tmp/tmux-src
+          tar -xzf /tmp/tmux.tar.gz -C /tmp/tmux-src --strip-components=1
+          pushd /tmp/tmux-src
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+          popd
+          hash -r
+          tmux -V
+          test "$(tmux -V)" = "tmux ${TMUX_VERSION}"
 
       - name: Run checks in parallel
         id: parallel
