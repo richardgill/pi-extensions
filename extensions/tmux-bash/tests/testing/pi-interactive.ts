@@ -115,10 +115,8 @@ const startPiTui = (session: string, options: RunPiTuiOptions): void => {
   ]);
 };
 
-const sendPrompt = async (session: string, prompt: string, timeoutMs: number): Promise<void> => {
+const sendPrompt = (session: string, prompt: string): void => {
   tmux(["send-keys", "-l", "-t", session, prompt]);
-  await waitForPane(session, prompt, timeoutMs);
-  await sleep(300);
   tmux(["send-keys", "-t", session, "Enter"]);
 };
 
@@ -185,8 +183,8 @@ export const runPiTui = async (options: RunPiTuiOptions): Promise<RunPiTuiResult
     writeScriptedModelSettings(options.agentDir);
     startPiTui(sessionName, options);
     await sleep(1_000);
+    sendPrompt(sessionName, options.prompt);
     const timeoutMs = options.timeoutMs ?? 20_000;
-    await sendPrompt(sessionName, options.prompt, timeoutMs);
     const checkpoints = await captureCheckpoints(
       sessionName,
       options.checkpoints,
