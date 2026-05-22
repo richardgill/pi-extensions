@@ -40,13 +40,14 @@ import {
   DEFAULT_OPTIONS,
   SHELL_IDENTIFIER_REGEX,
   type ResolvedOptions,
-} from "./options";
+} from "./config";
 import type { BashInput, TmuxInput } from "./tool-call-schemas";
 import {
   displayCommandForCommand,
   formatCompletionSummary,
   formatRenderedBashResult,
   formatTmuxOutputForContext as formatOutput,
+  hasOnlyEmptyBashOutput,
   indentDisplayLine,
   indentDisplayLines,
   type CompletionMessageRenderDetails,
@@ -123,14 +124,10 @@ const getRunDir = (state: ExtensionState, options: ResolvedOptions): string => {
 export const resetRunDir = (
   state: ExtensionState,
   options: ResolvedOptions,
-  sessionId?: string,
+  sessionId: string,
 ): void => {
-  const encodedSessionId = sessionId
-    ? Buffer.from(sessionId).toString("base64url").slice(0, 24)
-    : null;
-  const id = encodedSessionId
-    ? `${encodedSessionId}-${process.pid}-${randomBytes(4).toString("hex")}`
-    : randomBytes(8).toString("hex");
+  const encodedSessionId = Buffer.from(sessionId).toString("base64url").slice(0, 24);
+  const id = `${encodedSessionId}-${process.pid}-${randomBytes(4).toString("hex")}`;
   state.runDir = runDirPath(options, id);
   mkdirSync(state.runDir, { recursive: true, mode: 0o700 });
   chmodSync(state.runDir, 0o700);
@@ -625,8 +622,11 @@ const completionMessageDetails = (
   status: exitCode === 0 ? "success" : "failed",
 });
 
-const formatCompletionMessage = (details: CompletionMessageRenderDetails): string =>
-  `${details.summary}\n\n\`\`\`\n${formatRenderedBashResult(details.output, { expanded: true })}\n\`\`\``;
+const formatCompletionMessage = (details: CompletionMessageRenderDetails): string => {
+  if (hasOnlyEmptyBashOutput(details.output)) return details.summary;
+
+  return `${details.summary}\n\n\`\`\`\n${formatRenderedBashResult(details.output, { expanded: true })}\n\`\`\``;
+};
 
 const completionCustomMessage = (exitCode: number, output: FormattedOutput): CustomMessageInput => {
   const details = completionMessageDetails(exitCode, output);

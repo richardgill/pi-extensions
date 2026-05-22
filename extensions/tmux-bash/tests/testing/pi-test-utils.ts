@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect } from "vitest";
-import { DEFAULT_OPTIONS } from "../../src/options";
+import { DEFAULT_OPTIONS } from "../../src/config";
 import type { BashInput } from "../../src/tool-call-schemas";
 import { backgroundSessionName } from "../../src/tmux-utils";
 import {

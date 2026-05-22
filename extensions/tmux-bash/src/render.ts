@@ -6,7 +6,7 @@ import {
   type TruncationOptions,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
-import { BASH_DURATION_SEPARATOR, DEFAULT_OPTIONS, type ResolvedOptions } from "./options";
+import { BASH_DURATION_SEPARATOR, DEFAULT_OPTIONS, type ResolvedOptions } from "./config";
 import type { BashInput } from "./tool-call-schemas";
 
 export type RenderTheme = {
@@ -27,6 +27,7 @@ type RenderedBashOutputLine = BashOutputRenderLine | BashOutputElisionLine;
 
 export type BashOutputRenderDetails = {
   lines: BashOutputRenderLine[];
+  empty: boolean;
 };
 
 export type TmuxBashToolDetails = BashToolDetails & {
@@ -122,8 +123,9 @@ const lastLineBytes = (content: string): number =>
 const exceedsLineLimit = (content: string, maxLines: number | undefined): boolean =>
   maxLines !== undefined && content.split("\n").length > maxLines;
 
-const outputRenderDetails = (content: string): BashOutputRenderDetails => ({
+const outputRenderDetails = (content: string, empty = false): BashOutputRenderDetails => ({
   lines: stripTrailingEmptyLines(content.split("\n")).map((text) => ({ kind: "output", text })),
+  empty,
 });
 
 const fullOutputNoticeLine = (fullOutputPath: string): BashOutputRenderLine => ({
@@ -162,6 +164,7 @@ export const formatTmuxOutputForContext = (
     truncationOptions = {},
   }: FormatTmuxOutputOptions = {},
 ): FormattedOutput => {
+  const empty = !content.trim();
   const text = content.trim() || emptyText;
   const maxBytes = truncationOptions.maxBytes ?? DEFAULT_MAX_BYTES;
   const useRawSingleOversizedLine =
@@ -178,14 +181,14 @@ export const formatTmuxOutputForContext = (
     : showFullOutputPath && fullOutputPath
       ? fullOutputNoticeLine(fullOutputPath)
       : undefined;
-  const render = outputRenderDetails(output);
+  const render = outputRenderDetails(output, empty);
 
   return {
     text: notice ? `${output}\n\n${notice.text}` : output,
     details: {
       ...(truncation.truncated ? { truncation, fullOutputPath } : {}),
       ...(!truncation.truncated && notice ? { fullOutputPath } : {}),
-      render: { lines: notice ? [...render.lines, notice] : render.lines },
+      render: { lines: notice ? [...render.lines, notice] : render.lines, empty: render.empty },
     },
   };
 };
@@ -429,17 +432,15 @@ export const renderBashResultText = ({
   return [renderedOutput, renderedDuration].filter(Boolean).join(BASH_DURATION_SEPARATOR);
 };
 
-const isNoOutputPlaceholder = (details: BashOutputRenderDetails): boolean =>
-  details.lines.length === 1 &&
-  details.lines[0]?.kind === "output" &&
-  details.lines[0].text === "(no output)";
+export const hasOnlyEmptyBashOutput = (details: BashOutputRenderDetails): boolean =>
+  details.empty && details.lines.every((line) => line.kind === "output");
 
 export const formatRenderedCompletionMessage = ({
   details,
   expanded,
   options = DEFAULT_OPTIONS,
 }: FormatRenderedCompletionMessageOptions): string => {
-  if (isNoOutputPlaceholder(details.output)) return details.summary;
+  if (hasOnlyEmptyBashOutput(details.output)) return details.summary;
 
   if (expanded) {
     const detailLines = displayTextForLines(

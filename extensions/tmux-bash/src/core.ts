@@ -6,7 +6,7 @@ import {
   type TmuxWindow,
   type TmuxWindowFilters,
 } from "./tmux-utils";
-import type { ResolvedOptions } from "./options";
+import type { ResolvedOptions } from "./config";
 
 export { loadTmuxBashConfig, TmuxBashConfigSchema } from "./config";
 export {
@@ -15,7 +15,7 @@ export {
   TmuxBashOptionsSchema,
   type ResolvedOptions,
   type TmuxBashOptions,
-} from "./options";
+} from "./config";
 export type { TmuxWindow, TmuxWindowFilters } from "./tmux-utils";
 
 export type TmuxBashContext = {

@@ -1,6 +1,6 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { ResolvedOptions } from "../options";
+import type { ResolvedOptions } from "../config";
 import {
   formatRenderedCompletionMessage,
   formatRenderedPollMessage,
@@ -28,7 +28,11 @@ const isBashOutputRenderDetails = (value: unknown): value is BashOutputRenderDet
   if (!value || typeof value !== "object") return false;
 
   const details = value as Partial<BashOutputRenderDetails>;
-  return Array.isArray(details.lines) && details.lines.every(isBashOutputRenderLine);
+  return (
+    Array.isArray(details.lines) &&
+    details.lines.every(isBashOutputRenderLine) &&
+    typeof details.empty === "boolean"
+  );
 };
 
 const completionMessageRenderDetails = (

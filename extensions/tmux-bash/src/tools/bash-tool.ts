@@ -1,11 +1,11 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { ResolvedOptions } from "../options";
+import type { ResolvedOptions } from "../config";
 import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
   systemPromptGuidelines,
-} from "../prompt";
+} from "../system-prompt";
 import { runBashInTmux, toolError, type ExtensionState } from "../runtime";
 import {
   renderBackgroundBashResultText,
