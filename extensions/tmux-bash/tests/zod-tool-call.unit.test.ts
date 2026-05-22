@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildBashToolCallSchema } from "../src/tool-call-schemas";
 
 const options = {
+  bashToolName: "bash",
+  tmuxToolName: "tmux",
   defaultTimeoutSeconds: 30,
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
