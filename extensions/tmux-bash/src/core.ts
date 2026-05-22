@@ -1,12 +1,20 @@
 import {
-  backgroundSessionName,
+  calcTmuxSessionName,
   getGitRoot,
   getWindows,
+  tmuxWindowFiltersForScope,
   type TmuxWindow,
   type TmuxWindowFilters,
 } from "./tmux-utils.js";
-import type { ResolvedOptions } from "./extension.js";
+import type { ResolvedOptions } from "./options.js";
 
+export { loadTmuxBashConfig, TmuxBashConfigSchema } from "./config.js";
+export {
+  DEFAULT_OPTIONS,
+  resolveOptions,
+  type ResolvedOptions,
+  type TmuxBashOptions,
+} from "./options.js";
 export type { TmuxWindow, TmuxWindowFilters } from "./tmux-utils.js";
 
 export type TmuxBashContext = {
@@ -20,21 +28,6 @@ type ResolveTmuxBashContextInput = {
   cwd: string;
   piSessionId: string;
   options: ResolvedOptions;
-};
-
-const tmuxSessionNameForGitRoot = (gitRoot: string, options: ResolvedOptions): string =>
-  options.tmuxSessionScope === "global"
-    ? options.globalTmuxSessionName
-    : backgroundSessionName(gitRoot, options.gitRootTmuxSessionNameTemplate);
-
-const tmuxWindowFiltersForScope = (
-  gitRoot: string,
-  piSessionId: string,
-  options: ResolvedOptions,
-): TmuxWindowFilters => {
-  if (options.tmuxWindowScope === "pi-session") return { piSessionId };
-  if (options.tmuxWindowScope === "git-root") return { gitRoot };
-  return {};
 };
 
 // Example:
@@ -60,7 +53,7 @@ export const resolveTmuxBashContext = ({
 
   return {
     gitRoot,
-    session: tmuxSessionNameForGitRoot(gitRoot, options),
+    session: calcTmuxSessionName(gitRoot, options),
     filters: tmuxWindowFiltersForScope(gitRoot, piSessionId, options),
     tmuxBinary: options.tmuxBinary,
   };

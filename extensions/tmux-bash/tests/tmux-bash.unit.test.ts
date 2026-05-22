@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { resolveOptions } from "../src/options.js";
 import {
   displayCommandForCommand,
   formatCompletionSummary,
   formatDurationSeconds,
-  formatEnvironmentExportsForBash,
   formatRenderedBashCall,
   formatRenderedBashResult,
   formatRenderedCompletionMessage,
@@ -13,8 +13,8 @@ import {
   renderBackgroundBashResultText,
   renderBashCallText,
   renderBashResultText,
-  resolveOptions,
-} from "../src/extension.js";
+} from "../src/render.js";
+import { formatEnvironmentExportsForBash } from "../src/runtime.js";
 import { tmuxWindowAttachCommand } from "../src/tmux-utils.js";
 
 type FormatOutputCase = {
@@ -91,13 +91,12 @@ describe("tmux-bash unit", () => {
     ];
 
     it.each(cases)("$name", (testCase) => {
-      const result = formatTmuxOutputForContext(
-        testCase.content,
-        testCase.fullOutputPath,
-        "(no output)",
-        testCase.showFullOutputPath,
-        testCase.truncationOptions,
-      );
+      const result = formatTmuxOutputForContext(testCase.content, {
+        fullOutputPath: testCase.fullOutputPath,
+        emptyText: "(no output)",
+        showFullOutputPath: testCase.showFullOutputPath,
+        truncationOptions: testCase.truncationOptions,
+      });
 
       expect(result.text).toBe(testCase.expectedText);
       expect(result.details?.fullOutputPath).toBe(testCase.expectedFullOutputPath);
@@ -121,24 +120,34 @@ describe("tmux-bash unit", () => {
   describe("resolveOptions", () => {
     it("resolves new tmux scope configuration", () => {
       const result = resolveOptions({
-        gitRootTmuxSessionNameTemplate: "git-{gitRootSessionName}",
+        gitRootTmuxSessionNameTemplate: "git-{{gitRootSessionName}}",
         tmuxSessionScope: "git-root",
         globalTmuxSessionName: "global-bg",
         tmuxWindowScope: "all",
         bashToolName: "shell",
         tmuxToolName: "mux",
+        bashToolDescription: "Run {{bashTool}}: {{bashContextLines}}/{{maxOutputKb}}",
+        tmuxToolDescription: "Inspect {{tmuxTool}}",
         tmuxBinary: "/opt/bin/tmux",
+        tmuxEnvExportDenylist: ["CUSTOM"],
+        foregroundBashUpdateIntervalMs: 100,
         bashContextLines: 123,
         maxOutputBytes: 456,
       });
 
-      expect(result.gitRootTmuxSessionNameTemplate).toBe("git-{gitRootSessionName}");
+      expect(result.gitRootTmuxSessionNameTemplate).toBe("git-{{gitRootSessionName}}");
       expect(result.tmuxSessionScope).toBe("git-root");
       expect(result.globalTmuxSessionName).toBe("global-bg");
       expect(result.tmuxWindowScope).toBe("all");
       expect(result.bashToolName).toBe("shell");
       expect(result.tmuxToolName).toBe("mux");
+      expect(result.bashToolDescription).toBe(
+        "Run {{bashTool}}: {{bashContextLines}}/{{maxOutputKb}}",
+      );
+      expect(result.tmuxToolDescription).toBe("Inspect {{tmuxTool}}");
       expect(result.tmuxBinary).toBe("/opt/bin/tmux");
+      expect(result.tmuxEnvExportDenylist).toEqual(["CUSTOM"]);
+      expect(result.foregroundBashUpdateIntervalMs).toBe(100);
       expect(result.bashContextLines).toBe(123);
       expect(result.maxOutputBytes).toBe(456);
     });
@@ -146,10 +155,10 @@ describe("tmux-bash unit", () => {
 
   describe("tmuxWindowAttachCommand", () => {
     it("formats attach commands for the current environment", () => {
-      expect(tmuxWindowAttachCommand("@1065", { TMUX: "/tmp/tmux" })).toBe(
+      expect(tmuxWindowAttachCommand("@1065", { TMUX: "/tmp/tmux" }, "tmux")).toBe(
         "tmux switch-client -t @1065",
       );
-      expect(tmuxWindowAttachCommand("@1065", {})).toBe("tmux attach -t @1065");
+      expect(tmuxWindowAttachCommand("@1065", {}, "tmux")).toBe("tmux attach -t @1065");
       expect(tmuxWindowAttachCommand("@1065", {}, "/opt/bin/tmux")).toBe(
         "'/opt/bin/tmux' attach -t @1065",
       );
@@ -167,15 +176,23 @@ describe("tmux-bash unit", () => {
 
   describe("bash rendering", () => {
     it("hides full output paths from collapsed bash results", () => {
-      const result = formatRenderedBashResult("hello\n\n[Full output: /tmp/output.out]", false);
+      const result = formatTmuxOutputForContext("hello", {
+        fullOutputPath: "/tmp/output.out",
+        showFullOutputPath: true,
+      });
 
-      expect(result).toBe("hello");
+      expect(formatRenderedBashResult(result.details.render, { expanded: false })).toBe("hello");
     });
 
     it("keeps full output paths in expanded bash results", () => {
-      const raw = "hello\n\n[Full output: /tmp/output.out]";
+      const result = formatTmuxOutputForContext("hello", {
+        fullOutputPath: "/tmp/output.out",
+        showFullOutputPath: true,
+      });
 
-      expect(formatRenderedBashResult(raw, true)).toBe(raw);
+      expect(formatRenderedBashResult(result.details.render, { expanded: true })).toBe(
+        "hello\n\n[Full output: /tmp/output.out]",
+      );
     });
 
     it("renders compact bash calls with useful metadata", () => {
@@ -192,11 +209,11 @@ describe("tmux-bash unit", () => {
         command: "sleep 90",
         background: true,
       });
-      const result = renderBackgroundBashResultText(
-        "Started in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
-        false,
-        plainTheme,
-      );
+      const result = renderBackgroundBashResultText({
+        raw: "Started in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
+        expanded: false,
+        theme: plainTheme,
+      });
 
       expect(`${call}\n${result}`).toBe(
         "$ sleep 90 (background)\n\nStarted in background tmux window: sleep @1065.\nResult will be reported when it finishes.\n\nAttach with: tmux switch-client -t @1065",
@@ -230,13 +247,13 @@ describe("tmux-bash unit", () => {
     });
 
     it("renders elapsed with one visible blank line after output", () => {
-      const result = renderBashResultText(
-        "working",
-        false,
-        true,
-        { startedAt: 0, endedAt: 5_000 },
-        plainTheme,
-      );
+      const result = renderBashResultText({
+        raw: "working",
+        expanded: false,
+        isPartial: true,
+        state: { startedAt: 0, endedAt: 5_000 },
+        theme: plainTheme,
+      });
 
       expect(result).toBe(`working
 
@@ -244,26 +261,26 @@ Elapsed 5.0s`);
     });
 
     it("renders elapsed with one visible blank line when there is no output yet", () => {
-      const result = renderBashResultText(
-        "",
-        false,
-        true,
-        { startedAt: 0, endedAt: 5_000 },
-        plainTheme,
-      );
+      const result = renderBashResultText({
+        raw: "",
+        expanded: false,
+        isPartial: true,
+        state: { startedAt: 0, endedAt: 5_000 },
+        theme: plainTheme,
+      });
 
       expect(result).toBe(`
 Elapsed 5.0s`);
     });
 
     it("renders took with one visible blank line after output", () => {
-      const result = renderBashResultText(
-        "done",
-        false,
-        false,
-        { startedAt: 0, endedAt: 5_000 },
-        plainTheme,
-      );
+      const result = renderBashResultText({
+        raw: "done",
+        expanded: false,
+        isPartial: false,
+        state: { startedAt: 0, endedAt: 5_000 },
+        theme: plainTheme,
+      });
 
       expect(result).toBe(`done
 
@@ -271,20 +288,28 @@ Took 5.0s`);
     });
 
     it("renders collapsed bash elision with vanilla pi colors", () => {
-      const result = renderBashResultText(
-        "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\n\n[Showing lines 1-6 of 7. Full output: /tmp/output.out]",
-        false,
-        false,
-        {},
-        taggedTheme,
+      const output = formatTmuxOutputForContext(
+        "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\nline-7",
+        {
+          fullOutputPath: "/tmp/output.out",
+          truncationOptions: { maxLines: 6 },
+        },
       );
+      const result = renderBashResultText({
+        raw: output.text,
+        details: output.details.render,
+        expanded: false,
+        isPartial: false,
+        state: {},
+        theme: taggedTheme,
+      });
 
       expect(result).toContain(
         "<muted>... (4 earlier lines, </muted><dim>ctrl+o</dim><muted> to expand)</muted>",
       );
-      expect(result).toContain("<toolOutput>line-6</toolOutput>");
+      expect(result).toContain("<toolOutput>line-7</toolOutput>");
       expect(result).toContain(
-        "<toolOutput>[Showing lines 1-6 of 7. Full output: /tmp/output.out]</toolOutput>",
+        "<toolOutput>[Showing lines 2-7 of 7. Full output: /tmp/output.out]</toolOutput>",
       );
     });
 
@@ -353,43 +378,76 @@ Took 5.0s`);
       expect(result).not.toContain("TMUX");
       expect(result).not.toContain("not-exportable");
     });
+
+    it("uses the configured environment export denylist", () => {
+      const result = formatEnvironmentExportsForBash(
+        {
+          CUSTOM: "skip",
+          PWD: "/tmp/project",
+        },
+        ["CUSTOM"],
+      );
+
+      expect(result).toContain("export PWD='/tmp/project'");
+      expect(result).not.toContain("CUSTOM");
+    });
   });
 
   describe("formatRenderedCompletionMessage", () => {
     it("renders compact background bash completion messages", () => {
-      const raw = [
-        "Background bash finished",
-        "",
-        "```",
-        "hello",
-        "",
-        "[Full output: /tmp/output.out]",
-        "```",
-      ].join("\n");
+      const output = formatTmuxOutputForContext("hello", {
+        fullOutputPath: "/tmp/output.out",
+        showFullOutputPath: true,
+      });
+      const details = {
+        summary: "Background bash finished",
+        output: output.details.render,
+        exitCode: 0,
+        status: "success" as const,
+      };
 
-      expect(formatRenderedCompletionMessage(raw, false)).toBe(
+      expect(formatRenderedCompletionMessage({ details, expanded: false })).toBe(
         "Background bash finished\n\n hello",
       );
     });
 
     it("renders expanded completion messages with one-space indented output", () => {
-      const raw = "Background bash finished\n\n```\nhello\n```";
+      const details = {
+        summary: "Background bash finished",
+        output: formatTmuxOutputForContext("\nhello").details.render,
+        exitCode: 0,
+        status: "success" as const,
+      };
 
-      expect(formatRenderedCompletionMessage(raw, true)).toBe("Background bash finished\n\n hello");
+      expect(formatRenderedCompletionMessage({ details, expanded: true })).toBe(
+        "Background bash finished\n hello",
+      );
+    });
+
+    it("hides no-output placeholders in completion messages", () => {
+      const details = {
+        summary: "Background bash finished",
+        output: formatTmuxOutputForContext("").details.render,
+        exitCode: 0,
+        status: "success" as const,
+      };
+
+      expect(formatRenderedCompletionMessage({ details, expanded: false })).toBe(
+        "Background bash finished",
+      );
     });
   });
 
   describe("formatRenderedPollMessage", () => {
-    it("renders poll messages without icon and with one-space indented output", () => {
-      const raw = [
-        "tmux poll: poll-fit @1065",
-        " $ printf 'hello\\n'",
-        " hello",
-        "",
-        " Attach with: tmux switch-client -t @1065",
-      ].join("\n");
+    it("renders poll messages from structured details", () => {
+      const details = {
+        summary: "tmux poll: poll-fit @1065",
+        command: "$ printf 'hello\\n'",
+        output: formatTmuxOutputForContext("hello").details.render,
+        attachLines: [" Attach with: tmux switch-client -t @1065"],
+      };
 
-      expect(formatRenderedPollMessage(raw, false)).toBe(
+      expect(formatRenderedPollMessage({ details, expanded: false })).toBe(
         "tmux poll: poll-fit @1065\n\n $ printf 'hello\\n'\n hello\n\n Attach with: tmux switch-client -t @1065",
       );
     });

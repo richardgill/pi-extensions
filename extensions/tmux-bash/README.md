@@ -79,8 +79,8 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "tmuxWindowScope": "pi-session", // "pi-session" (default) | "git-root" | "all"
 
   // Template for the background tmux session name when tmuxSessionScope is "git-root".
-  // "{gitRootSessionName}" is replaced with the normal git-root session name.
-  "gitRootTmuxSessionNameTemplate": "{gitRootSessionName}-bg", // default; must include "{gitRootSessionName}"
+  // "{{gitRootSessionName}}" is replaced with the normal git-root session name.
+  "gitRootTmuxSessionNameTemplate": "{{gitRootSessionName}}-bg", // default; must include "{{gitRootSessionName}}"
 
   // Background tmux session name when tmuxSessionScope is "global".
   "globalTmuxSessionName": "pi-background", // default
@@ -91,8 +91,23 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Tmux inspection/control tool name exposed to the agent.
   "tmuxToolName": "tmux", // default
 
+  // Bash tool description sent to the model tool schema.
+  // Supports the same template variables as systemPromptGuidelines below.
+  "bashToolDescription": "Execute a bash command in a background tmux window. Output is truncated to last {{bashContextLines}} lines or {{maxOutputKb}}KB. Defaults to a {{defaultTimeoutSeconds}}s timeout, max {{maxTimeoutSeconds}}s; timeoutAction defaults to \"background\". Use background for long-running commands.", // default
+
+  // Tmux tool description sent to the model tool schema.
+  // Supports the same template variables as systemPromptGuidelines below.
+  "tmuxToolDescription": "Inspect and control background tmux windows created by bash.", // default
+
   // tmux binary/path used for all tmux invocations.
   "tmuxBinary": "tmux", // default
+
+  // Environment names not exported from Pi into bash-in-tmux scripts.
+  // Skips shell/tmux bookkeeping that should be owned by the new tmux window.
+  "tmuxEnvExportDenylist": ["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"], // default
+
+  // Milliseconds between streaming foreground bash output updates.
+  "foregroundBashUpdateIntervalMs": 250, // default; positive integer
 
   // Foreground bash output lines sent to model context.
   "bashContextLines": 2000, // default; positive integer
@@ -189,37 +204,36 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   // Set to false to omit all tmux-bash Available tools entries and guidelines.
   "systemPrompt": true, // true (default) | false
 
-  // Available tools entries for Pi's generated system prompt.
-  // Omit systemPromptAvailableTools, or omit one key, to use defaults.
+  // Tool snippets for Pi's generated system prompt Available tools section.
+  // Omit systemPromptToolSnippets, or omit one key, to use defaults.
   // Set an entry to false to hide only that tool from Available tools.
-  // Keys: "{bashTool}" for the configured bash tool, "{tmuxTool}" for the configured tmux tool.
-  // Values support the template variables listed above this config block.
-  "systemPromptAvailableTools": {
-    "{bashTool}": "Execute bash commands in background tmux windows", // string | false
-    "{tmuxTool}": "Inspect and control the background tmux sessions created by bash tool" // string | false
+  // Keys are configured tool names. Values support the template variables listed below.
+  "systemPromptToolSnippets": {
+    "bash": "Execute bash commands in background tmux windows", // string | false
+    "tmux": "Inspect and control the background tmux sessions created by bash tool" // string | false
   },
 
   // Guideline bullets added to Pi's generated system prompt.
   // Omit systemPromptGuidelines to use defaults.
   // Set to [] or false to disable tmux-bash guidelines.
-  // Strings support the template variables listed above this config block.
-//  `systemPrompt` template variables:
-  // `{bashTool}`: configured `bashToolName`, default `bash`
-  // `{tmuxTool}`: configured `tmuxToolName`, default `tmux`
-  // `{attachCommand}`:
-  //   Uses `tmux switch-client -t @123` when Pi is already inside tmux. Otherwise `tmux attach -t @123`. 
+  // Strings support the template variables listed below.
+  // Template variables:
+  // `{{bashTool}}`: configured `bashToolName`, default `bash`
+  // `{{tmuxTool}}`: configured `tmuxToolName`, default `tmux`
+  // `{{attachCommand}}`:
+  //   Uses `tmux switch-client -t @123` when Pi is already inside tmux. Otherwise `tmux attach -t @123`.
   //   Uses configured `tmuxBinary`.
-  // `{defaultTimeoutSeconds}` / `{maxTimeoutSeconds}`
-  // `{bashContextLines}` / `{maxOutputKb}`
+  // `{{defaultTimeoutSeconds}}` / `{{maxTimeoutSeconds}}`
+  // `{{bashContextLines}}` / `{{maxOutputKb}}`
 
   "systemPromptGuidelines": [ // string[] | false
-    "Use {bashTool} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
+    "Use {{bashTool}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
     "Background bash commands will report automatically when they finish; do not keep polling manually unless you need interim output.",
     "Use pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
-    "Use {tmuxTool} peek/list/kill/poll/unpoll to inspect, poll, or stop bash commands that are left running in tmux.",
-    "Use {tmuxTool} kill only with a stable #{window_id} like @123.",
-    "If asked, you can attach to tmux window using: {attachCommand}, where @123 is a #{window_id}.",
-    "Use {tmuxTool} poll/unpoll to start or stop periodic check-ins for an existing background window."
+    "Use {{tmuxTool}} list to find background windows and their stable #{window_id} values like @123.",
+    "Use {{tmuxTool}} peek/kill/poll/unpoll with a stable #{window_id} like @123.",
+    "If asked, you can attach to tmux window using: {{attachCommand}}, where @123 is a #{window_id}.",
+    "Use {{tmuxTool}} poll/unpoll to start or stop periodic check-ins for an existing background window."
   ]
 }
 ```
@@ -231,8 +245,7 @@ It is based on [`pi-tmux`](https://github.com/indigoviolet/pi-tmux), but runs ag
 Other extensions can import tmux-bash helpers to target the same background tmux sessions and scoped windows.
 
 ```ts
-import type { ResolvedOptions } from "@richardgill/pi-tmux-bash";
-import { loadTmuxBashConfig } from "@richardgill/pi-tmux-bash/config";
+import { loadTmuxBashConfig, type ResolvedOptions } from "@richardgill/pi-tmux-bash/core";
 
 // Example:
 // const options = loadTmuxBashConfig();
@@ -250,8 +263,8 @@ import {
   type TmuxBashContext,
   type TmuxWindow,
   type TmuxWindowFilters,
+  type ResolvedOptions,
 } from "@richardgill/pi-tmux-bash/core";
-import type { ResolvedOptions } from "@richardgill/pi-tmux-bash";
 
 export type TmuxBashContext = {
   gitRoot: string;

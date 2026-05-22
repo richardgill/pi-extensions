@@ -1,5 +1,6 @@
 import path from "node:path";
 import { expect } from "vitest";
+import { DEFAULT_OPTIONS } from "../../src/options.js";
 import type { BashInput } from "../../src/tool-call-schemas.js";
 import { backgroundSessionName } from "../../src/tmux-utils.js";
 import {
@@ -55,12 +56,15 @@ const tmuxSessionNameForWorkspace = (workspace: PiTestWorkspace): string => {
   if (workspace.tmuxBashConfig.tmuxSessionScope === "git-root") {
     const template = configString(
       workspace.tmuxBashConfig.gitRootTmuxSessionNameTemplate,
-      "{gitRootSessionName}-bg",
+      DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate,
     );
     return backgroundSessionName(workspace.projectDir, template);
   }
 
-  return configString(workspace.tmuxBashConfig.globalTmuxSessionName, "pi-background");
+  return configString(
+    workspace.tmuxBashConfig.globalTmuxSessionName,
+    DEFAULT_OPTIONS.globalTmuxSessionName,
+  );
 };
 
 const extensionsForWorkspace = (workspace: PiTestWorkspace, script: ScriptedStep[]): string[] => {

@@ -1,19 +1,48 @@
-import { loadConfigOrDefault } from "@richardgill/pi-config";
+import { loadConfigOrDefault, templatedString } from "@richardgill/pi-config";
 import { z } from "zod";
-import { DEFAULT_OPTIONS, type ResolvedOptions } from "./extension.js";
+import { resolveOptions, type ResolvedOptions } from "./options.js";
 
-const promptToolEntrySchema = z.union([z.string(), z.literal(false)]);
-const promptGuidelinesSchema = z.union([z.array(z.string()), z.literal(false)]);
+const promptTemplateVariables = [
+  "attachCommand",
+  "bashContextLines",
+  "bashTool",
+  "defaultTimeoutSeconds",
+  "maxOutputKb",
+  "maxTimeoutSeconds",
+  "tmuxTool",
+];
+
+const gitRootTmuxSessionNameTemplateSchema = templatedString({
+  variables: ["gitRootSessionName"],
+  missing: "keep",
+}).refine(
+  (template) => template.includes("{{gitRootSessionName}}"),
+  'gitRootTmuxSessionNameTemplate must include "{{gitRootSessionName}}" as the git root session placeholder',
+);
+const promptTemplateSchema = templatedString({
+  variables: promptTemplateVariables,
+  missing: "keep",
+}).min(1);
+const promptToolEntrySchema = z.union([promptTemplateSchema, z.literal(false)]);
+const promptGuidelinesSchema = z.union([z.array(promptTemplateSchema), z.literal(false)]);
+const windowNameTemplateSchema = templatedString({
+  variables: ["command", "name", "nameOrCommand"],
+  missing: "keep",
+});
 
 export const TmuxBashConfigSchema = z
   .object({
-    gitRootTmuxSessionNameTemplate: z.string().includes("{gitRootSessionName}").optional(),
+    gitRootTmuxSessionNameTemplate: gitRootTmuxSessionNameTemplateSchema.optional(),
     tmuxSessionScope: z.enum(["git-root", "global"]).optional(),
     globalTmuxSessionName: z.string().min(1).optional(),
     tmuxWindowScope: z.enum(["pi-session", "git-root", "all"]).optional(),
     bashToolName: z.string().min(1).optional(),
     tmuxToolName: z.string().min(1).optional(),
+    bashToolDescription: promptTemplateSchema.optional(),
+    tmuxToolDescription: promptTemplateSchema.optional(),
     tmuxBinary: z.string().min(1).optional(),
+    tmuxEnvExportDenylist: z.array(z.string().min(1)).optional(),
+    foregroundBashUpdateIntervalMs: z.number().int().positive().optional(),
     bashContextLines: z.number().int().positive().optional(),
     bashCompactDisplayLines: z.number().int().positive().optional(),
     bashTruncatedCompactDisplayLines: z.number().int().positive().optional(),
@@ -30,7 +59,7 @@ export const TmuxBashConfigSchema = z
     peekCompactDisplayLines: z.number().int().positive().optional(),
     peekTruncatedCompactDisplayLines: z.number().int().positive().optional(),
     peekExpandedDisplayLines: z.number().int().positive().optional(),
-    windowNameTemplate: z.string().optional(),
+    windowNameTemplate: windowNameTemplateSchema.optional(),
     maxWindowNameLength: z.number().int().positive().optional(),
     autoCloseWindowsOnCompletion: z.boolean().optional(),
     alwaysShowOutputFilePath: z.boolean().optional(),
@@ -44,7 +73,7 @@ export const TmuxBashConfigSchema = z
     displayCommandStartMarker: z.string().optional(),
     maxOutputBytes: z.number().int().positive().optional(),
     systemPrompt: z.boolean().optional(),
-    systemPromptAvailableTools: z.record(z.string(), promptToolEntrySchema).optional(),
+    systemPromptToolSnippets: z.record(z.string(), promptToolEntrySchema).optional(),
     systemPromptGuidelines: promptGuidelinesSchema.optional(),
   })
   .refine(
@@ -62,8 +91,10 @@ export const TmuxBashConfigSchema = z
 // Falls back to DEFAULT_OPTIONS for omitted config.
 // Use this when another extension wants to target the same tmux session/window scope.
 export const loadTmuxBashConfig = (): ResolvedOptions =>
-  loadConfigOrDefault({
-    filename: "tmux-bash.jsonc",
-    schema: TmuxBashConfigSchema,
-    defaults: DEFAULT_OPTIONS,
-  }) as ResolvedOptions;
+  resolveOptions(
+    loadConfigOrDefault({
+      filename: "tmux-bash.jsonc",
+      schema: TmuxBashConfigSchema,
+      defaults: {},
+    }),
+  );

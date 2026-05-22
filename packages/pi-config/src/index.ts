@@ -143,8 +143,11 @@ const renderSchemaValue = (
 
   if (isZodObject(schema) && isRecord(value))
     return renderObjectSchema(schema, value, rootValue, fieldPath);
+  if (isZodRecord(schema) && isRecord(value))
+    return renderRecordSchema(schema, value, rootValue, fieldPath);
   if (isZodArray(schema) && Array.isArray(value))
     return renderArraySchema(schema, value, rootValue, fieldPath);
+  if (isZodUnion(schema)) return renderUnionSchema(schema, value, rootValue, fieldPath);
 
   return value;
 };
@@ -167,6 +170,24 @@ const renderObjectSchema = (
     ]),
   );
 
+const renderRecordSchema = (
+  schema: z.ZodRecord,
+  value: Record<string, unknown>,
+  rootValue: unknown,
+  fieldPath: string,
+): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(value).map(([key, fieldValue]) => [
+      key,
+      renderSchemaValue(
+        schema.def.valueType as z.ZodType,
+        fieldValue,
+        rootValue,
+        `${fieldPath}.${key}`,
+      ),
+    ]),
+  );
+
 const renderArraySchema = (
   schema: z.ZodArray,
   value: unknown[],
@@ -176,6 +197,41 @@ const renderArraySchema = (
   value.map((item, index) =>
     renderSchemaValue(schema.element as z.ZodType, item, rootValue, `${fieldPath}.${index}`),
   );
+
+const renderUnionSchema = (
+  schema: z.ZodUnion,
+  value: unknown,
+  rootValue: unknown,
+  fieldPath: string,
+): unknown => {
+  const option = findUnionOptionForValue(schema, value);
+  return option ? renderSchemaValue(option, value, rootValue, fieldPath) : value;
+};
+
+const findUnionOptionForValue = (schema: z.ZodUnion, value: unknown): z.ZodType | undefined => {
+  const options = schema.def.options as z.ZodType[];
+  return options.find((option) => schemaMatchesValue(option, value));
+};
+
+const schemaMatchesValue = (schema: z.ZodType, value: unknown): boolean => {
+  const innerSchema = getInnerSchema(schema);
+  if (innerSchema) return schemaMatchesValue(innerSchema, value);
+
+  if (schema instanceof z.ZodString) return typeof value === "string";
+  if (schema instanceof z.ZodNumber) return typeof value === "number";
+  if (schema instanceof z.ZodBoolean) return typeof value === "boolean";
+  if (schema instanceof z.ZodLiteral) return literalValues(schema).includes(value);
+  if (isZodObject(schema) || isZodRecord(schema)) return isRecord(value);
+  if (isZodArray(schema)) return Array.isArray(value);
+  if (isZodUnion(schema)) return Boolean(findUnionOptionForValue(schema, value));
+
+  return schema.safeParse(value).success;
+};
+
+const literalValues = (schema: z.ZodLiteral): unknown[] => {
+  const def = schema.def as { values?: unknown[] };
+  return def.values ?? [];
+};
 
 const getObjectFieldSchema = (schema: z.ZodObject, key: string): z.ZodType =>
   (schema.shape[key] as z.ZodType | undefined) ?? z.unknown();
@@ -195,7 +251,11 @@ const getInnerSchema = (schema: z.ZodType): z.ZodType | undefined => {
 
 const isZodObject = (schema: z.ZodType): schema is z.ZodObject => schema instanceof z.ZodObject;
 
+const isZodRecord = (schema: z.ZodType): schema is z.ZodRecord => schema instanceof z.ZodRecord;
+
 const isZodArray = (schema: z.ZodType): schema is z.ZodArray => schema instanceof z.ZodArray;
+
+const isZodUnion = (schema: z.ZodType): schema is z.ZodUnion => schema instanceof z.ZodUnion;
 
 const valuesRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 

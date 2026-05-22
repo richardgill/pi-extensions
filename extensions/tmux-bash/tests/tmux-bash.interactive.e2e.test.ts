@@ -5,6 +5,7 @@ import {
   bash,
   reply,
   scriptedToolCall,
+  scriptedToolCallWithLatestWindowId,
   type ScriptedStep,
   writeScriptedProvider,
 } from "./testing/scripted-provider.js";
@@ -38,6 +39,11 @@ const bashTool = (
 
 const tmux = (args: Record<string, unknown>, options: { delayMs?: number } = {}): ScriptedStep =>
   scriptedToolCall("tmux", args, options);
+
+const tmuxForLatestWindow = (
+  args: Record<string, unknown>,
+  options: { delayMs?: number } = {},
+): ScriptedStep => scriptedToolCallWithLatestWindowId("tmux", args, options);
 
 const runTui = (
   workspace: PiE2eWorkspace,
@@ -90,7 +96,7 @@ const stableBashTranscript = (pane: string): string =>
 
 const transcriptUntilLine = (pane: string, startText: string, endText: string): string => {
   const lines = paneLines(pane);
-  const start = lines.findIndex((line) => line === startText);
+  const start = lines.findIndex((line) => line.startsWith(startText));
   if (start === -1) throw new Error(`Missing transcript start ${startText}:\n${pane}`);
 
   const end = lines.findIndex((line, index) => index > start && line === endText);
@@ -161,7 +167,7 @@ const runPeekCard = (testCase: TmuxOutputCase): Promise<RunPiTuiResult> => {
   const workspace = createWorkspace();
   return runTui(workspace, [
     bash(testCase.command, { background: true, name: testCase.windowName }),
-    tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
+    tmuxForLatestWindow({ action: "peek" }, { delayMs: 500 }),
     reply(doneMarker),
   ]);
 };
@@ -172,7 +178,7 @@ const runPollCard = (testCase: TmuxOutputCase): Promise<RunPiTuiResult> => {
     workspace,
     [
       bash(testCase.command, { background: true, name: testCase.windowName }),
-      tmux({ action: "poll", window: 1, pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
+      tmuxForLatestWindow({ action: "poll", pollInterval: 1, pollLines: 5 }, { delayMs: 500 }),
       reply(doneMarker),
     ],
     { waitFor: testCase.waitFor },
@@ -225,7 +231,7 @@ const peekOutputCases: TmuxOutputCase[] = [
     name: "fully-fitting",
     windowName: "peek-fit",
     command: "printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30",
-    expectedTranscript: `tmux peek :all
+    expectedTranscript: `tmux peek @<id>
 ✓ tmux window: peek-fit @<id>
  $ printf 'peek-line-1\\npeek-line-2\\npeek-line-3\\n'; sleep 30
  peek-line-1
@@ -238,7 +244,7 @@ const peekOutputCases: TmuxOutputCase[] = [
     name: "overflowing",
     windowName: "peek-overflow-400",
     command: "for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' \"$i\"; done; sleep 30",
-    expectedTranscript: `tmux peek :all
+    expectedTranscript: `tmux peek @<id>
 ✓ tmux window: peek-overflow-400 @<id>
  $ for i in $(seq 1 400); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
  ... (395 earlier lines, ctrl+o to expand)
@@ -250,7 +256,7 @@ ${singleIndentBlock(numberedLines("peek-overflow", 396, 400))}
     name: "truncated overflowing",
     windowName: "peek-truncated",
     command: "for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' \"$i\"; done; sleep 30",
-    expectedTranscript: `tmux peek :all
+    expectedTranscript: `tmux peek @<id>
 ✓ tmux window: peek-truncated @<id>
  $ for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' "$i"; done; sleep 30
  ... (1997 earlier lines, ctrl+o to expand)
@@ -269,7 +275,7 @@ const pollOutputCases: TmuxOutputCase[] = [
     windowName: "poll-fit",
     command: "for i in $(seq 1 3); do printf 'poll-fit-%s\\n' \"$i\"; done; sleep 30",
     waitFor: "poll-fit-3",
-    expectedActionTranscript: `tmux poll :1
+    expectedActionTranscript: `tmux poll @<id>
 ✓ Polling poll-fit every 1s.`,
     expectedTranscript: `tmux poll: poll-fit @<id>
 
@@ -288,8 +294,11 @@ Attach with: tmux switch-client -t @<id>`,
     expectedTranscript: `tmux poll: poll-overflow @<id>
 
 $ for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' "$i"; done; sleep 30
-... (395 earlier lines, ctrl+o to expand)
-${numberedLines("poll-overflow", 396, 400)}
+... (2 earlier lines, ctrl+o to expand)
+poll-overflow-399
+poll-overflow-400
+
+[Showing lines 397-401 of 401. Full output: <path>]
 
 Attach with: tmux switch-client -t @<id>`,
   },
@@ -301,11 +310,11 @@ Attach with: tmux switch-client -t @<id>`,
     expectedTranscript: `tmux poll: poll-truncated @<id>
 
 $ for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' "$i"; done; sleep 30
-... (1997 earlier lines, ctrl+o to expand)
+... (2 earlier lines, ctrl+o to expand)
 poll-truncated-3999
 poll-truncated-4000
 
-[Showing lines 2002-4001 of 4001. Full output: <path>]
+[Showing lines 3997-4001 of 4001. Full output: <path>]
 
 Attach with: tmux switch-client -t @<id>`,
   },
@@ -521,7 +530,7 @@ Took`);
     async (testCase) => {
       const result = await runPeekCard(testCase);
 
-      expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(
+      expect(stableTmuxToolTranscript(result.pane, "tmux peek @")).toBe(
         testCase.expectedTranscript,
       );
     },
@@ -535,7 +544,7 @@ Took`);
       workspace,
       [
         bash(command, { background: true, name: "peek-overflow" }),
-        tmux({ action: "peek", window: "all" }, { delayMs: 500 }),
+        tmuxForLatestWindow({ action: "peek" }, { delayMs: 500 }),
         reply(doneMarker),
       ],
       {
@@ -544,8 +553,8 @@ Took`);
       },
     );
 
-    expect(stableTmuxToolTranscript(result.checkpoints.collapsed, "tmux peek :all"))
-      .toBe(`tmux peek :all
+    expect(stableTmuxToolTranscript(result.checkpoints.collapsed, "tmux peek @"))
+      .toBe(`tmux peek @<id>
 ✓ tmux window: peek-overflow @<id>
  $ for i in $(seq 1 8); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
  ... (3 earlier lines, ctrl+o to expand)
@@ -556,7 +565,7 @@ Took`);
  peek-overflow-008
 
  Attach with: tmux switch-client -t @<id>`);
-    expect(stableTmuxToolTranscript(result.pane, "tmux peek :all")).toBe(`tmux peek :all
+    expect(stableTmuxToolTranscript(result.pane, "tmux peek @")).toBe(`tmux peek @<id>
 ✓ tmux window: peek-overflow @<id>
  $ for i in $(seq 1 8); do printf 'peek-overflow-%03d\\n' "$i"; done; sleep 30
  peek-overflow-001
@@ -577,7 +586,7 @@ Took`);
       const result = await runPollCard(testCase);
 
       if (testCase.expectedActionTranscript !== undefined) {
-        expect(stableTmuxToolTranscript(result.pane, "tmux poll :1")).toBe(
+        expect(stableTmuxToolTranscript(result.pane, "tmux poll @")).toBe(
           testCase.expectedActionTranscript,
         );
       }

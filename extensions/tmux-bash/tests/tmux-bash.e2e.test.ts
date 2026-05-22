@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { formatDurationSeconds } from "../src/extension.js";
+import { DEFAULT_OPTIONS } from "../src/options.js";
+import { formatDurationSeconds } from "../src/render.js";
 import {
   backgroundSessionName,
   getWindows,
@@ -19,6 +20,7 @@ import {
   recordSystemPrompt,
   scriptedText,
   scriptedToolCall,
+  scriptedToolCallWithLatestWindowId,
   type ScriptedStep,
 } from "./testing/scripted-provider.js";
 
@@ -49,7 +51,7 @@ const createWorkspace = (tmuxBashConfig: Record<string, unknown> = {}): PiE2eWor
 
 const backgroundStartContext = (workspace: PiE2eWorkspace): string => {
   const window = getWindows(workspace.tmuxSession()).at(0);
-  const attachCommand = tmuxWindowAttachCommand(window?.id ?? "");
+  const attachCommand = tmuxWindowAttachCommand(window?.id ?? "", process.env, "tmux");
 
   return [
     `Started in background tmux window: ${window?.title} ${window?.id}.`,
@@ -376,7 +378,7 @@ const backgroundCommandCases: TmuxBashE2eTestCase[] = [
         background: true,
         name: "peek-test",
       }),
-      scriptedToolCall("tmux", { action: "peek", window: "all" }, { delayMs: 500 }),
+      scriptedToolCallWithLatestWindowId("tmux", { action: "peek" }, { delayMs: 500 }),
     ],
     captureTool: "tmux",
     expectedModelText: peekContextOutput,
@@ -408,11 +410,11 @@ describe("tmux-bash e2e", () => {
   it("applies system prompt configuration", async () => {
     const workspace = createWorkspace({
       tmuxToolName: "mux",
-      systemPromptAvailableTools: {
-        "{bashTool}": "CUSTOM bash {defaultTimeoutSeconds}/{maxTimeoutSeconds}/{maxOutputKb}",
-        "{tmuxTool}": false,
+      systemPromptToolSnippets: {
+        bash: "CUSTOM bash {{defaultTimeoutSeconds}}/{{maxTimeoutSeconds}}/{{maxOutputKb}}",
+        mux: false,
       },
-      systemPromptGuidelines: ["Use {tmuxTool} with {attachCommand} and @123."],
+      systemPromptGuidelines: ["Use {{tmuxTool}} with {{attachCommand}} and @123."],
     });
     const outputPath = contextPath(workspace, "system-prompt");
 
@@ -528,7 +530,9 @@ describe("tmux-bash e2e", () => {
     });
 
     expectPiSuccess(result);
-    expect(workspace.tmuxSession()).not.toBe(backgroundSessionName(workspace.projectDir));
+    expect(workspace.tmuxSession()).not.toBe(
+      backgroundSessionName(workspace.projectDir, DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate),
+    );
     expect(windowTitles(workspace)).toContain("default-global");
   }, 20_000);
 
@@ -544,7 +548,9 @@ describe("tmux-bash e2e", () => {
     });
 
     expectPiSuccess(result);
-    expect(workspace.tmuxSession()).toBe(backgroundSessionName(workspace.projectDir));
+    expect(workspace.tmuxSession()).toBe(
+      backgroundSessionName(workspace.projectDir, DEFAULT_OPTIONS.gitRootTmuxSessionNameTemplate),
+    );
     expect(windowTitles(workspace)).toContain("git-root-session");
   }, 20_000);
 
@@ -576,7 +582,7 @@ describe("tmux-bash e2e", () => {
   it("honors custom git-root tmux session name templates", async () => {
     const workspace = createWorkspace({
       tmuxSessionScope: "git-root",
-      gitRootTmuxSessionNameTemplate: "custom-{gitRootSessionName}",
+      gitRootTmuxSessionNameTemplate: "custom-{{gitRootSessionName}}",
     });
 
     const result = await workspace.run({
@@ -586,7 +592,7 @@ describe("tmux-bash e2e", () => {
 
     expectPiSuccess(result);
     expect(workspace.tmuxSession()).toBe(
-      backgroundSessionName(workspace.projectDir, "custom-{gitRootSessionName}"),
+      backgroundSessionName(workspace.projectDir, "custom-{{gitRootSessionName}}"),
     );
     expect(windowTitles(workspace)).toContain("custom-git-root");
   }, 20_000);

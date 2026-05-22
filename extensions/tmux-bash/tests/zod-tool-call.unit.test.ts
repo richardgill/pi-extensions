@@ -55,6 +55,38 @@ describe("zod tool call schema generation", () => {
     expect(result).toMatchObject({ timeoutAction: "background" });
   });
 
+  it.each([
+    ["explicit kill timeout action", { command: "sleep 10", timeoutAction: "kill" }, "kill"],
+    [
+      "explicit background timeout action",
+      { command: "sleep 10", timeoutAction: "background" },
+      "background",
+    ],
+  ])("parses %s", async (_name, input, timeoutActionValue) => {
+    const result = await bashToolCallSchema().handleInput(input, (parsed) => parsed);
+
+    expect(result).toMatchObject({ timeoutAction: timeoutActionValue });
+  });
+
+  it("parses background true without defaulting timeoutAction", async () => {
+    const result = await bashToolCallSchema().handleInput(
+      { command: "sleep 10", background: true },
+      (input) => input,
+    );
+
+    expect(result).toMatchObject({ background: true });
+    expect(result).not.toHaveProperty("timeoutAction");
+  });
+
+  it("rejects invalid timeoutAction", async () => {
+    const result = await bashToolCallSchema().handleInput(
+      { command: "sleep 10", timeoutAction: "wait" },
+      (input) => input,
+    );
+
+    expect(result).toEqual({ error: expect.stringContaining("Invalid bash input") });
+  });
+
   it("handleInput returns invalidInput result on zod failure", async () => {
     const result = await bashToolCallSchema().handleInput({ command: "" }, () => ({ ok: true }));
 

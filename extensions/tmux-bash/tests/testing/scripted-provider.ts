@@ -3,6 +3,7 @@ import path from "node:path";
 
 export type ScriptedStep =
   | ScriptedToolCallStep
+  | ScriptedToolCallWithLatestWindowIdStep
   | ScriptedTextStep
   | ScriptedExpectLatestToolResultStep
   | ScriptedRecordLatestToolResultStep
@@ -10,6 +11,13 @@ export type ScriptedStep =
 
 type ScriptedToolCallStep = {
   type: "toolCall";
+  name: string;
+  args: Record<string, unknown>;
+  delayMs?: number;
+};
+
+type ScriptedToolCallWithLatestWindowIdStep = {
+  type: "toolCallWithLatestWindowId";
   name: string;
   args: Record<string, unknown>;
   delayMs?: number;
@@ -56,6 +64,17 @@ export const scriptedToolCall = (
   options: { delayMs?: number } = {},
 ): ScriptedStep => ({
   type: "toolCall",
+  name,
+  args,
+  ...options,
+});
+
+export const scriptedToolCallWithLatestWindowId = (
+  name: string,
+  args: Record<string, unknown>,
+  options: { delayMs?: number } = {},
+): ScriptedStep => ({
+  type: "toolCallWithLatestWindowId",
   name,
   args,
   ...options,
@@ -190,6 +209,8 @@ ${steps.map((step) => `    ${scriptedStepSource(step)},`).join("\n")}
 
 const scriptedStepSource = (step: ScriptedStep): string => {
   if (step.type === "toolCall") return scriptedToolCallSource(step);
+  if (step.type === "toolCallWithLatestWindowId")
+    return scriptedToolCallWithLatestWindowIdSource(step);
   if (step.type === "expectLatestToolResult") return scriptedExpectLatestToolResultSource(step);
   if (step.type === "recordLatestToolResult") return scriptedRecordLatestToolResultSource(step);
   if (step.type === "recordSystemPrompt") return scriptedRecordSystemPromptSource(step);
@@ -200,6 +221,18 @@ const scriptedToolCallSource = (step: ScriptedToolCallStep): string => {
   const response = `fauxAssistantMessage([fauxToolCall(${JSON.stringify(step.name)}, ${JSON.stringify(step.args)})], { stopReason: "toolUse" })`;
   if (step.delayMs === undefined) return response;
   return `async () => { await sleep(${JSON.stringify(step.delayMs)}); return ${response}; }`;
+};
+
+const scriptedToolCallWithLatestWindowIdSource = (
+  step: ScriptedToolCallWithLatestWindowIdStep,
+): string => {
+  const response = `(context) => {
+    const match = latestToolResultText(context).match(/@\\d+/);
+    if (!match) throw new Error("No tmux window id found in latest tool result");
+    return fauxAssistantMessage([fauxToolCall(${JSON.stringify(step.name)}, { ...${JSON.stringify(step.args)}, window: match[0] })], { stopReason: "toolUse" });
+  }`;
+  if (step.delayMs === undefined) return response;
+  return `async (context) => { await sleep(${JSON.stringify(step.delayMs)}); return (${response})(context); }`;
 };
 
 const scriptedExpectLatestToolResultSource = (step: ScriptedExpectLatestToolResultStep): string =>

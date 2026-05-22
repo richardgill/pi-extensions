@@ -136,6 +136,57 @@ describe("templatedString", () => {
       loadConfigOrDefault({ folder, filename: "object-template.json", schema, defaults: {} }),
     ).toThrow('config.prompt uses unsupported template value "limits"');
   });
+
+  it("renders templated strings inside arrays", () => {
+    const folder = createTempDir();
+    const schema = z.object({
+      value: z.string(),
+      prompts: z.array(templatedString({ variables: ["value"] })),
+    });
+    writeConfig(folder, "array-template.json", '{ "value": "ok", "prompts": ["{{value}}"] }');
+
+    expect(
+      loadConfigOrDefault({ folder, filename: "array-template.json", schema, defaults: {} }),
+    ).toEqual({ value: "ok", prompts: ["ok"] });
+  });
+
+  it("renders templated strings inside records and unions", () => {
+    const folder = createTempDir();
+    const schema = z.object({
+      value: z.string(),
+      snippets: z.record(
+        z.string(),
+        z.union([templatedString({ variables: ["value"] }), z.literal(false)]),
+      ),
+    });
+    writeConfig(
+      folder,
+      "record-union-template.json",
+      '{ "value": "ok", "snippets": { "tool": "{{value}}", "hidden": false } }',
+    );
+
+    expect(
+      loadConfigOrDefault({
+        folder,
+        filename: "record-union-template.json",
+        schema,
+        defaults: {},
+      }),
+    ).toEqual({ value: "ok", snippets: { tool: "ok", hidden: false } });
+  });
+
+  it("renders templated strings inside arrays wrapped in unions", () => {
+    const folder = createTempDir();
+    const schema = z.object({
+      value: z.string(),
+      prompts: z.union([z.array(templatedString({ variables: ["value"] })), z.literal(false)]),
+    });
+    writeConfig(folder, "array-union-template.json", '{ "value": "ok", "prompts": ["{{value}}"] }');
+
+    expect(
+      loadConfigOrDefault({ folder, filename: "array-union-template.json", schema, defaults: {} }),
+    ).toEqual({ value: "ok", prompts: ["ok"] });
+  });
 });
 
 describe("loadConfigOrDefault", () => {

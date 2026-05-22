@@ -12,26 +12,13 @@ type SchemaOptions = {
 
 type InvalidInput<TInvalidResult> = (message: string) => TInvalidResult;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const withDefaultTimeoutAction = (input: unknown): unknown => {
-  if (!isRecord(input)) return input;
-  if (input.background === true) return input;
-  if (input.timeoutAction !== undefined) return input;
-  return { ...input, timeoutAction: "background" };
-};
-
 const command = z.string().min(1).describe("Bash command to execute.");
 const name = z.string().optional().describe("Optional tmux window name.");
 const backgroundFalse = z.literal(false).optional();
-const tmuxWindow = z
-  .union([z.number().int(), z.string().min(1)])
-  .describe("Window index/name. Required for poll/unpoll.");
-const tmuxPeekWindow = z
-  .union([z.literal("all"), z.number().int(), z.string().min(1)])
-  .describe('Window index/name, or "all" for peek.');
-const tmuxWindowId = z.string().min(1).describe("tmux #{window_id}, e.g. @123.");
+const tmuxWindowId = z
+  .string()
+  .regex(/^@\d+$/)
+  .describe("tmux #{window_id}, e.g. @123.");
 const tmuxAction = <TAction extends string>(action: TAction) =>
   z.literal(action).describe("tmux action.");
 
@@ -67,8 +54,17 @@ const timeoutAction = z
 
 const background = z.literal(true).describe("Return immediately and keep running in tmux.");
 
-export const buildBashInputSchema = (options: SchemaOptions) => {
-  const nonBackground = z.discriminatedUnion("timeoutAction", [
+export const buildBashInputSchema = (options: SchemaOptions) =>
+  z.union([
+    z.object({
+      command,
+      name,
+      background,
+      timeout: timeout(options),
+      timeoutAction,
+      pollInterval: pollInterval(options),
+      pollLines: pollLines(options),
+    }),
     z.object({
       command,
       name,
@@ -89,32 +85,15 @@ export const buildBashInputSchema = (options: SchemaOptions) => {
     }),
   ]);
 
-  return z.preprocess(
-    withDefaultTimeoutAction,
-    z.discriminatedUnion("background", [
-      z.object({
-        command,
-        name,
-        background,
-        timeout: timeout(options),
-        timeoutAction,
-        pollInterval: pollInterval(options),
-        pollLines: pollLines(options),
-      }),
-      nonBackground,
-    ]),
-  );
-};
-
 export const buildTmuxInputSchema = (options: SchemaOptions) =>
   z.discriminatedUnion("action", [
     z.object({ action: tmuxAction("list") }),
     z.object({ action: tmuxAction("kill"), window: tmuxWindowId }),
     z.object({ action: tmuxAction("list-polls") }),
-    z.object({ action: tmuxAction("peek"), window: tmuxPeekWindow.optional() }),
+    z.object({ action: tmuxAction("peek"), window: tmuxWindowId }),
     z.object({
       action: tmuxAction("poll"),
-      window: tmuxWindow,
+      window: tmuxWindowId,
       pollInterval: z
         .number()
         .int()
@@ -128,7 +107,7 @@ export const buildTmuxInputSchema = (options: SchemaOptions) =>
         .default(options.pollContextLines)
         .describe("Lines captured per check-in."),
     }),
-    z.object({ action: tmuxAction("unpoll"), window: tmuxWindow }),
+    z.object({ action: tmuxAction("unpoll"), window: tmuxWindowId }),
   ]);
 
 export const buildBashToolCallSchema = <TInvalidResult>(

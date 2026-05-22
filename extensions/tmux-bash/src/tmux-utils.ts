@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import type { ResolvedOptions } from "./options.js";
 
 export type TmuxWindow = {
   id: string;
@@ -17,6 +18,16 @@ export type TmuxWindowFilters = {
   gitRoot?: string;
   piSessionId?: string;
 };
+
+export const TMUX_WINDOW_OPTIONS = {
+  startedAt: "@pi-tmux-bash-started-at",
+  gitRoot: "@pi-tmux-bash-git-root",
+  piSessionId: "@pi-tmux-bash-pi-session-id",
+  outputFile: "@pi-tmux-bash-output-file",
+  displayCommand: "@pi-tmux-bash-display-command",
+} as const;
+
+export const tmuxFormatOption = (option: string): string => `#{${option}}`;
 
 export const exec = (cmd: string): string =>
   execSync(cmd, {
@@ -47,18 +58,29 @@ export const getGitRoot = (cwd: string): string | null => {
   }
 };
 
-export const DEFAULT_SESSION_NAME_TEMPLATE = "{gitRootSessionName}-bg";
-
 const projectSessionName = (gitRoot: string): string => {
   const slug = gitRoot.split("/").pop()?.slice(0, 16).toLowerCase() ?? "project";
   const hash = createHash("md5").update(gitRoot).digest("hex").slice(0, 8);
   return `${slug}-${hash}`;
 };
 
-export const backgroundSessionName = (
+export const backgroundSessionName = (gitRoot: string, template: string): string =>
+  template.replace(/{{\s*gitRootSessionName\s*}}/g, projectSessionName(gitRoot));
+
+export const calcTmuxSessionName = (gitRoot: string, options: ResolvedOptions): string =>
+  options.tmuxSessionScope === "global"
+    ? options.globalTmuxSessionName
+    : backgroundSessionName(gitRoot, options.gitRootTmuxSessionNameTemplate);
+
+export const tmuxWindowFiltersForScope = (
   gitRoot: string,
-  template = DEFAULT_SESSION_NAME_TEMPLATE,
-): string => template.replaceAll("{gitRootSessionName}", projectSessionName(gitRoot));
+  piSessionId: string,
+  options: ResolvedOptions,
+): TmuxWindowFilters => {
+  if (options.tmuxWindowScope === "pi-session") return { piSessionId };
+  if (options.tmuxWindowScope === "git-root") return { gitRoot };
+  return {};
+};
 
 export const sessionExists = (name: string, tmuxBinary = "tmux"): boolean =>
   execSafe(
@@ -72,13 +94,25 @@ const matchesWindowFilters = (window: TmuxWindow, filters: TmuxWindowFilters): b
   (filters.gitRoot === undefined || window.gitRoot === filters.gitRoot) &&
   (filters.piSessionId === undefined || window.piSessionId === filters.piSessionId);
 
+const windowListFormat = [
+  "#{window_id}",
+  "#{window_index}",
+  "#{window_name}",
+  "#{window_active}",
+  tmuxFormatOption(TMUX_WINDOW_OPTIONS.startedAt),
+  tmuxFormatOption(TMUX_WINDOW_OPTIONS.gitRoot),
+  tmuxFormatOption(TMUX_WINDOW_OPTIONS.piSessionId),
+  tmuxFormatOption(TMUX_WINDOW_OPTIONS.outputFile),
+  tmuxFormatOption(TMUX_WINDOW_OPTIONS.displayCommand),
+].join("|||");
+
 export const getWindows = (
   name: string,
   filters?: string | TmuxWindowFilters,
   tmuxBinary = "tmux",
 ): TmuxWindow[] => {
   const raw = execSafe(
-    `${shellQuote(tmuxBinary)} list-windows -t ${shellQuote(name)} -F '#{window_id}|||#{window_index}|||#{window_name}|||#{window_active}|||#{@pi-tmux-bash-started-at}|||#{@pi-tmux-bash-git-root}|||#{@pi-tmux-bash-pi-session-id}|||#{@pi-tmux-bash-output-file}|||#{@pi-tmux-bash-display-command}'`,
+    `${shellQuote(tmuxBinary)} list-windows -t ${shellQuote(name)} -F ${shellQuote(windowListFormat)}`,
   );
   if (!raw) return [];
 
@@ -112,17 +146,15 @@ export const getWindows = (
     .filter((window) => matchesWindowFilters(window, windowFilters));
 };
 
-const formatAgeUnit = (value: number, unit: string): string => `${value}${unit}`;
-
 const formatWindowAge = (window: TmuxWindow, now = Date.now()): string | undefined => {
   if (window.createdAt === undefined || !Number.isFinite(window.createdAt)) return undefined;
   const ageSeconds = Math.max(0, Math.floor((now - window.createdAt * 1000) / 1000));
-  if (ageSeconds < 60) return formatAgeUnit(ageSeconds, "s");
+  if (ageSeconds < 60) return `${ageSeconds}s`;
   const ageMinutes = Math.floor(ageSeconds / 60);
-  if (ageMinutes < 60) return formatAgeUnit(ageMinutes, "m");
+  if (ageMinutes < 60) return `${ageMinutes}m`;
   const ageHours = Math.floor(ageMinutes / 60);
-  if (ageHours < 24) return formatAgeUnit(ageHours, "h");
-  return formatAgeUnit(Math.floor(ageHours / 24), "d");
+  if (ageHours < 24) return `${ageHours}h`;
+  return `${Math.floor(ageHours / 24)}d`;
 };
 
 const tmuxCommandText = (tmuxBinary: string): string =>
@@ -130,8 +162,8 @@ const tmuxCommandText = (tmuxBinary: string): string =>
 
 export const tmuxWindowAttachCommand = (
   windowId: string,
-  env: NodeJS.ProcessEnv = process.env,
-  tmuxBinary = "tmux",
+  env: NodeJS.ProcessEnv,
+  tmuxBinary: string,
 ): string =>
   env.TMUX
     ? `${tmuxCommandText(tmuxBinary)} switch-client -t ${windowId}`
@@ -139,8 +171,8 @@ export const tmuxWindowAttachCommand = (
 
 export const tmuxWindowAttachHint = (
   windowId: string,
-  env: NodeJS.ProcessEnv = process.env,
-  tmuxBinary = "tmux",
+  env: NodeJS.ProcessEnv,
+  tmuxBinary: string,
 ): string => `Attach with: ${tmuxWindowAttachCommand(windowId, env, tmuxBinary)}`;
 
 export const formatWindowLines = (windows: TmuxWindow[]): string[] =>

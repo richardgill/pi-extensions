@@ -16,9 +16,7 @@
   "type": "module",
   "exports": {
     ".": "./src/extension.ts",
-    "./config": "./src/config.ts",
-    "./core": "./src/core.ts",
-    "./schemas": "./src/tool-call-schemas.ts"
+    "./core": "./src/core.ts"
   },
   "scripts": {
     "tsc": "tsc -p tsconfig.json --noEmit"
