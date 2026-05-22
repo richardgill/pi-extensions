@@ -1,6 +1,16 @@
 # @richardgill/pi-tmux-bash
 
-pi extension which replaces pi's native `bash` tool with background tmux invocations. Provides a `tmux` tool for inspection.
+Drop-in `bash` tool replacement with background tmux invocations.
+
+## How it works
+
+Replaces pi's built-in `bash` tool with a `bash` tool which uses tmux under the hood.
+
+- Foreground `bash` timeouts keep running in background (or kill)
+- Background `bash` notifies pi when `bash` finishes.
+- Model can `tmux:peek` to see latest background output.
+- Model can enable polling to receive periodic updates on background output.
+- Model can `tmux:kill` to kill managed tmux windows.
 
 ## `bash` tool
 
@@ -248,12 +258,11 @@ import { loadTmuxBashConfig, type ResolvedOptions } from "@richardgill/pi-tmux-b
 // const options = loadTmuxBashConfig();
 //
 // Reads ~/.pi/agent/tmux-bash.jsonc with the same schema as the extension entrypoint.
-// Falls back to DEFAULT_OPTIONS for omitted config.
-// Use this when another extension wants to target the same tmux session/window scope.
 export const loadTmuxBashConfig = (): ResolvedOptions => {};
 ```
 
 ```ts
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import {
   listBashWindows,
   resolveTmuxBashContext,
@@ -267,26 +276,22 @@ export type TmuxBashContext = {
   gitRoot: string;
   session: string;
   filters: TmuxWindowFilters;
+  tmuxBinary: string;
 };
 
 // Example:
 // const options = loadTmuxBashConfig();
-// const context = resolveTmuxBashContext({
-//   cwd: ctx.cwd,
-//   piSessionId: ctx.sessionManager.getSessionId(),
-//   options,
-// });
+// const context = resolveTmuxBashContext(ctx, options);
 // if (!context) ctx.ui.notify("Not in a git repository.", "error");
 //
 // Resolves:
 // - current git root
 // - tmux session name from config
 // - window filters from config
-export const resolveTmuxBashContext = (input: {
-  cwd: string;
-  piSessionId: string;
-  options: ResolvedOptions;
-}): TmuxBashContext | null => {};
+export const resolveTmuxBashContext = (
+  ctx: ExtensionContext,
+  options: ResolvedOptions,
+): TmuxBashContext | null => {};
 
 // Example:
 // const windows = listBashWindows(context);
