@@ -1,20 +1,20 @@
 import path from "node:path";
 import { expect } from "vitest";
-import { DEFAULT_OPTIONS } from "../../src/options.js";
-import type { BashInput } from "../../src/tool-call-schemas.js";
-import { backgroundSessionName } from "../../src/tmux-utils.js";
+import { DEFAULT_OPTIONS } from "../../src/options";
+import type { BashInput } from "../../src/tool-call-schemas";
+import { backgroundSessionName } from "../../src/tmux-utils";
 import {
   runBashToolDirectly,
   type DirectBashRunOptions,
   type DirectBashRunResult,
-} from "./direct-tool.js";
-import { runPi, type RunPiResult } from "./pi-dash-p.js";
-import { type ScriptedStep, writeScriptedProvider } from "./scripted-provider.js";
+} from "./direct-tool";
+import { runPi, type RunPiResult } from "./pi-dash-p";
+import { type ScriptedStep, writeScriptedProvider } from "./scripted-provider";
 import {
   createPiTestWorkspace,
   tmuxSessionExists,
   type PiTestWorkspace,
-} from "./pi-test-workspace.js";
+} from "./pi-test-workspace";
 
 export type PiE2eRunOptions = {
   script: ScriptedStep[];

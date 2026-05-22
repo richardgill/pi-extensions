@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseSkillCommand, parseSkillMetadata } from "../src/extension.js";
+import { parseSkillCommand, parseSkillMetadata } from "../src/extension";
 
 describe("parseSkillCommand", () => {
   it("parses skill name and prompt", () => {

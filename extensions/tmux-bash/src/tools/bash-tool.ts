@@ -1,19 +1,19 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DEFAULT_BASH_SYSTEM_PROMPT_SNIPPET, type ResolvedOptions } from "../options.js";
+import { DEFAULT_BASH_SYSTEM_PROMPT_SNIPPET, type ResolvedOptions } from "../options";
 import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
   systemPromptGuidelines,
-} from "../prompt.js";
-import { runBashInTmux, toolError, type ExtensionState } from "../runtime.js";
+} from "../prompt";
+import { runBashInTmux, toolError, type ExtensionState } from "../runtime";
 import {
   renderBackgroundBashResultText,
   renderBashCallText,
   renderBashResultText,
   type TmuxBashToolDetails,
-} from "../render.js";
-import { buildBashToolCallSchema, type BashInput } from "../tool-call-schemas.js";
+} from "../render";
+import { buildBashToolCallSchema, type BashInput } from "../tool-call-schemas";
 
 export type BashRenderState = {
   startedAt?: number;

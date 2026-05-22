@@ -1,5 +1,5 @@
-import { tmuxWindowAttachCommand } from "./tmux-utils.js";
-import type { ResolvedOptions } from "./options.js";
+import { tmuxWindowAttachCommand } from "./tmux-utils";
+import type { ResolvedOptions } from "./options";
 
 const replaceTemplateVariable = (template: string, variable: string, value: string): string =>
   template.replace(new RegExp(`{{\\s*${variable}\\s*}}`, "g"), value);

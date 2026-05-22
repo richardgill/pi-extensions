@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { loadConfigOrDefault, resolveOptions, templatedString } from "../src/index.js";
+import { loadConfigOrDefault, resolveOptions, templatedString } from "../src/index";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 const originalExtensionConfigDir = process.env.PI_EXTENSION_CONFIG_DIR;

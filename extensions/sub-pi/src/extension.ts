@@ -20,7 +20,7 @@ import {
   type BuiltInToolName,
   getBuiltInToolsFromActiveTools,
   resolveTaskConfig,
-} from "./sub-pi-config.js";
+} from "./sub-pi-config";
 import {
   isRecord,
   MAX_PARALLEL_TASKS,
@@ -28,7 +28,7 @@ import {
   type TaskThinking,
   type TaskWorkItem,
   VALID_THINKING_OPTIONS,
-} from "./sub-pi-params.js";
+} from "./sub-pi-params";
 
 export type PromptPatch = { match: RegExp; replace: string };
 

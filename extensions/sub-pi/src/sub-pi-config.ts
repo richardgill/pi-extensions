@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { ProviderModel, TaskThinking, TaskWorkItem } from "./sub-pi-params.js";
-import { resolveModel } from "./sub-pi-params.js";
+import type { ProviderModel, TaskThinking, TaskWorkItem } from "./sub-pi-params";
+import { resolveModel } from "./sub-pi-params";
 
 const BUILT_IN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 

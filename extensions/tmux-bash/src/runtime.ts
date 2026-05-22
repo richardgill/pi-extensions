@@ -34,14 +34,14 @@ import {
   tmuxWindowFiltersForScope,
   type TmuxWindow,
   type TmuxWindowFilters,
-} from "./tmux-utils.js";
+} from "./tmux-utils";
 import {
   BACKGROUND_BASH_STATUS_KEY,
   DEFAULT_OPTIONS,
   SHELL_IDENTIFIER_REGEX,
   type ResolvedOptions,
-} from "./options.js";
-import type { BashInput, TmuxInput } from "./tool-call-schemas.js";
+} from "./options";
+import type { BashInput, TmuxInput } from "./tool-call-schemas";
 import {
   displayCommandForCommand,
   formatCompletionSummary,
@@ -52,7 +52,7 @@ import {
   type CompletionMessageRenderDetails,
   type FormattedOutput,
   type PollMessageRenderDetails,
-} from "./render.js";
+} from "./render";
 
 type TmuxRenderDetails = {
   summary: string;

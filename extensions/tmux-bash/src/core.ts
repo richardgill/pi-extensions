@@ -5,17 +5,17 @@ import {
   tmuxWindowFiltersForScope,
   type TmuxWindow,
   type TmuxWindowFilters,
-} from "./tmux-utils.js";
-import type { ResolvedOptions } from "./options.js";
+} from "./tmux-utils";
+import type { ResolvedOptions } from "./options";
 
-export { loadTmuxBashConfig, TmuxBashConfigSchema } from "./config.js";
+export { loadTmuxBashConfig, TmuxBashConfigSchema } from "./config";
 export {
   DEFAULT_OPTIONS,
   resolveOptions,
   type ResolvedOptions,
   type TmuxBashOptions,
-} from "./options.js";
-export type { TmuxWindow, TmuxWindowFilters } from "./tmux-utils.js";
+} from "./options";
+export type { TmuxWindow, TmuxWindowFilters } from "./tmux-utils";
 
 export type TmuxBashContext = {
   gitRoot: string;

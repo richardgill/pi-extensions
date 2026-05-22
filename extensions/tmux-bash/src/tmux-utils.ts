@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import type { ResolvedOptions } from "./options.js";
+import type { ResolvedOptions } from "./options";
 
 export type TmuxWindow = {
   id: string;

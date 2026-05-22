@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBashToolCallSchema } from "../src/tool-call-schemas.js";
+import { buildBashToolCallSchema } from "../src/tool-call-schemas";
 
 const options = {
   defaultTimeoutSeconds: 30,

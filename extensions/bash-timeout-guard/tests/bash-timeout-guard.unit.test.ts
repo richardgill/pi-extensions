@@ -11,7 +11,7 @@ import {
   MAX_TIMEOUT_SECONDS,
   normalizeBashTimeout,
   type BashToolFactory,
-} from "../src/extension.js";
+} from "../src/extension";
 
 const createCtx = (cwd: string): ExtensionContext => ({ cwd }) as ExtensionContext;
 

@@ -1,13 +1,13 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DEFAULT_TMUX_SYSTEM_PROMPT_SNIPPET, type ResolvedOptions } from "../options.js";
+import { DEFAULT_TMUX_SYSTEM_PROMPT_SNIPPET, type ResolvedOptions } from "../options";
 import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
   systemPromptGuidelines,
-} from "../prompt.js";
-import { executeTool, toolError, type ExtensionState } from "../runtime.js";
-import { buildTmuxToolCallSchema } from "../tool-call-schemas.js";
+} from "../prompt";
+import { executeTool, toolError, type ExtensionState } from "../runtime";
+import { buildTmuxToolCallSchema } from "../tool-call-schemas";
 
 type TmuxToolRenderTheme = {
   fg: (name: "success" | "dim", text: string) => string;

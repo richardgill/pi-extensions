@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeRanges, resolveEditorCommand, revealExtension } from "../src/extension.js";
+import { mergeRanges, resolveEditorCommand, revealExtension } from "../src/extension";
 
 describe("mergeRanges", () => {
   it("merges and sorts ranges", () => {

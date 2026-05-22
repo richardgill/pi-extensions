@@ -1,6 +1,6 @@
 import { loadConfigOrDefault, templatedString } from "@richardgill/pi-config";
 import { z } from "zod";
-import { resolveOptions, type ResolvedOptions } from "./options.js";
+import { resolveOptions, type ResolvedOptions } from "./options";
 
 const promptTemplateVariables = [
   "attachCommand",

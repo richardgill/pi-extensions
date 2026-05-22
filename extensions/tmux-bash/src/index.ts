@@ -1,4 +1,4 @@
-import { loadTmuxBashConfig } from "./config.js";
-import { tmuxBash } from "./extension.js";
+import { loadTmuxBashConfig } from "./config";
+import { tmuxBash } from "./extension";
 
 export default tmuxBash(loadTmuxBashConfig());
