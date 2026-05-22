@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@mariozechner/pi-tui";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resolveOptions } from "../src/config";
 import {
   displayCommandForCommand,
@@ -43,7 +44,18 @@ const taggedTheme = {
   fg: (name: string, text: string) => `<${name}>${text}</${name}>`,
 };
 
+const setDefaultKeybindings = (): void => {
+  setKeybindings(
+    new KeybindingsManager({
+      ...TUI_KEYBINDINGS,
+      "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
+    }),
+  );
+};
+
 describe("tmux-bash unit", () => {
+  beforeEach(setDefaultKeybindings);
+
   describe("formatTmuxOutputForContext", () => {
     const fullOutputPath = "/tmp/pi-tmux-bash-full.log";
 

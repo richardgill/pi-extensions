@@ -80,7 +80,7 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
 
   // Template for the background tmux session name when tmuxSessionScope is "git-root".
   // "{{gitRootSessionName}}" is replaced with the normal git-root session name.
-  "gitRootTmuxSessionNameTemplate": "{{gitRootSessionName}}-bg", // default; must include "{{gitRootSessionName}}"
+  "gitRootTmuxSessionNameTemplate": "{{gitRootSessionName}}-bg", // default
 
   // Background tmux session name when tmuxSessionScope is "global".
   "globalTmuxSessionName": "pi-background", // default
@@ -107,62 +107,62 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "tmuxEnvExportDenylist": ["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"], // default
 
   // Milliseconds between streaming foreground bash output updates.
-  "foregroundBashUpdateIntervalMs": 250, // default; positive integer
+  "foregroundBashUpdateIntervalMs": 250, // default
 
   // Foreground bash output lines sent to model context.
-  "bashContextLines": 2000, // default; positive integer
+  "bashContextLines": 2000, // default
 
   // Foreground bash output lines shown in compact TUI cards.
-  "bashCompactDisplayLines": 5, // default; positive integer
+  "bashCompactDisplayLines": 5, // default
 
   // Foreground bash output lines shown in compact TUI cards when output is truncated.
-  "bashTruncatedCompactDisplayLines": 2, // default; positive integer
+  "bashTruncatedCompactDisplayLines": 2, // default
 
   // Foreground bash output lines shown in expanded/uncompacted TUI cards.
-  "bashExpandedDisplayLines": 2000, // default; positive integer
+  "bashExpandedDisplayLines": 2000, // default
 
   // Completed background command lines sent to model context.
-  "completedContextLines": 20, // default; positive integer
+  "completedContextLines": 20, // default
 
   // Completed background command lines shown in compact TUI cards.
-  "completedCompactDisplayLines": 5, // default; positive integer
+  "completedCompactDisplayLines": 5, // default
 
   // Completed background command lines shown in compact TUI cards when output is truncated.
-  "completedTruncatedCompactDisplayLines": 2, // default; positive integer
+  "completedTruncatedCompactDisplayLines": 2, // default
 
   // Completed background command lines shown in expanded/uncompacted TUI cards.
-  "completedExpandedDisplayLines": 20, // default; positive integer
+  "completedExpandedDisplayLines": 20, // default
 
   // Poll output lines sent to model context.
-  "pollContextLines": 30, // default; positive integer
+  "pollContextLines": 30, // default
 
   // Poll output lines shown in compact TUI cards.
-  "pollCompactDisplayLines": 5, // default; positive integer
+  "pollCompactDisplayLines": 5, // default
 
   // Poll output lines shown in compact TUI cards when output is truncated.
-  "pollTruncatedCompactDisplayLines": 2, // default; positive integer
+  "pollTruncatedCompactDisplayLines": 2, // default
 
   // Poll output lines shown in expanded/uncompacted TUI cards.
-  "pollExpandedDisplayLines": 30, // default; positive integer
+  "pollExpandedDisplayLines": 30, // default
 
   // Peek output lines sent to model context.
-  "peekContextLines": 2000, // default; positive integer
+  "peekContextLines": 2000, // default
 
   // Peek output lines shown in compact TUI cards.
-  "peekCompactDisplayLines": 5, // default; positive integer
+  "peekCompactDisplayLines": 5, // default
 
   // Peek output lines shown in compact TUI cards when output is truncated.
-  "peekTruncatedCompactDisplayLines": 2, // default; positive integer
+  "peekTruncatedCompactDisplayLines": 2, // default
 
   // Peek output lines shown in expanded/uncompacted TUI cards.
-  "peekExpandedDisplayLines": 2000, // default; positive integer
+  "peekExpandedDisplayLines": 2000, // default
 
   // Template for created tmux window names.
   // Supports {{nameOrCommand}}, {{name}}, and {{command}}.
   "windowNameTemplate": "{{nameOrCommand}}", // default
 
   // Maximum tmux window name length.
-  "maxWindowNameLength": 30, // default; positive integer
+  "maxWindowNameLength": 30, // default
 
   // Kill tmux windows after command completes.
   "autoCloseWindowsOnCompletion": true, // true (default) | false
@@ -177,22 +177,22 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "outputDir": "/tmp/pi-tmux-bash", // default
 
   // Default seconds to wait for bash-in-tmux before applying timeoutAction.
-  "defaultTimeoutSeconds": 30, // default; positive integer
+  "defaultTimeoutSeconds": 30, // default
 
   // Maximum accepted bash-in-tmux timeout. Larger timeout values are clamped.
-  "maxTimeoutSeconds": 60, // default; positive integer
+  "maxTimeoutSeconds": 60, // default
 
   // Default seconds between automatic poll check-ins. 0 disables default polling.
-  "defaultPollInterval": 0, // default; non-negative integer
+  "defaultPollInterval": 0, // default
 
   // Whether poll cards trigger model turns or display only in the TUI.
   "pollDelivery": "model", // "model" (default) | "display"
 
   // Minimum seconds between model-delivered poll turns. Does not throttle display-only polls.
-  "minimumPollIntervalSeconds": 10, // default; positive integer
+  "minimumPollIntervalSeconds": 10, // default
 
   // Maximum output bytes kept for model context and TUI cards.
-  "maxOutputBytes": 51200, // default; positive integer
+  "maxOutputBytes": 51200, // default
 
   // Marker used to hide wrapper/shim code from displayed command names/output.
   // Set to "" to disable. Uses the last marker when multiple wrappers are present.

@@ -1,6 +1,7 @@
 import {
   DEFAULT_MAX_BYTES,
   formatSize,
+  keyText,
   truncateTail,
   type BashToolDetails,
   type TruncationOptions,
@@ -268,13 +269,16 @@ const noticeLines = (details: BashOutputRenderDetails, expanded: boolean): BashO
     (line) => line.kind === "truncationNotice" || (expanded && line.kind === "fullOutputNotice"),
   );
 
-const collapsedElisionLine = (earlierLines: number): RenderedBashOutputLine => ({
-  kind: "collapsedElision",
-  text: `... (${earlierLines} earlier lines, ctrl+o to expand)`,
-  prefix: `... (${earlierLines} earlier lines, `,
-  key: "ctrl+o",
-  suffix: " to expand)",
-});
+const collapsedElisionLine = (earlierLines: number): RenderedBashOutputLine => {
+  const key = keyText("app.tools.expand");
+  return {
+    kind: "collapsedElision",
+    text: `... (${earlierLines} earlier lines, ${key} to expand)`,
+    prefix: `... (${earlierLines} earlier lines, `,
+    key,
+    suffix: " to expand)",
+  };
+};
 
 const expandedElisionLine = (earlierLines: number): RenderedBashOutputLine => ({
   kind: "expandedElision",

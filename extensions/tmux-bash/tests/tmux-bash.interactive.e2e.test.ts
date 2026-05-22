@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils";
@@ -519,6 +520,24 @@ color-line
 
 Took`);
     expect(transcript).toMatch(ANSI_ESCAPE_PATTERN);
+  }, 30_000);
+
+  it("renders collapsed elision with the configured expand keybinding", async () => {
+    const workspace = createWorkspace();
+    writeFileSync(
+      path.join(workspace.agentDir, "keybindings.json"),
+      JSON.stringify({ "app.tools.expand": "ctrl+x" }, null, 2),
+      "utf8",
+    );
+
+    const result = await runTui(workspace, [
+      bashTool("for i in $(seq 1 8); do printf 'keymap-line-%03d\\n' \"$i\"; done"),
+      reply(doneMarker),
+    ]);
+    const transcript = stableBashTranscript(result.pane);
+
+    expect(transcript).toContain("... (3 earlier lines, ctrl+x to expand)");
+    expect(transcript).not.toContain("ctrl+o to expand");
   }, 30_000);
 
   it.each(peekOutputCases)(
