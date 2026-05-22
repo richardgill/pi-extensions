@@ -5,7 +5,7 @@ import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
   systemPromptGuidelines,
-} from "../prompt";
+} from "../system-prompt";
 import { executeTool, toolError, type ExtensionState } from "../runtime";
 import { buildTmuxToolCallSchema } from "../tool-call-schemas";
 

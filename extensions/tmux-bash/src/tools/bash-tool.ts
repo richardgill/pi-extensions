@@ -5,7 +5,7 @@ import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
   systemPromptGuidelines,
-} from "../prompt";
+} from "../system-prompt";
 import { runBashInTmux, toolError, type ExtensionState } from "../runtime";
 import {
   renderBackgroundBashResultText,
