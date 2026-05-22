@@ -28,7 +28,11 @@ const isBashOutputRenderDetails = (value: unknown): value is BashOutputRenderDet
   if (!value || typeof value !== "object") return false;
 
   const details = value as Partial<BashOutputRenderDetails>;
-  return Array.isArray(details.lines) && details.lines.every(isBashOutputRenderLine);
+  return (
+    Array.isArray(details.lines) &&
+    details.lines.every(isBashOutputRenderLine) &&
+    typeof details.empty === "boolean"
+  );
 };
 
 const completionMessageRenderDetails = (

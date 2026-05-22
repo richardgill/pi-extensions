@@ -424,7 +424,7 @@ Took 5.0s`);
       );
     });
 
-    it("hides no-output placeholders in completion messages", () => {
+    it("hides empty completion output", () => {
       const details = {
         summary: "Background bash finished",
         output: formatTmuxOutputForContext("").details.render,
@@ -434,6 +434,19 @@ Took 5.0s`);
 
       expect(formatRenderedCompletionMessage({ details, expanded: false })).toBe(
         "Background bash finished",
+      );
+    });
+
+    it("does not hide real completion output matching the empty placeholder", () => {
+      const details = {
+        summary: "Background bash finished",
+        output: formatTmuxOutputForContext("(no output)").details.render,
+        exitCode: 0,
+        status: "success" as const,
+      };
+
+      expect(formatRenderedCompletionMessage({ details, expanded: false })).toBe(
+        "Background bash finished\n\n (no output)",
       );
     });
   });

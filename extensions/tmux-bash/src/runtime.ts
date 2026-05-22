@@ -47,6 +47,7 @@ import {
   formatCompletionSummary,
   formatRenderedBashResult,
   formatTmuxOutputForContext as formatOutput,
+  hasOnlyEmptyBashOutput,
   indentDisplayLine,
   indentDisplayLines,
   type CompletionMessageRenderDetails,
@@ -621,8 +622,11 @@ const completionMessageDetails = (
   status: exitCode === 0 ? "success" : "failed",
 });
 
-const formatCompletionMessage = (details: CompletionMessageRenderDetails): string =>
-  `${details.summary}\n\n\`\`\`\n${formatRenderedBashResult(details.output, { expanded: true })}\n\`\`\``;
+const formatCompletionMessage = (details: CompletionMessageRenderDetails): string => {
+  if (hasOnlyEmptyBashOutput(details.output)) return details.summary;
+
+  return `${details.summary}\n\n\`\`\`\n${formatRenderedBashResult(details.output, { expanded: true })}\n\`\`\``;
+};
 
 const completionCustomMessage = (exitCode: number, output: FormattedOutput): CustomMessageInput => {
   const details = completionMessageDetails(exitCode, output);
