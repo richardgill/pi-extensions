@@ -12,32 +12,35 @@ const CustomCommandSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  outputPath: z.string().optional(),
+  outputPath: z.string().default(DEFAULT_OPTIONS.outputPath),
   currentOutputPath: z.union([z.string(), z.literal(false)]).optional(),
-  maxSnapshots: z.number().int().positive().optional(),
+  maxSnapshots: z.number().int().positive().default(DEFAULT_OPTIONS.maxSnapshots),
   model: z
     .object({
-      provider: z.string(),
-      id: z.string(),
-      thinkingLevel: ThinkingLevelSchema.optional(),
+      provider: z.string().default(DEFAULT_OPTIONS.model.provider),
+      id: z.string().default(DEFAULT_OPTIONS.model.id),
+      thinkingLevel: ThinkingLevelSchema.default(DEFAULT_OPTIONS.model.thinkingLevel),
     })
-    .optional(),
-  customCommands: z.array(CustomCommandSchema).optional(),
-  jsonShape: z.string().optional(),
+    .default(DEFAULT_OPTIONS.model),
+  customCommands: z.array(CustomCommandSchema).default(() => [...DEFAULT_OPTIONS.customCommands]),
+  jsonShape: z.string().default(DEFAULT_OPTIONS.jsonShape),
   updaterPrompt: templatedString({
     variables: ["jsonShape", "updateInstructions"],
-  }).optional(),
-  updateInstructions: z.string().optional(),
-  assistantTextMaxChars: z.number().int().positive().optional(),
-  toolResultContentMaxChars: z.number().int().positive().optional(),
-  maxToolResults: z.number().int().positive().optional(),
-  maxFileEvents: z.number().int().positive().optional(),
+  }).default(DEFAULT_OPTIONS.updaterPrompt),
+  updateInstructions: z.string().default(DEFAULT_OPTIONS.updateInstructions),
+  assistantTextMaxChars: z.number().int().positive().default(DEFAULT_OPTIONS.assistantTextMaxChars),
+  toolResultContentMaxChars: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_OPTIONS.toolResultContentMaxChars),
+  maxToolResults: z.number().int().positive().default(DEFAULT_OPTIONS.maxToolResults),
+  maxFileEvents: z.number().int().positive().default(DEFAULT_OPTIONS.maxFileEvents),
 });
 
 const config = loadConfigOrDefault({
   filename: "task-context.jsonc",
   schema: ConfigSchema,
-  defaults: DEFAULT_OPTIONS,
 });
 
 export default taskContext(config);

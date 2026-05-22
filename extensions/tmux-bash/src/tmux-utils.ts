@@ -87,9 +87,6 @@ export const sessionExists = (name: string, tmuxBinary = "tmux"): boolean =>
     `${shellQuote(tmuxBinary)} has-session -t ${shellQuote(name)} 2>/dev/null && echo yes`,
   ) === "yes";
 
-const normalizeWindowFilters = (filters?: string | TmuxWindowFilters): TmuxWindowFilters =>
-  typeof filters === "string" ? { gitRoot: filters } : (filters ?? {});
-
 const matchesWindowFilters = (window: TmuxWindow, filters: TmuxWindowFilters): boolean =>
   (filters.gitRoot === undefined || window.gitRoot === filters.gitRoot) &&
   (filters.piSessionId === undefined || window.piSessionId === filters.piSessionId);
@@ -108,7 +105,7 @@ const windowListFormat = [
 
 export const getWindows = (
   name: string,
-  filters?: string | TmuxWindowFilters,
+  filters?: TmuxWindowFilters,
   tmuxBinary = "tmux",
 ): TmuxWindow[] => {
   const raw = execSafe(
@@ -116,7 +113,7 @@ export const getWindows = (
   );
   if (!raw) return [];
 
-  const windowFilters = normalizeWindowFilters(filters);
+  const windowFilters = filters ?? {};
   return raw
     .split("\n")
     .map((line) => {

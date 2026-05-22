@@ -410,10 +410,9 @@ describe("tmux-bash e2e", () => {
   it("applies system prompt configuration", async () => {
     const workspace = createWorkspace({
       tmuxToolName: "mux",
-      systemPromptToolSnippets: {
-        bash: "CUSTOM bash {{defaultTimeoutSeconds}}/{{maxTimeoutSeconds}}/{{maxOutputKb}}",
-        mux: false,
-      },
+      bashSystemPromptSnippet:
+        "CUSTOM bash {{defaultTimeoutSeconds}}/{{maxTimeoutSeconds}}/{{maxOutputKb}}",
+      tmuxSystemPromptSnippet: false,
       systemPromptGuidelines: ["Use {{tmuxTool}} with {{attachCommand}} and @123."],
     });
     const outputPath = contextPath(workspace, "system-prompt");

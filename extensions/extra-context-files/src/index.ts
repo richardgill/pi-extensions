@@ -1,10 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import {
-  loadConfigOrDefault,
-  resolveOptions as resolveConfigOptions,
-} from "@richardgill/pi-config";
+import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { z } from "zod";
 
 export type ExtraContextFilesOptions = {
@@ -24,15 +21,17 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   sectionTitle: "Extra Context Files",
 };
 
-const ConfigSchema = z.object({
-  filenames: z.array(z.string()).optional(),
-  sectionTitle: z.string().optional(),
+const OptionsSchema = z.object({
+  filenames: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.filenames]),
+  sectionTitle: z.string().default(DEFAULT_OPTIONS.sectionTitle),
 });
+
+const ConfigSchema = OptionsSchema;
 
 const isPresent = <T>(value: T | null): value is T => value !== null;
 
 export const resolveOptions = (input: ExtraContextFilesOptions = {}): ResolvedOptions =>
-  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, input);
+  OptionsSchema.parse(input);
 
 const getAncestorDirs = (cwd: string): string[] => {
   const dir = path.resolve(cwd);
@@ -129,7 +128,6 @@ export const extraContextFiles = (input: ExtraContextFilesOptions = {}) => {
 const config = loadConfigOrDefault({
   filename: "extra-context-files.jsonc",
   schema: ConfigSchema,
-  defaults: DEFAULT_OPTIONS,
 });
 
 export default extraContextFiles(config);

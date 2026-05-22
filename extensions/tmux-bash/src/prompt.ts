@@ -21,27 +21,13 @@ export const renderPromptTemplate = (template: string, options: ResolvedOptions)
   );
 };
 
-const configuredSystemPromptToolSnippet = (
-  toolName: string,
-  options: ResolvedOptions,
-): string | false | undefined => {
-  const toolSnippets = options.systemPromptToolSnippets;
-  if (Object.prototype.hasOwnProperty.call(toolSnippets, toolName)) {
-    return toolSnippets[toolName];
-  }
-  return undefined;
-};
-
 export const resolveSystemPromptToolSnippet = (
-  toolName: string,
-  defaultSnippet: string,
+  snippet: string | false,
   options: ResolvedOptions,
 ): string | undefined => {
-  if (!options.systemPrompt) return undefined;
+  if (!options.systemPrompt || snippet === false) return undefined;
 
-  const value = configuredSystemPromptToolSnippet(toolName, options);
-  if (value === false) return undefined;
-  return renderPromptTemplate(value ?? defaultSnippet, options);
+  return renderPromptTemplate(snippet, options);
 };
 
 export const systemPromptGuidelines = (options: ResolvedOptions): string[] => {

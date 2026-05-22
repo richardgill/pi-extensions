@@ -56,9 +56,8 @@ import {
 
 type TmuxRenderDetails = {
   summary: string;
-  expandedLines?: string[];
-  collapsedLines?: string[];
-  visibleLines?: string[];
+  expandedLines: string[];
+  collapsedLines: string[];
   attachLines?: string[];
 };
 
@@ -849,7 +848,7 @@ const renderedToolText = (
 ) => toolText(text, { ...details, render });
 
 const summaryToolText = (summary: string, details: Record<string, unknown> = {}) =>
-  renderedToolText(summary, { summary }, details);
+  renderedToolText(summary, { summary, expandedLines: [], collapsedLines: [] }, details);
 
 export const toolError = (text: string) => ({
   ...summaryToolText(text),
@@ -955,7 +954,7 @@ const listAction = (session: string, filters: TmuxWindowFilters, options: Resolv
   const summary = `Background session ${session} — ${windows.length} window(s)`;
   return renderedToolText(
     `${summary}\n\n${lines.join("\n")}`,
-    { summary, visibleLines: ["", ...lines] },
+    { summary, expandedLines: ["", ...lines], collapsedLines: ["", ...lines] },
     { session, windows },
   );
 };
@@ -1049,7 +1048,7 @@ const listPollsAction = (
   });
   return renderedToolText(
     `Active pollers:\n\n${lines.join("\n")}`,
-    { summary: "Active pollers:", visibleLines: ["", ...lines] },
+    { summary: "Active pollers:", expandedLines: ["", ...lines], collapsedLines: ["", ...lines] },
     { pollers: details },
   );
 };

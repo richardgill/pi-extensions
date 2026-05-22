@@ -41,23 +41,28 @@ const BashShimCommandSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  filenameSuffix: z.string().optional(),
-  collectReadTool: z.boolean().optional(),
-  collectWriteTool: z.boolean().optional(),
-  collectEditTool: z.boolean().optional(),
-  collectBashCommand: z.boolean().optional(),
-  collectBashOutput: z.boolean().optional(),
-  collectAssistantOutput: z.boolean().optional(),
-  appendSystemPrompt: z.string().optional(),
-  assistantCitationPatterns: z.array(RegexPatternSchema).optional(),
-  bashOutputPatterns: z.array(RegexPatternSchema).optional(),
-  bashShimCommands: z.array(BashShimCommandSchema).optional(),
+  filenameSuffix: z.string().default(DEFAULT_OPTIONS.filenameSuffix),
+  collectReadTool: z.boolean().default(DEFAULT_OPTIONS.collectReadTool),
+  collectWriteTool: z.boolean().default(DEFAULT_OPTIONS.collectWriteTool),
+  collectEditTool: z.boolean().default(DEFAULT_OPTIONS.collectEditTool),
+  collectBashCommand: z.boolean().default(DEFAULT_OPTIONS.collectBashCommand),
+  collectBashOutput: z.boolean().default(DEFAULT_OPTIONS.collectBashOutput),
+  collectAssistantOutput: z.boolean().default(DEFAULT_OPTIONS.collectAssistantOutput),
+  appendSystemPrompt: z.string().default(DEFAULT_OPTIONS.appendSystemPrompt),
+  assistantCitationPatterns: z
+    .array(RegexPatternSchema)
+    .default(() => structuredClone(DEFAULT_OPTIONS.assistantCitationPatterns)),
+  bashOutputPatterns: z
+    .array(RegexPatternSchema)
+    .default(() => structuredClone(DEFAULT_OPTIONS.bashOutputPatterns)),
+  bashShimCommands: z
+    .array(BashShimCommandSchema)
+    .default(() => structuredClone(DEFAULT_OPTIONS.bashShimCommands)),
 });
 
 const config = loadConfigOrDefault({
   filename: "file-collector.jsonc",
   schema: ConfigSchema,
-  defaults: DEFAULT_OPTIONS,
 });
 
 export default fileCollector(config);

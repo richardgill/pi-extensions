@@ -19,7 +19,6 @@ import {
   collectFileEventsForTurnFromSessionFile,
   type FileLineEvent,
 } from "@richardgill/pi-file-collector";
-import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
 import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
@@ -256,8 +255,37 @@ const EMPTY_SNAPSHOT: TaskContextSnapshot = {
   relevantFiles: [],
 };
 
+const TaskContextOptionsSchema = z.object({
+  outputPath: z.string().default(DEFAULT_OPTIONS.outputPath),
+  currentOutputPath: z.union([z.string(), z.literal(false)]).optional(),
+  maxSnapshots: z.number().int().positive().default(DEFAULT_OPTIONS.maxSnapshots),
+  model: z
+    .object({
+      provider: z.string().default(DEFAULT_OPTIONS.model.provider),
+      id: z.string().default(DEFAULT_OPTIONS.model.id),
+      thinkingLevel: z
+        .enum(["minimal", "low", "medium", "high", "xhigh"])
+        .default(DEFAULT_OPTIONS.model.thinkingLevel),
+    })
+    .default(DEFAULT_OPTIONS.model),
+  customCommands: z
+    .array(z.custom<TaskContextCommandOptions>())
+    .default(() => [...DEFAULT_OPTIONS.customCommands]),
+  jsonShape: z.string().default(DEFAULT_OPTIONS.jsonShape),
+  updaterPrompt: z.string().default(DEFAULT_OPTIONS.updaterPrompt),
+  updateInstructions: z.string().default(DEFAULT_OPTIONS.updateInstructions),
+  assistantTextMaxChars: z.number().int().positive().default(DEFAULT_OPTIONS.assistantTextMaxChars),
+  toolResultContentMaxChars: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_OPTIONS.toolResultContentMaxChars),
+  maxToolResults: z.number().int().positive().default(DEFAULT_OPTIONS.maxToolResults),
+  maxFileEvents: z.number().int().positive().default(DEFAULT_OPTIONS.maxFileEvents),
+});
+
 export const resolveOptions = (input: TaskContextOptions = {}): ResolvedOptions =>
-  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, input);
+  TaskContextOptionsSchema.parse(input);
 
 const expandHome = (targetPath: string): string => {
   if (targetPath === "~") {

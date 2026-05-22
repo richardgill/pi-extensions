@@ -10,7 +10,7 @@ import type {
   TurnEndEvent,
 } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
-import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
+import { z } from "zod";
 
 type SkillInvocation = {
   name: string;
@@ -77,8 +77,12 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   toolName: DEFAULT_TOOL_NAME,
 };
 
+const SubPiSkillOptionsSchema = z.object({
+  toolName: z.string().default(DEFAULT_OPTIONS.toolName),
+});
+
 export const resolveOptions = (options: SubPiSkillOptions = {}): ResolvedOptions =>
-  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
+  SubPiSkillOptionsSchema.parse(options);
 
 let extensionApi: ExtensionAPI | null = null;
 let lastPrompt: string | null = null;

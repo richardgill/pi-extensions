@@ -12,7 +12,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
+import { z } from "zod";
 
 export type RegexPatternConfig = {
   regex: string;
@@ -212,8 +212,33 @@ const validateBashCommandNames = (commands: Array<Pick<BashShimCommand, "name">>
   }
 };
 
+const RegexPatternConfigSchema = z.object({
+  regex: z.string(),
+  flags: z.string().optional(),
+});
+
+const FileCollectorOptionsSchema = z.object({
+  filenameSuffix: z.string().default(DEFAULT_OPTIONS.filenameSuffix),
+  collectReadTool: z.boolean().default(DEFAULT_OPTIONS.collectReadTool),
+  collectWriteTool: z.boolean().default(DEFAULT_OPTIONS.collectWriteTool),
+  collectEditTool: z.boolean().default(DEFAULT_OPTIONS.collectEditTool),
+  collectBashCommand: z.boolean().default(DEFAULT_OPTIONS.collectBashCommand),
+  collectBashOutput: z.boolean().default(DEFAULT_OPTIONS.collectBashOutput),
+  collectAssistantOutput: z.boolean().default(DEFAULT_OPTIONS.collectAssistantOutput),
+  appendSystemPrompt: z.string().default(DEFAULT_OPTIONS.appendSystemPrompt),
+  assistantCitationPatterns: z
+    .array(RegexPatternConfigSchema)
+    .default(() => structuredClone(DEFAULT_OPTIONS.assistantCitationPatterns)),
+  bashOutputPatterns: z
+    .array(RegexPatternConfigSchema)
+    .default(() => structuredClone(DEFAULT_OPTIONS.bashOutputPatterns)),
+  bashShimCommands: z
+    .array(z.custom<BashShimCommand>())
+    .default(() => structuredClone(DEFAULT_OPTIONS.bashShimCommands)),
+});
+
 export const resolveOptions = (options: FileCollectorOptions = {}): ResolvedOptions => {
-  const resolvedConfig = resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
+  const resolvedConfig = FileCollectorOptionsSchema.parse(options);
   validateRegexPatterns([
     ...resolvedConfig.assistantCitationPatterns,
     ...resolvedConfig.bashOutputPatterns,

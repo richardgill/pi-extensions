@@ -5,7 +5,7 @@ import { registerMessageRenderers } from "./renderers/messages";
 import { registerBashTool } from "./tools/bash-tool";
 import { registerTmuxTool } from "./tools/tmux-tool";
 
-export { DEFAULT_OPTIONS, type TmuxBashOptions } from "./options";
+export { DEFAULT_OPTIONS, TmuxBashOptionsSchema, type TmuxBashOptions } from "./options";
 
 export const tmuxBash = (input: TmuxBashOptions = {}) => {
   const options = resolveOptions(input);

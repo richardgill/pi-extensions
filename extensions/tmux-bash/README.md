@@ -205,13 +205,10 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "systemPrompt": true, // true (default) | false
 
   // Tool snippets for Pi's generated system prompt Available tools section.
-  // Omit systemPromptToolSnippets, or omit one key, to use defaults.
-  // Set an entry to false to hide only that tool from Available tools.
-  // Keys are configured tool names. Values support the template variables listed below.
-  "systemPromptToolSnippets": {
-    "bash": "Execute bash commands in background tmux windows", // string | false
-    "tmux": "Inspect and control the background tmux sessions created by bash tool" // string | false
-  },
+  // Omit to use defaults. Set one to false to hide only that tool from Available tools.
+  // Values support the template variables listed below.
+  "bashSystemPromptSnippet": "Execute bash commands in background tmux windows", // string | false
+  "tmuxSystemPromptSnippet": "Inspect and control the background tmux sessions created by bash tool", // string | false
 
   // Guideline bullets added to Pi's generated system prompt.
   // Omit systemPromptGuidelines to use defaults.

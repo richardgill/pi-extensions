@@ -1,6 +1,6 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DEFAULT_BASH_SYSTEM_PROMPT_SNIPPET, type ResolvedOptions } from "../options";
+import type { ResolvedOptions } from "../options";
 import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
@@ -71,11 +71,7 @@ export const registerBashTool = (
     name: options.bashToolName,
     label: options.bashToolName,
     description: renderPromptTemplate(options.bashToolDescription, options),
-    promptSnippet: resolveSystemPromptToolSnippet(
-      options.bashToolName,
-      DEFAULT_BASH_SYSTEM_PROMPT_SNIPPET,
-      options,
-    ),
+    promptSnippet: resolveSystemPromptToolSnippet(options.bashSystemPromptSnippet, options),
     promptGuidelines: systemPromptGuidelines(options),
     parameters: bashToolCallSchema.typeBoxSchema,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {

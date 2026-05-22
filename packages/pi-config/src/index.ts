@@ -11,16 +11,6 @@ type LoadConfigOptions<Schema extends z.ZodType> = {
   renderTemplates?: boolean;
 };
 
-type LoadConfigOrDefaultOptions<Schema extends z.ZodType> = LoadConfigOptions<Schema> & {
-  defaults: unknown;
-};
-
-type DefaultsInput<Options> = Options extends unknown[]
-  ? Options
-  : Options extends object
-    ? { [Key in keyof Options]?: DefaultsInput<Options[Key]> }
-    : Options;
-
 type TemplateMissingBehavior = "keep" | "throw";
 
 type TemplateStringOptions = {
@@ -40,20 +30,14 @@ export const loadConfigOrDefault = <Schema extends z.ZodType>({
   folder = getDefaultConfigFolder(),
   filename,
   schema,
-  defaults,
   renderTemplates = true,
-}: LoadConfigOrDefaultOptions<Schema>): z.infer<Schema> => {
+}: LoadConfigOptions<Schema>): z.infer<Schema> => {
   const filePath = path.resolve(folder, filename);
   const value = fs.existsSync(filePath) ? readConfigValue(filePath) : {};
-  return parseConfig(filePath, schema, mergeDefaults(defaults, value), renderTemplates);
+  return parseConfig(filePath, schema, value, renderTemplates);
 };
 
 const getDefaultConfigFolder = (): string => process.env.PI_EXTENSION_CONFIG_DIR ?? getAgentDir();
-
-export const resolveOptions = <Options extends object>(
-  defaults: Options,
-  input: DefaultsInput<Options> = {} as DefaultsInput<Options>,
-): Options => mergeDefaults(defaults, input) as Options;
 
 export const templatedString = (options: TemplateStringOptions): z.ZodString =>
   z.string().meta({
@@ -73,6 +57,25 @@ const renderConfigTemplate = (
 
 const renderSchemaTemplates = <Value>(schema: z.ZodType, value: Value): Value =>
   renderSchemaValue(schema, value, value, "config") as Value;
+
+const applySchemaDefaults = (schema: z.ZodType, value: unknown): unknown => {
+  if (schema instanceof z.ZodDefault) {
+    const defaultValue = value === undefined ? schema.def.defaultValue : value;
+    return applySchemaDefaults(schema.def.innerType as z.ZodType, defaultValue);
+  }
+
+  const innerSchema = getInnerSchema(schema);
+  if (innerSchema) return value === undefined ? value : applySchemaDefaults(innerSchema, value);
+
+  if (!isZodObject(schema) || !isRecord(value)) return value;
+
+  return Object.fromEntries(
+    Object.entries(schema.shape).map(([key, fieldSchema]) => [
+      key,
+      applySchemaDefaults(fieldSchema as z.ZodType, value[key]),
+    ]),
+  );
+};
 
 const readConfigValue = (filePath: string): unknown => {
   const content = readConfigFile(filePath);
@@ -104,7 +107,9 @@ const parseConfig = <Schema extends z.ZodType>(
   value: unknown,
   renderTemplates: boolean,
 ): z.infer<Schema> => {
-  const preparedValue = renderTemplates ? renderSchemaTemplates(schema, value) : value;
+  const preparedValue = renderTemplates
+    ? renderSchemaTemplates(schema, applySchemaDefaults(schema, value))
+    : value;
   return validateConfig(filePath, schema, preparedValue);
 };
 
@@ -327,16 +332,6 @@ const stringifyTemplateValue = (variable: string, value: unknown, fieldPath: str
   if (["string", "number", "boolean"].includes(typeof value)) return String(value);
 
   throw new Error(`${fieldPath} uses unsupported template value "${variable}"`);
-};
-
-const mergeDefaults = (defaults: unknown, value: unknown): unknown => {
-  if (value === undefined) return defaults;
-  if (!isRecord(defaults) || !isRecord(value)) return value;
-
-  const keys = new Set([...Object.keys(defaults), ...Object.keys(value)]);
-  return Object.fromEntries(
-    [...keys].map((key) => [key, mergeDefaults(defaults[key], value[key])]),
-  );
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

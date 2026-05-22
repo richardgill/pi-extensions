@@ -12,6 +12,7 @@ export { loadTmuxBashConfig, TmuxBashConfigSchema } from "./config";
 export {
   DEFAULT_OPTIONS,
   resolveOptions,
+  TmuxBashOptionsSchema,
   type ResolvedOptions,
   type TmuxBashOptions,
 } from "./options";
