@@ -1,6 +1,6 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { ResolvedOptions } from "../options";
+import type { ResolvedOptions } from "../config";
 import {
   formatRenderedCompletionMessage,
   formatRenderedPollMessage,

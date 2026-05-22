@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { DEFAULT_OPTIONS } from "../src/options";
+import { DEFAULT_OPTIONS } from "../src/config";
 import { formatDurationSeconds } from "../src/render";
 import {
   backgroundSessionName,

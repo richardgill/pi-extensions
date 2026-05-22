@@ -40,7 +40,7 @@ import {
   DEFAULT_OPTIONS,
   SHELL_IDENTIFIER_REGEX,
   type ResolvedOptions,
-} from "./options";
+} from "./config";
 import type { BashInput, TmuxInput } from "./tool-call-schemas";
 import {
   displayCommandForCommand,
