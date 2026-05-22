@@ -1,7 +1,7 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { KeyId } from "@mariozechner/pi-tui";
-import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
+import { z } from "zod";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -56,8 +56,17 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   persistState: true,
 };
 
+const PresetOptionsSchema = z.object({
+  presets: z.record(z.string(), z.custom<Preset>()).default(() => ({ ...DEFAULT_OPTIONS.presets })),
+  commandName: z.string().default(DEFAULT_OPTIONS.commandName),
+  flagName: z.string().default(DEFAULT_OPTIONS.flagName),
+  cycleShortcut: z.union([z.string(), z.literal(false)]).default(DEFAULT_OPTIONS.cycleShortcut),
+  defaultTools: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.defaultTools]),
+  persistState: z.boolean().default(DEFAULT_OPTIONS.persistState),
+});
+
 export const resolveOptions = (options: PresetOptions = {}): ResolvedOptions =>
-  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
+  PresetOptionsSchema.parse(options) as ResolvedOptions;
 
 const createState = (): PresetState => ({
   activeName: undefined,

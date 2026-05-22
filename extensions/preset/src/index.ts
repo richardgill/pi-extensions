@@ -13,18 +13,17 @@ const PresetSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  presets: z.record(z.string(), PresetSchema).optional(),
-  commandName: z.string().optional(),
-  flagName: z.string().optional(),
-  cycleShortcut: z.union([z.string(), z.literal(false)]).optional(),
-  defaultTools: z.array(z.string()).optional(),
-  persistState: z.boolean().optional(),
+  presets: z.record(z.string(), PresetSchema).default(() => ({ ...DEFAULT_OPTIONS.presets })),
+  commandName: z.string().default(DEFAULT_OPTIONS.commandName),
+  flagName: z.string().default(DEFAULT_OPTIONS.flagName),
+  cycleShortcut: z.union([z.string(), z.literal(false)]).default(DEFAULT_OPTIONS.cycleShortcut),
+  defaultTools: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.defaultTools]),
+  persistState: z.boolean().default(DEFAULT_OPTIONS.persistState),
 });
 
 const config = loadConfigOrDefault({
   filename: "preset.jsonc",
   schema: ConfigSchema,
-  defaults: DEFAULT_OPTIONS,
 });
 
 export default preset(config as PresetOptions);

@@ -35,14 +35,16 @@ const PromptPatchSchema = z.object({
 });
 
 const ConfigSchema = z.object({
-  name: z.string().optional(),
-  label: z.string().optional(),
-  description: z.string().optional(),
-  maxParallelTasks: z.number().int().positive().optional(),
-  maxConcurrency: z.number().int().positive().optional(),
-  collapsedItemCount: z.number().int().nonnegative().optional(),
-  skillListLimit: z.number().int().nonnegative().optional(),
-  systemPromptPatches: z.array(PromptPatchSchema).optional(),
+  name: z.string().default(defaultConfig.name),
+  label: z.string().default(defaultConfig.label),
+  description: z.string().default(defaultConfig.description),
+  maxParallelTasks: z.number().int().positive().default(defaultConfig.maxParallelTasks),
+  maxConcurrency: z.number().int().positive().default(defaultConfig.maxConcurrency),
+  collapsedItemCount: z.number().int().nonnegative().default(defaultConfig.collapsedItemCount),
+  skillListLimit: z.number().int().nonnegative().default(defaultConfig.skillListLimit),
+  systemPromptPatches: z
+    .array(PromptPatchSchema)
+    .default(() => defaultConfig.systemPromptPatches.map((patch) => ({ ...patch }))),
 });
 
 const toPromptPatch = (patch: PromptPatchConfig): PromptPatch => ({
@@ -53,10 +55,9 @@ const toPromptPatch = (patch: PromptPatchConfig): PromptPatch => ({
 const config = loadConfigOrDefault({
   filename: "sub-pi.jsonc",
   schema: ConfigSchema,
-  defaults: defaultConfig,
 });
 
 export default subPi({
   ...config,
-  systemPromptPatches: (config.systemPromptPatches ?? defaultPromptPatches).map(toPromptPatch),
+  systemPromptPatches: config.systemPromptPatches.map(toPromptPatch),
 } satisfies SubPiOptions);

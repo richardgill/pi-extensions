@@ -14,13 +14,13 @@ import {
   type ThemeColor,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { resolveOptions as resolveConfigOptions } from "@richardgill/pi-config";
+import { z } from "zod";
 import { Type } from "@sinclair/typebox";
 import {
   type BuiltInToolName,
   getBuiltInToolsFromActiveTools,
   resolveTaskConfig,
-} from "./sub-pi-config.js";
+} from "./sub-pi-config";
 import {
   isRecord,
   MAX_PARALLEL_TASKS,
@@ -28,7 +28,7 @@ import {
   type TaskThinking,
   type TaskWorkItem,
   VALID_THINKING_OPTIONS,
-} from "./sub-pi-params.js";
+} from "./sub-pi-params";
 
 export type PromptPatch = { match: RegExp; replace: string };
 
@@ -70,8 +70,26 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   ],
 };
 
+const PromptPatchSchema = z.object({
+  match: z.instanceof(RegExp),
+  replace: z.string(),
+});
+
+const SubPiOptionsSchema = z.object({
+  name: z.string().default(DEFAULT_OPTIONS.name),
+  label: z.string().default(DEFAULT_OPTIONS.label),
+  description: z.string().default(DEFAULT_OPTIONS.description),
+  maxParallelTasks: z.number().int().positive().default(DEFAULT_OPTIONS.maxParallelTasks),
+  maxConcurrency: z.number().int().positive().default(DEFAULT_OPTIONS.maxConcurrency),
+  collapsedItemCount: z.number().int().nonnegative().default(DEFAULT_OPTIONS.collapsedItemCount),
+  skillListLimit: z.number().int().nonnegative().default(DEFAULT_OPTIONS.skillListLimit),
+  systemPromptPatches: z
+    .array(PromptPatchSchema)
+    .default(() => DEFAULT_OPTIONS.systemPromptPatches.map((patch) => ({ ...patch }))),
+});
+
 export const resolveOptions = (options: SubPiOptions = {}): ResolvedOptions =>
-  resolveConfigOptions<ResolvedOptions>(DEFAULT_OPTIONS, options);
+  SubPiOptionsSchema.parse(options);
 
 const loadSkillDiscovery = (cwd: string) => {
   const settingsManager = SettingsManager.create(cwd);

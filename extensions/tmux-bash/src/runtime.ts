@@ -34,14 +34,14 @@ import {
   tmuxWindowFiltersForScope,
   type TmuxWindow,
   type TmuxWindowFilters,
-} from "./tmux-utils.js";
+} from "./tmux-utils";
 import {
   BACKGROUND_BASH_STATUS_KEY,
   DEFAULT_OPTIONS,
   SHELL_IDENTIFIER_REGEX,
   type ResolvedOptions,
-} from "./options.js";
-import type { BashInput, TmuxInput } from "./tool-call-schemas.js";
+} from "./options";
+import type { BashInput, TmuxInput } from "./tool-call-schemas";
 import {
   displayCommandForCommand,
   formatCompletionSummary,
@@ -52,13 +52,12 @@ import {
   type CompletionMessageRenderDetails,
   type FormattedOutput,
   type PollMessageRenderDetails,
-} from "./render.js";
+} from "./render";
 
 type TmuxRenderDetails = {
   summary: string;
-  expandedLines?: string[];
-  collapsedLines?: string[];
-  visibleLines?: string[];
+  expandedLines: string[];
+  collapsedLines: string[];
   attachLines?: string[];
 };
 
@@ -849,7 +848,7 @@ const renderedToolText = (
 ) => toolText(text, { ...details, render });
 
 const summaryToolText = (summary: string, details: Record<string, unknown> = {}) =>
-  renderedToolText(summary, { summary }, details);
+  renderedToolText(summary, { summary, expandedLines: [], collapsedLines: [] }, details);
 
 export const toolError = (text: string) => ({
   ...summaryToolText(text),
@@ -955,7 +954,7 @@ const listAction = (session: string, filters: TmuxWindowFilters, options: Resolv
   const summary = `Background session ${session} — ${windows.length} window(s)`;
   return renderedToolText(
     `${summary}\n\n${lines.join("\n")}`,
-    { summary, visibleLines: ["", ...lines] },
+    { summary, expandedLines: ["", ...lines], collapsedLines: ["", ...lines] },
     { session, windows },
   );
 };
@@ -1049,7 +1048,7 @@ const listPollsAction = (
   });
   return renderedToolText(
     `Active pollers:\n\n${lines.join("\n")}`,
-    { summary: "Active pollers:", visibleLines: ["", ...lines] },
+    { summary: "Active pollers:", expandedLines: ["", ...lines], collapsedLines: ["", ...lines] },
     { pollers: details },
   );
 };

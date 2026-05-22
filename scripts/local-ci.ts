@@ -8,7 +8,7 @@ type CommandResult = {
 };
 
 const commands: Command[] = [
-  ["pnpm", ["run", "check"]],
+  ["pnpm", ["run", "check", "--fix"]],
   ["pnpm", ["run", "misc-checks"]],
   ["pnpm", ["run", "typecheck"]],
   ["pnpm", ["run", "test"]],

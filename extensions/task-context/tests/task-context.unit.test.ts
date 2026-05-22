@@ -27,7 +27,7 @@ import {
   validateModelSnapshot,
   writeCurrentSnapshot,
   type TaskContextSnapshot,
-} from "../src/extension.js";
+} from "../src/extension";
 
 const snapshot = (title: string): TaskContextSnapshot => ({
   title,

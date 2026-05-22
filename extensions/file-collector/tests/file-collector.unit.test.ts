@@ -13,7 +13,7 @@ import {
   formatFileLineEventDisplay,
   resolveAbsolutePath,
   resolveOptions,
-} from "../src/extension.js";
+} from "../src/extension";
 
 describe("resolveOptions", () => {
   it("allows system prompt append text", () => {

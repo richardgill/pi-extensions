@@ -1,6 +1,6 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { ResolvedOptions } from "../options.js";
+import type { ResolvedOptions } from "../options";
 import {
   formatRenderedCompletionMessage,
   formatRenderedPollMessage,
@@ -9,7 +9,7 @@ import {
   type BashOutputRenderLine,
   type CompletionMessageRenderDetails,
   type PollMessageRenderDetails,
-} from "../render.js";
+} from "../render";
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");

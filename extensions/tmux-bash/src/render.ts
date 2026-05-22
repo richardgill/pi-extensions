@@ -6,8 +6,8 @@ import {
   type TruncationOptions,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
-import { BASH_DURATION_SEPARATOR, DEFAULT_OPTIONS, type ResolvedOptions } from "./options.js";
-import type { BashInput } from "./tool-call-schemas.js";
+import { BASH_DURATION_SEPARATOR, DEFAULT_OPTIONS, type ResolvedOptions } from "./options";
+import type { BashInput } from "./tool-call-schemas";
 
 export type RenderTheme = {
   fg: (name: "toolTitle" | "toolOutput" | "muted" | "dim" | "warning", text: string) => string;

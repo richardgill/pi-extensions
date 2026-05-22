@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils.js";
+import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils";
 import {
   bash,
   reply,
@@ -8,18 +8,14 @@ import {
   scriptedToolCallWithLatestWindowId,
   type ScriptedStep,
   writeScriptedProvider,
-} from "./testing/scripted-provider.js";
-import {
-  runPiTui,
-  type RunPiTuiCheckpoint,
-  type RunPiTuiResult,
-} from "./testing/pi-interactive.js";
+} from "./testing/scripted-provider";
+import { runPiTui, type RunPiTuiCheckpoint, type RunPiTuiResult } from "./testing/pi-interactive";
 import {
   ansiBashTranscript,
   ANSI_ESCAPE_PATTERN,
   stableFullOutputPath,
   stripAnsi,
-} from "./testing/tui-transcript.js";
+} from "./testing/tui-transcript";
 
 const doneMarker = "PI-TUI-DONE";
 

@@ -9,17 +9,15 @@ import { loadConfigOrDefault, templatedString } from "@richardgill/pi-config";
 import { z } from "zod";
 
 const schema = z.object({
-  maxTimeoutSeconds: z.number().int().positive(),
-  prompt: templatedString({ variables: ["maxTimeoutSeconds"] }).optional(),
+  maxTimeoutSeconds: z.number().int().positive().default(60),
+  prompt: templatedString({ variables: ["maxTimeoutSeconds"] }).default(
+    "Max timeout is {{maxTimeoutSeconds}}s.",
+  ),
 });
 
 export const config = loadConfigOrDefault({
   filename: "my-extension.jsonc",
   schema,
-  defaults: {
-    maxTimeoutSeconds: 60,
-    prompt: "Max timeout is {{maxTimeoutSeconds}}s.",
-  },
 });
 ```
 
@@ -38,9 +36,9 @@ For the example above, the end user can create:
 }
 ```
 
-The loader merges this file over the extension defaults, renders tagged string templates, then validates the final result with Zod.
+The loader applies Zod schema defaults, renders tagged string templates, then validates the final result with Zod.
 
-If the file is missing, `loadConfigOrDefault` uses the defaults.
+If the file is missing, `loadConfigOrDefault` parses `{}` so Zod defaults apply.
 
 Config directory precedence is: explicit `folder`, `PI_EXTENSION_CONFIG_DIR`, then Pi's agent directory.
 
@@ -62,5 +60,4 @@ Template variables must be declared on the field, exist in the loaded config, an
 ## API
 
 - `loadConfigOrDefault(...)`
-- `resolveOptions(...)`
 - `templatedString(...)`

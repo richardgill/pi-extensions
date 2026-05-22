@@ -1,13 +1,13 @@
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DEFAULT_TMUX_SYSTEM_PROMPT_SNIPPET, type ResolvedOptions } from "../options.js";
+import type { ResolvedOptions } from "../options";
 import {
   renderPromptTemplate,
   resolveSystemPromptToolSnippet,
   systemPromptGuidelines,
-} from "../prompt.js";
-import { executeTool, toolError, type ExtensionState } from "../runtime.js";
-import { buildTmuxToolCallSchema } from "../tool-call-schemas.js";
+} from "../prompt";
+import { executeTool, toolError, type ExtensionState } from "../runtime";
+import { buildTmuxToolCallSchema } from "../tool-call-schemas";
 
 type TmuxToolRenderTheme = {
   fg: (name: "success" | "dim", text: string) => string;
@@ -15,9 +15,8 @@ type TmuxToolRenderTheme = {
 
 type TmuxRenderDetails = {
   summary: string;
-  expandedLines?: string[];
-  collapsedLines?: string[];
-  visibleLines?: string[];
+  expandedLines: string[];
+  collapsedLines: string[];
   attachLines?: string[];
 };
 
@@ -30,10 +29,25 @@ const formatTmuxCallWindowLabel = (action: string, window: number | string | und
   return target.startsWith("@") ? ` ${target}` : ` :${target}`;
 };
 
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
 const getTmuxRenderDetails = (details: unknown): TmuxRenderDetails | undefined => {
   if (!details || typeof details !== "object") return undefined;
-  const render = (details as { render?: TmuxRenderDetails }).render;
-  return render?.summary ? render : undefined;
+
+  const render = (details as { render?: Partial<TmuxRenderDetails> }).render;
+  if (typeof render?.summary !== "string") return undefined;
+  if (!isStringArray(render.expandedLines) || !isStringArray(render.collapsedLines)) {
+    return undefined;
+  }
+  if (render.attachLines !== undefined && !isStringArray(render.attachLines)) return undefined;
+
+  return {
+    summary: render.summary,
+    expandedLines: render.expandedLines,
+    collapsedLines: render.collapsedLines,
+    attachLines: render.attachLines,
+  };
 };
 
 const formatTmuxToolRenderText = (
@@ -41,9 +55,7 @@ const formatTmuxToolRenderText = (
   expanded: boolean,
   theme: TmuxToolRenderTheme,
 ): string => {
-  const detailLines = expanded
-    ? (render.expandedLines ?? render.visibleLines ?? [])
-    : (render.collapsedLines ?? render.visibleLines ?? []);
+  const detailLines = expanded ? render.expandedLines : render.collapsedLines;
 
   return [
     `${theme.fg("success", "✓ ")}${render.summary}`,
@@ -63,11 +75,7 @@ export const registerTmuxTool = (
     name: options.tmuxToolName,
     label: options.tmuxToolName,
     description: renderPromptTemplate(options.tmuxToolDescription, options),
-    promptSnippet: resolveSystemPromptToolSnippet(
-      options.tmuxToolName,
-      DEFAULT_TMUX_SYSTEM_PROMPT_SNIPPET,
-      options,
-    ),
+    promptSnippet: resolveSystemPromptToolSnippet(options.tmuxSystemPromptSnippet, options),
     promptGuidelines: systemPromptGuidelines(options),
     parameters: tmuxToolCallSchema.typeBoxSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {

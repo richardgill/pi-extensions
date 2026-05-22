@@ -1,19 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { DEFAULT_OPTIONS } from "../src/options.js";
-import { formatDurationSeconds } from "../src/render.js";
+import { DEFAULT_OPTIONS } from "../src/options";
+import { formatDurationSeconds } from "../src/render";
 import {
   backgroundSessionName,
   getWindows,
   sessionExists,
   tmuxWindowAttachCommand,
-} from "../src/tmux-utils.js";
+} from "../src/tmux-utils";
 import {
   createPiE2eWorkspace,
   expectPiSuccess,
   type PiE2eWorkspace,
-} from "./testing/pi-test-utils.js";
+} from "./testing/pi-test-utils";
 import {
   bash,
   recordLatestToolResult,
@@ -22,7 +22,7 @@ import {
   scriptedToolCall,
   scriptedToolCallWithLatestWindowId,
   type ScriptedStep,
-} from "./testing/scripted-provider.js";
+} from "./testing/scripted-provider";
 
 type ExpectedModelText =
   | string
@@ -410,10 +410,9 @@ describe("tmux-bash e2e", () => {
   it("applies system prompt configuration", async () => {
     const workspace = createWorkspace({
       tmuxToolName: "mux",
-      systemPromptToolSnippets: {
-        bash: "CUSTOM bash {{defaultTimeoutSeconds}}/{{maxTimeoutSeconds}}/{{maxOutputKb}}",
-        mux: false,
-      },
+      bashSystemPromptSnippet:
+        "CUSTOM bash {{defaultTimeoutSeconds}}/{{maxTimeoutSeconds}}/{{maxOutputKb}}",
+      tmuxSystemPromptSnippet: false,
       systemPromptGuidelines: ["Use {{tmuxTool}} with {{attachCommand}} and @123."],
     });
     const outputPath = contextPath(workspace, "system-prompt");

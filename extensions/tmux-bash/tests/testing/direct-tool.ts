@@ -5,9 +5,9 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { tmuxBash } from "../../src/extension.js";
-import type { BashInput } from "../../src/tool-call-schemas.js";
-import type { PiTestWorkspace } from "./pi-test-workspace.js";
+import { tmuxBash } from "../../src/extension";
+import type { BashInput } from "../../src/tool-call-schemas";
+import type { PiTestWorkspace } from "./pi-test-workspace";
 
 export type TimedToolUpdate = {
   elapsedMs: number;

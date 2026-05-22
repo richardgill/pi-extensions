@@ -4,11 +4,15 @@ import { bashTimeoutGuard, DEFAULT_OPTIONS } from "pi-bash-timeout-guard";
 
 const ConfigSchema = z
   .object({
-    defaultTimeoutSeconds: z.number().int().positive().optional(),
-    maxTimeoutSeconds: z.number().int().positive().optional(),
+    defaultTimeoutSeconds: z
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_OPTIONS.defaultTimeoutSeconds),
+    maxTimeoutSeconds: z.number().int().positive().default(DEFAULT_OPTIONS.maxTimeoutSeconds),
     prompt: templatedString({
       variables: ["defaultTimeoutSeconds", "maxTimeoutSeconds"],
-    }).optional(),
+    }).default(DEFAULT_OPTIONS.prompt),
   })
   .refine(
     (config) =>
@@ -21,7 +25,6 @@ const ConfigSchema = z
 const config = loadConfigOrDefault({
   filename: "bash-timeout-guard.jsonc",
   schema: ConfigSchema,
-  defaults: DEFAULT_OPTIONS,
 });
 
 export default bashTimeoutGuard(config);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveOptions } from "../src/options.js";
+import { resolveOptions } from "../src/options";
 import {
   displayCommandForCommand,
   formatCompletionSummary,
@@ -13,9 +13,9 @@ import {
   renderBackgroundBashResultText,
   renderBashCallText,
   renderBashResultText,
-} from "../src/render.js";
-import { formatEnvironmentExportsForBash } from "../src/runtime.js";
-import { tmuxWindowAttachCommand } from "../src/tmux-utils.js";
+} from "../src/render";
+import { formatEnvironmentExportsForBash } from "../src/runtime";
+import { tmuxWindowAttachCommand } from "../src/tmux-utils";
 
 type FormatOutputCase = {
   name: string;

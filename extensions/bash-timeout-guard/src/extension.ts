@@ -5,6 +5,7 @@ import type {
   ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { createBashTool } from "@mariozechner/pi-coding-agent";
+import { z } from "zod";
 
 export const DEFAULT_TIMEOUT_SECONDS = 30;
 export const MAX_TIMEOUT_SECONDS = 60;
@@ -46,26 +47,23 @@ const assertWholeSeconds = (name: string, value: number): number => {
   return value;
 };
 
-const resolveConfig = (options: Partial<BashTimeoutGuardConfig> = {}): BashTimeoutGuardConfig => {
-  const maxTimeoutSeconds = assertWholeSeconds(
-    "maxTimeoutSeconds",
-    options.maxTimeoutSeconds ?? DEFAULT_OPTIONS.maxTimeoutSeconds,
-  );
-  const defaultTimeoutSeconds = assertWholeSeconds(
-    "defaultTimeoutSeconds",
-    options.defaultTimeoutSeconds ?? DEFAULT_OPTIONS.defaultTimeoutSeconds,
+export const BashTimeoutGuardConfigSchema = z
+  .object({
+    defaultTimeoutSeconds: z
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_OPTIONS.defaultTimeoutSeconds),
+    maxTimeoutSeconds: z.number().int().positive().default(DEFAULT_OPTIONS.maxTimeoutSeconds),
+    prompt: z.string().default(DEFAULT_OPTIONS.prompt),
+  })
+  .refine(
+    (config) => config.defaultTimeoutSeconds <= config.maxTimeoutSeconds,
+    "defaultTimeoutSeconds must be less than or equal to maxTimeoutSeconds",
   );
 
-  if (defaultTimeoutSeconds > maxTimeoutSeconds) {
-    throw new Error("defaultTimeoutSeconds must be less than or equal to maxTimeoutSeconds");
-  }
-
-  return {
-    defaultTimeoutSeconds,
-    maxTimeoutSeconds,
-    prompt: options.prompt ?? DEFAULT_OPTIONS.prompt,
-  };
-};
+const resolveConfig = (options: Partial<BashTimeoutGuardConfig> = {}): BashTimeoutGuardConfig =>
+  BashTimeoutGuardConfigSchema.parse(options);
 
 export const normalizeBashTimeout = (
   timeout: number | undefined,

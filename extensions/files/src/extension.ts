@@ -16,6 +16,7 @@ import {
   Spacer,
   Text,
 } from "@mariozechner/pi-tui";
+import { z } from "zod";
 
 type ContentBlock = {
   type?: string;
@@ -236,52 +237,66 @@ export const DEFAULT_OPTIONS: RevealOptions = {
   },
 };
 
-export const resolveOptions = (input: RevealOptionsInput = {}): RevealOptions => {
-  const extract = input.extract;
-  const directories = input.directories;
-  const shortcuts = input.shortcuts;
-  const sanitize = input.sanitize;
+const FileActionSchema = z.enum(["reveal", "quicklook", "open", "edit", "addToPrompt"]);
 
-  return {
-    extract: {
-      patterns: extract?.patterns ?? DEFAULT_OPTIONS.extract.patterns,
-      testCases: extract?.testCases ?? DEFAULT_OPTIONS.extract.testCases,
-      runTests: extract?.runTests ?? DEFAULT_OPTIONS.extract.runTests,
-    },
-    directories: {
-      includeInSelector:
-        directories?.includeInSelector ?? DEFAULT_OPTIONS.directories.includeInSelector,
-      allowReveal: directories?.allowReveal ?? DEFAULT_OPTIONS.directories.allowReveal,
-      allowOpen: directories?.allowOpen ?? DEFAULT_OPTIONS.directories.allowOpen,
-      allowAddToPrompt:
-        directories?.allowAddToPrompt ?? DEFAULT_OPTIONS.directories.allowAddToPrompt,
-      directorySuffix: directories?.directorySuffix ?? DEFAULT_OPTIONS.directories.directorySuffix,
-    },
-    showRanges: input.showRanges ?? DEFAULT_OPTIONS.showRanges,
-    actionOrder: input.actionOrder ?? DEFAULT_OPTIONS.actionOrder,
-    commandName: input.commandName ?? DEFAULT_OPTIONS.commandName,
-    shortcuts: {
-      browse: shortcuts?.browse ?? DEFAULT_OPTIONS.shortcuts.browse,
-      revealLatest: shortcuts?.revealLatest ?? DEFAULT_OPTIONS.shortcuts.revealLatest,
-      quickLookLatest: shortcuts?.quickLookLatest ?? DEFAULT_OPTIONS.shortcuts.quickLookLatest,
-    },
-    openCommand: input.openCommand ?? DEFAULT_OPTIONS.openCommand,
-    revealCommand: input.revealCommand ?? DEFAULT_OPTIONS.revealCommand,
-    quickLookCommand:
-      input.quickLookCommand !== undefined
-        ? input.quickLookCommand
-        : DEFAULT_OPTIONS.quickLookCommand,
-    resolveEditorCommand: input.resolveEditorCommand ?? DEFAULT_OPTIONS.resolveEditorCommand,
-    maxEditBytes: input.maxEditBytes ?? DEFAULT_OPTIONS.maxEditBytes,
-    sanitize: {
-      leadingTrim: sanitize?.leadingTrim ?? DEFAULT_OPTIONS.sanitize.leadingTrim,
-      trailingTrim: sanitize?.trailingTrim ?? DEFAULT_OPTIONS.sanitize.trailingTrim,
-      trailingPunctuation:
-        sanitize?.trailingPunctuation ?? DEFAULT_OPTIONS.sanitize.trailingPunctuation,
-      stripLineSuffix: sanitize?.stripLineSuffix ?? DEFAULT_OPTIONS.sanitize.stripLineSuffix,
-    },
-  };
-};
+const RevealOptionsSchema = z.object({
+  extract: z
+    .object({
+      patterns: z
+        .array(z.custom<ExtractPattern>())
+        .default(() => [...DEFAULT_OPTIONS.extract.patterns]),
+      testCases: z
+        .array(z.custom<ExtractPatternTest>())
+        .default(() => [...DEFAULT_OPTIONS.extract.testCases]),
+      runTests: z.boolean().default(DEFAULT_OPTIONS.extract.runTests),
+    })
+    .default(() => ({
+      patterns: [...DEFAULT_OPTIONS.extract.patterns],
+      testCases: [...DEFAULT_OPTIONS.extract.testCases],
+      runTests: DEFAULT_OPTIONS.extract.runTests,
+    })),
+  directories: z
+    .object({
+      includeInSelector: z.boolean().default(DEFAULT_OPTIONS.directories.includeInSelector),
+      allowReveal: z.boolean().default(DEFAULT_OPTIONS.directories.allowReveal),
+      allowOpen: z.boolean().default(DEFAULT_OPTIONS.directories.allowOpen),
+      allowAddToPrompt: z.boolean().default(DEFAULT_OPTIONS.directories.allowAddToPrompt),
+      directorySuffix: z.string().default(DEFAULT_OPTIONS.directories.directorySuffix),
+    })
+    .default(() => ({ ...DEFAULT_OPTIONS.directories })),
+  showRanges: z.boolean().default(DEFAULT_OPTIONS.showRanges),
+  actionOrder: z.array(FileActionSchema).default(() => [...DEFAULT_OPTIONS.actionOrder]),
+  commandName: z.string().default(DEFAULT_OPTIONS.commandName),
+  shortcuts: z
+    .object({
+      browse: z.custom<KeyId>().default(DEFAULT_OPTIONS.shortcuts.browse),
+      revealLatest: z.custom<KeyId>().default(DEFAULT_OPTIONS.shortcuts.revealLatest),
+      quickLookLatest: z.custom<KeyId>().default(DEFAULT_OPTIONS.shortcuts.quickLookLatest),
+    })
+    .default(() => ({ ...DEFAULT_OPTIONS.shortcuts })),
+  openCommand: z.custom<RevealOptions["openCommand"]>().default(() => DEFAULT_OPTIONS.openCommand),
+  revealCommand: z.custom<CommandSpec>().default(DEFAULT_OPTIONS.revealCommand),
+  quickLookCommand: z
+    .union([z.custom<CommandSpec>(), z.null()])
+    .default(DEFAULT_OPTIONS.quickLookCommand),
+  resolveEditorCommand: z
+    .custom<RevealOptions["resolveEditorCommand"]>()
+    .default(() => DEFAULT_OPTIONS.resolveEditorCommand),
+  maxEditBytes: z.number().int().positive().default(DEFAULT_OPTIONS.maxEditBytes),
+  sanitize: z
+    .object({
+      leadingTrim: z.instanceof(RegExp).default(DEFAULT_OPTIONS.sanitize.leadingTrim),
+      trailingTrim: z.instanceof(RegExp).default(DEFAULT_OPTIONS.sanitize.trailingTrim),
+      trailingPunctuation: z
+        .instanceof(RegExp)
+        .default(DEFAULT_OPTIONS.sanitize.trailingPunctuation),
+      stripLineSuffix: z.boolean().default(DEFAULT_OPTIONS.sanitize.stripLineSuffix),
+    })
+    .default(() => ({ ...DEFAULT_OPTIONS.sanitize })),
+});
+
+export const resolveOptions = (input: RevealOptionsInput = {}): RevealOptions =>
+  RevealOptionsSchema.parse(input) as RevealOptions;
 
 const parseRangePart = (part: string): { start: number; end: number } | null => {
   if (!part) {

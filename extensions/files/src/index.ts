@@ -15,60 +15,39 @@ const FileActionSchema = z.enum(["reveal", "quicklook", "open", "edit", "addToPr
 const ConfigSchema = z.object({
   extract: z
     .object({
-      runTests: z.boolean().optional(),
+      runTests: z.boolean().default(true),
     })
-    .optional(),
+    .default({ runTests: true }),
   directories: z
     .object({
-      includeInSelector: z.boolean().optional(),
-      allowReveal: z.boolean().optional(),
-      allowOpen: z.boolean().optional(),
-      allowAddToPrompt: z.boolean().optional(),
-      directorySuffix: z.string().optional(),
+      includeInSelector: z.boolean().default(DEFAULT_OPTIONS.directories.includeInSelector),
+      allowReveal: z.boolean().default(DEFAULT_OPTIONS.directories.allowReveal),
+      allowOpen: z.boolean().default(DEFAULT_OPTIONS.directories.allowOpen),
+      allowAddToPrompt: z.boolean().default(DEFAULT_OPTIONS.directories.allowAddToPrompt),
+      directorySuffix: z.string().default(DEFAULT_OPTIONS.directories.directorySuffix),
     })
-    .optional(),
-  showRanges: z.boolean().optional(),
-  actionOrder: z.array(FileActionSchema).optional(),
-  commandName: z.string().optional(),
+    .default(DEFAULT_OPTIONS.directories),
+  showRanges: z.boolean().default(DEFAULT_OPTIONS.showRanges),
+  actionOrder: z.array(FileActionSchema).default(() => [...DEFAULT_OPTIONS.actionOrder]),
+  commandName: z.string().default(DEFAULT_OPTIONS.commandName),
   shortcuts: z
     .object({
-      browse: z.string().optional(),
-      revealLatest: z.string().optional(),
-      quickLookLatest: z.string().optional(),
+      browse: z.string().default(DEFAULT_OPTIONS.shortcuts.browse),
+      revealLatest: z.string().default(DEFAULT_OPTIONS.shortcuts.revealLatest),
+      quickLookLatest: z.string().default(DEFAULT_OPTIONS.shortcuts.quickLookLatest),
     })
-    .optional(),
-  revealCommand: CommandSchema.optional(),
-  quickLookCommand: CommandSchema.nullable().optional(),
-  maxEditBytes: z.number().int().positive().optional(),
+    .default(DEFAULT_OPTIONS.shortcuts),
+  revealCommand: CommandSchema.default(() => [...DEFAULT_OPTIONS.revealCommand]),
+  quickLookCommand: CommandSchema.nullable().default(() =>
+    DEFAULT_OPTIONS.quickLookCommand ? [...DEFAULT_OPTIONS.quickLookCommand] : null,
+  ),
+  maxEditBytes: z.number().int().positive().default(DEFAULT_OPTIONS.maxEditBytes),
 });
-
-const defaultConfig = {
-  extract: { runTests: true },
-  directories: DEFAULT_OPTIONS.directories,
-  showRanges: DEFAULT_OPTIONS.showRanges,
-  actionOrder: DEFAULT_OPTIONS.actionOrder,
-  commandName: DEFAULT_OPTIONS.commandName,
-  shortcuts: DEFAULT_OPTIONS.shortcuts,
-  revealCommand: DEFAULT_OPTIONS.revealCommand,
-  quickLookCommand: DEFAULT_OPTIONS.quickLookCommand,
-  maxEditBytes: DEFAULT_OPTIONS.maxEditBytes,
-};
 
 const config = loadConfigOrDefault({
   filename: "files.jsonc",
   schema: ConfigSchema,
-  defaults: defaultConfig,
 });
-
-const directories = {
-  ...defaultConfig.directories,
-  ...config.directories,
-};
-
-const shortcuts = {
-  ...defaultConfig.shortcuts,
-  ...config.shortcuts,
-};
 
 export default extension({
   extract: {
@@ -137,26 +116,22 @@ export default extension({
       { text: "README.md", expected: [{ path: "README.md" }] },
       { text: ".env", expected: [{ path: ".env" }] },
     ],
-    runTests: config.extract?.runTests ?? defaultConfig.extract.runTests,
+    runTests: config.extract.runTests,
   },
-  directories,
-  showRanges: config.showRanges ?? defaultConfig.showRanges,
-  actionOrder: (config.actionOrder ??
-    defaultConfig.actionOrder) as RevealOptionsInput["actionOrder"],
-  commandName: config.commandName ?? defaultConfig.commandName,
-  shortcuts: shortcuts as RevealOptionsInput["shortcuts"],
+  directories: config.directories,
+  showRanges: config.showRanges,
+  actionOrder: config.actionOrder as RevealOptionsInput["actionOrder"],
+  commandName: config.commandName,
+  shortcuts: config.shortcuts as RevealOptionsInput["shortcuts"],
   openCommand: (target) => {
     const ranges = mergeRanges(target.ranges);
     const args = ranges ? [target.path, ranges] : [target.path];
     return [`${os.homedir()}/Scripts/tmux-nvim-open`, ...args];
   },
-  revealCommand: config.revealCommand ?? defaultConfig.revealCommand,
-  quickLookCommand:
-    config.quickLookCommand === undefined
-      ? defaultConfig.quickLookCommand
-      : config.quickLookCommand,
+  revealCommand: config.revealCommand,
+  quickLookCommand: config.quickLookCommand,
   resolveEditorCommand,
-  maxEditBytes: config.maxEditBytes ?? defaultConfig.maxEditBytes,
+  maxEditBytes: config.maxEditBytes,
   sanitize: {
     leadingTrim: /^["'`(<[]+/,
     trailingTrim: /[>"'`,;).\]]+$/,

@@ -1,14 +1,14 @@
 import path from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { runPiTui } from "./testing/pi-interactive.js";
-import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils.js";
+import { runPiTui } from "./testing/pi-interactive";
+import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils";
 import {
   bash,
   recordLatestToolResult,
   type ScriptedStep,
   writeScriptedProvider,
-} from "./testing/scripted-provider.js";
-import { stableAnsiBashTranscript, stableContextOutput } from "./testing/tui-transcript.js";
+} from "./testing/scripted-provider";
+import { stableAnsiBashTranscript, stableContextOutput } from "./testing/tui-transcript";
 
 const doneMarker = "PI-VANILLA-PARITY-DONE";
 const contextOutputName = "bash-context";
