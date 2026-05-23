@@ -88,7 +88,7 @@ Default config settings:
   // Bash tool settings
   // ─────────────────────────────────────────────────────────────
 
-  // Default seconds to wait in foreground bash before applying timeoutAction (background or kill).
+  // Default seconds to wait in foreground bash tool before applying timeoutAction (background or kill).
   "defaultTimeoutSeconds": 30,
 
   // Default action when a foreground bash command hits timeout.
