@@ -2,6 +2,15 @@
 
 Drop-in pi `bash` tool replacement which uses background tmux.
 
+## How it works
+
+- Foreground `bash` timeouts keep running in background (or kill)
+- Background `bash` sends a follow-up result when the command finishes.
+- Model can enable polling to receive periodic updates on background output.
+- Model can `tmux:peek` to see latest background output.
+- Model can `tmux:kill` to kill managed tmux windows.
+- Output matches pi's built-in `bash` tool (enforced with e2e tests which check against vanilla pi)
+
 ## Install with pi
 
 ```bash
@@ -19,14 +28,6 @@ Or try it out without installing:
 pi -e npm:@richardgill/pi-tmux-bash 'Run: for i in $(seq 1 90); do echo "$i"; sleep 1; done. Poll every 10s.'
 ```
 
-## How it works
-
-- Foreground `bash` timeouts keep running in background (or kill)
-- Background `bash` sends a follow-up result when the command finishes.
-- Model can enable polling to receive periodic updates on background output.
-- Model can `tmux:peek` to see latest background output.
-- Model can `tmux:kill` to kill managed tmux windows.
-- Output matches pi's built-in `bash` tool (enforced with e2e tests which check against vanilla pi)
 
 ## `bash` tool
 
