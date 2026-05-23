@@ -19,7 +19,9 @@ pi install git:github.com/richardgill/pi-extensions
 
 ## Configure
 
-Create `files.jsonc` in your extension config folder. The folder is `PI_EXTENSION_CONFIG_DIR` when set; otherwise Pi's agent directory (usually `~/.pi/agent`, or `PI_CODING_AGENT_DIR` if Pi is pointed elsewhere).
+You can override individual settings in `files.jsonc`.
+
+The default location is `~/.pi/agent/files.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/files.jsonc` when set.
 
 ```jsonc
 {
