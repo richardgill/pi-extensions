@@ -28,6 +28,7 @@ Or try it out without installing:
 pi -e npm:@richardgill/pi-tmux-bash 'Run: for i in $(seq 1 90); do echo "$i"; sleep 1; done. Poll every 10s.'
 ```
 
+See [Config](#config) for defaults and overrides.
 
 ## `bash` tool
 
