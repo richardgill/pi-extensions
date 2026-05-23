@@ -304,26 +304,28 @@ const windows = context ? listBashWindows(context) : [];
 // [{ id: "@2172", index: 3, title: "hello-sleep-done", outputFile: "/tmp/..." }]
 ```
 
-### Get active background tmux windows count 
+### Read the active background count from footer status
 
-Use the Pi extension `ctx` to resolve the same tmux session and window scope as tmux-bash, then count the matching windows.
+Tmux-bash publishes the active background count with Pi's status API. Footer extensions can read it from `footerData.getExtensionStatuses()` and handle their own string formatting.
 
 ```ts
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import {
-  listBashWindows,
-  loadTmuxBashConfig,
-  resolveTmuxBashContext,
-} from "@richardgill/pi-tmux-bash/core";
+const backgroundBashStatusKey = "backgroundBashTmuxCommands";
 
-export const getBackgroundTmuxWindowCount = (ctx: ExtensionContext): number => {
-  const options = loadTmuxBashConfig();
-  const context = resolveTmuxBashContext(ctx, options);
-  return context ? listBashWindows(context).length : 0;
-};
+const formatBackgroundBashStatus = (value: string) =>
+  `${value} background proc${value === "1" ? "" : "s"}`;
+
+ctx.ui.setFooter((_tui, theme, footerData) => ({
+  invalidate() {},
+  render(width: number): string[] {
+    const status = footerData.getExtensionStatuses().get(backgroundBashStatusKey);
+    const backgroundBashStatus = status ? formatBackgroundBashStatus(status) : "";
+
+    return [theme.fg("dim", backgroundBashStatus)];
+  },
+}));
 ```
 
-This honors `tmuxSessionScope` and `tmuxWindowScope`, so a `pi-session` scoped config only counts windows created by the current Pi session.
+The status key is `backgroundBashTmuxCommands`. Status values are strings; tmux-bash clears the status when there are no active background windows.
 
 ## Credits
 
