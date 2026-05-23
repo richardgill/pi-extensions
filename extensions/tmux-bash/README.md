@@ -137,7 +137,7 @@ Default config settings:
   // Guideline bullets appended to Pi's generated system prompt:
   //   Omit systemPromptGuidelines to use defaults.
   //   [] to disable tmux-bash guidelines.
-  "systemPromptGuidelines": [ // string[]
+  "systemPromptGuidelines": [
     "Use {{bashToolName}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
     "Background bash commands will report automatically when they finish.",
     "Set pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
