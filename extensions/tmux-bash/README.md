@@ -2,6 +2,23 @@
 
 Drop-in pi `bash` tool replacement which uses background tmux.
 
+## Install with pi
+
+```bash
+pi install npm:@richardgill/pi-tmux-bash
+```
+Then:
+
+```bash
+pi 'Run: for i in $(seq 1 90); do echo "$i"; sleep 1; done. Poll every 10s.'
+```
+
+Or try it out without installing:
+
+```bash
+pi -e npm:@richardgill/pi-tmux-bash 'Run: for i in $(seq 1 90); do echo "$i"; sleep 1; done. Poll every 10s.'
+```
+
 ## How it works
 
 - Foreground `bash` timeouts keep running in background (or kill)
