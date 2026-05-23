@@ -9,7 +9,7 @@ Drop-in pi `bash` tool replacement which uses background tmux.
 - Model can enable polling to receive periodic updates on background output.
 - Model can `tmux:peek` to see latest background output.
 - Model can `tmux:kill` to kill managed tmux windows.
-- Output matches pi's built-in `bash` tool (enforced with e2e parity tests)
+- Output matches pi's built-in `bash` tool (enforced with e2e tests which check against vanilla pi)
 
 ## `bash` tool
 
