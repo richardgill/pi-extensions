@@ -78,7 +78,7 @@ The `tmux` tool allows the model to inspect running bash processes.
 
 ## Config
 
-Create `~/.pi/agent/tmux-bash.jsonc`:
+To customize settings you can override individual settings in `~/.pi/agent/tmux-bash.jsonc`.
 
 
 Default config settings:
