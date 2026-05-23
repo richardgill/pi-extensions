@@ -1,6 +1,7 @@
 {
   "name": "@richardgill/pi-task-context",
   "version": "0.0.2",
+  "private": true,
   "keywords": [
     "pi-package"
   ],

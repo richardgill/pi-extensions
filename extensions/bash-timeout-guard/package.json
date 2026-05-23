@@ -1,6 +1,7 @@
 {
   "name": "pi-bash-timeout-guard",
   "version": "0.0.3",
+  "private": true,
   "keywords": [
     "pi-package"
   ],
