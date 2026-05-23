@@ -11,7 +11,7 @@ Drop-in pi `bash` tool replacement which uses background tmux.
 - Model can `tmux:kill` to kill managed tmux windows.
 - Output matches pi's built-in `bash` tool (enforced with e2e tests which check against vanilla pi)
 
-## Install with pi
+## Install 
 
 ```bash
 pi install npm:@richardgill/pi-tmux-bash
