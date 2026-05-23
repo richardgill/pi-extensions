@@ -130,7 +130,7 @@ Default config settings:
   // modify Pi's built-in system prompt.
   "systemPrompt": true,
 
-  // Tool snippets for Pi's generated system prompt Available tools section.
+  // Tool snippets for Pi's generated system prompt tools section.
   "bashSystemPromptSnippet": "Execute bash commands in background tmux windows", // string | false (to disable)
   "tmuxSystemPromptSnippet": "Inspect and control the background tmux sessions created by bash tool", // string | false (to disable)
 
