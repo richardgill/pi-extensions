@@ -268,8 +268,6 @@ Default config settings:
 }
 ```
 
-It is based on [`pi-tmux`](https://github.com/indigoviolet/pi-tmux), but runs agent commands in sidecar tmux sessions instead of the user's normal tmux session. By default it uses one global background tmux session and filters visible windows to the current Pi session.
-
 ## API helpers
 
 Other extensions can import tmux-bash helpers to target the same background tmux sessions and scoped windows.
