@@ -413,7 +413,7 @@ describe("tmux-bash e2e", () => {
       bashSystemPromptSnippet:
         "CUSTOM bash {{defaultTimeoutSeconds}}/{{maxTimeoutSeconds}}/{{maxOutputKb}}",
       tmuxSystemPromptSnippet: false,
-      systemPromptGuidelines: ["Use {{tmuxTool}} with {{attachCommand}} and @123."],
+      systemPromptGuidelines: ["Use {{tmuxToolName}} with {{attachCommand}} and @123."],
     });
     const outputPath = contextPath(workspace, "system-prompt");
 

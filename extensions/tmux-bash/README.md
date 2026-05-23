@@ -11,7 +11,6 @@ Drop-in pi `bash` tool replacement which uses background tmux.
 - Model can `tmux:kill` to kill managed tmux windows.
 - Output matches pi's built-in `bash` tool (enforced with e2e parity tests)
 
-
 ## `bash` tool
 
 Runs all bash commands in a tmux window. If a foreground bash command hits a timeout, either leave it running in the background or kill it.
@@ -25,7 +24,7 @@ Runs all bash commands in a tmux window. If a foreground bash command hits a tim
 }
 ```
 
-Run a bash command in the background and return immediately, with optional periodic output check-ins.
+Run a bash command in the background and return immediately, with optional polling for periodic output check-ins.
 
 ```jsonc
 {
@@ -41,13 +40,13 @@ Run a bash command in the background and return immediately, with optional perio
 
 The `tmux` tool allows the model to inspect running bash processes.
 
-### List background windows.
+### List background bash tmux windows.
 
 ```jsonc
 { "action": "list" }
 ```
 
-### List windows with active periodic check-ins.
+### List tmux windows with polling enabled.
 
 ```jsonc
 { "action": "list-polls" }
@@ -89,13 +88,13 @@ Default config settings:
   // Bash tool settings
   // ─────────────────────────────────────────────────────────────
 
-  // Default seconds to wait for bash-in-tmux before applying timeoutAction.
+  // Default seconds to wait in foreground bash before applying timeoutAction (background or kill).
   "defaultTimeoutSeconds": 30,
 
   // Default action when a foreground bash command hits timeout.
   "defaultTimeoutAction": "background", // "background" (default) | "kill"
 
-  // Maximum accepted bash-in-tmux timeout. Values larger than max are clamped.
+  // Maximum allowed bash-in-tmux timeout; higher values are capped here.
   "maxTimeoutSeconds": 60,
 
   // Milliseconds between streaming foreground bash output updates.
@@ -112,8 +111,8 @@ Default config settings:
   "tmuxToolName": "tmux",
 
   // Template variables:
-  // `{{bashTool}}`: configured with `bashToolName`, default `bash`
-  // `{{tmuxTool}}`: configured with `tmuxToolName`, default `tmux`
+  // `{{bashToolName}}`: configured with `bashToolName`, default `bash`
+  // `{{tmuxToolName}}`: configured with `tmuxToolName`, default `tmux`
   // `{{attachCommand}}`:
   //   Uses `tmux switch-client -t @123` when Pi is already inside tmux. Otherwise `tmux attach -t @123`.
   //   Uses configured `tmuxBinary`.
@@ -128,10 +127,7 @@ Default config settings:
   // Supports the same template variables as systemPromptGuidelines below.
   "tmuxToolDescription": "Inspect and control background tmux windows created by bash.",
 
-  // Controls whether tmux-bash contributes to Pi's generated system prompt.
-  // This does not replace Pi's whole system prompt; use Pi's SYSTEM.md or
-  // --system-prompt for full prompt replacement.
-  // Set to false to omit all tmux-bash Available tools entries and guidelines.
+  // modify Pi's built-in system prompt.
   "systemPrompt": true,
 
   // Tool snippets for Pi's generated system prompt Available tools section.
@@ -142,13 +138,13 @@ Default config settings:
   //   Omit systemPromptGuidelines to use defaults.
   //   [] to disable tmux-bash guidelines.
   "systemPromptGuidelines": [ // string[]
-    "Use {{bashTool}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
+    "Use {{bashToolName}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
     "Background bash commands will report automatically when they finish.",
     "Set pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
-    "Use {{tmuxTool}} list to find background windows and their stable #{window_id} values like @123.",
-    "Use {{tmuxTool}} peek/kill/poll/unpoll with a stable #{window_id} like @123.",
+    "Use {{tmuxToolName}} list to find background windows and their stable #{window_id} values like @123.",
+    "Use {{tmuxToolName}} peek/kill/poll/unpoll with a stable #{window_id} like @123.",
     "If asked, you can attach to tmux window using: {{attachCommand}}, where @123 is a #{window_id}.",
-    "Use {{tmuxTool}} poll/unpoll to start or stop periodic check-ins for an existing background window."
+    "Use {{tmuxToolName}} poll/unpoll to start or stop periodic check-ins for an existing background window."
   ],
 
   // ─────────────────────────────────────────────────────────────
@@ -158,15 +154,15 @@ Default config settings:
   // Use a global tmux session, or a per-git-root tmux session.
   "tmuxSessionScope": "global", // "global" (default) | "git-root"
 
-  // Which windows inside the selected tmux session list/peek/kill/poll commands can access.
-  "tmuxWindowScope": "pi-session", // "pi-session" (default) | "git-root" | "all"
-
   // Background tmux session name when tmuxSessionScope is "global".
   "globalTmuxSessionName": "pi-background",
 
   // Template for the background tmux session name when tmuxSessionScope is "git-root".
   // "{{gitRootSessionName}}" is replaced with the normal git-root session name.
   "gitRootTmuxSessionNameTemplate": "{{gitRootSessionName}}-bg",
+
+  // Which windows inside the selected tmux session list/peek/kill/poll commands can access.
+  "tmuxWindowScope": "pi-session", // "pi-session" (default) | "git-root" | "all"
 
   // Template for created tmux window names.
   // Supports {{nameOrCommand}}, {{name}}, and {{command}}.
@@ -175,7 +171,7 @@ Default config settings:
   // Maximum tmux window name length.
   "maxTmuxWindowNameLength": 30,
 
-  // Kill tmux windows after command completes.
+  // Kill tmux windows after bash command completes.
   "autoCloseWindowsOnCompletion": true, // true (default) | false
 
   // tmux binary/path used for all tmux invocations.
@@ -307,6 +303,27 @@ const context = resolveTmuxBashContext(ctx, options);
 const windows = context ? listBashWindows(context) : [];
 // [{ id: "@2172", index: 3, title: "hello-sleep-done", outputFile: "/tmp/..." }]
 ```
+
+### Get active background tmux windows count 
+
+Use the Pi extension `ctx` to resolve the same tmux session and window scope as tmux-bash, then count the matching windows.
+
+```ts
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+  listBashWindows,
+  loadTmuxBashConfig,
+  resolveTmuxBashContext,
+} from "@richardgill/pi-tmux-bash/core";
+
+export const getBackgroundTmuxWindowCount = (ctx: ExtensionContext): number => {
+  const options = loadTmuxBashConfig();
+  const context = resolveTmuxBashContext(ctx, options);
+  return context ? listBashWindows(context).length : 0;
+};
+```
+
+This honors `tmuxSessionScope` and `tmuxWindowScope`, so a `pi-session` scoped config only counts windows created by the current Pi session.
 
 ## Credits
 

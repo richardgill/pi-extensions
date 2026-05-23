@@ -138,8 +138,8 @@ describe("tmux-bash unit", () => {
         tmuxWindowScope: "all",
         bashToolName: "shell",
         tmuxToolName: "mux",
-        bashToolDescription: "Run {{bashTool}}: {{bashContextLines}}/{{maxOutputKb}}",
-        tmuxToolDescription: "Inspect {{tmuxTool}}",
+        bashToolDescription: "Run {{bashToolName}}: {{bashContextLines}}/{{maxOutputKb}}",
+        tmuxToolDescription: "Inspect {{tmuxToolName}}",
         tmuxBinary: "/opt/bin/tmux",
         tmuxEnvExportDenylist: ["CUSTOM"],
         foregroundBashUpdateIntervalMs: 100,
@@ -156,9 +156,9 @@ describe("tmux-bash unit", () => {
       expect(result.bashToolName).toBe("shell");
       expect(result.tmuxToolName).toBe("mux");
       expect(result.bashToolDescription).toBe(
-        "Run {{bashTool}}: {{bashContextLines}}/{{maxOutputKb}}",
+        "Run {{bashToolName}}: {{bashContextLines}}/{{maxOutputKb}}",
       );
-      expect(result.tmuxToolDescription).toBe("Inspect {{tmuxTool}}");
+      expect(result.tmuxToolDescription).toBe("Inspect {{tmuxToolName}}");
       expect(result.tmuxBinary).toBe("/opt/bin/tmux");
       expect(result.tmuxEnvExportDenylist).toEqual(["CUSTOM"]);
       expect(result.foregroundBashUpdateIntervalMs).toBe(100);
@@ -321,7 +321,7 @@ Took 5.0s`);
       });
 
       expect(result).toContain(
-        "<muted>... (4 earlier lines, </muted><dim>ctrl+o</dim><muted> to expand)</muted>",
+        "<muted>... (4 earlier lines,</muted> <dim>ctrl+o</dim><muted> to expand</muted>)",
       );
       expect(result).toContain("<toolOutput>line-7</toolOutput>");
       expect(result).toContain(

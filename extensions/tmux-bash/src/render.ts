@@ -274,9 +274,9 @@ const collapsedElisionLine = (earlierLines: number): RenderedBashOutputLine => {
   return {
     kind: "collapsedElision",
     text: `... (${earlierLines} earlier lines, ${key} to expand)`,
-    prefix: `... (${earlierLines} earlier lines, `,
+    prefix: `... (${earlierLines} earlier lines,`,
     key,
-    suffix: " to expand)",
+    suffix: " to expand",
   };
 };
 
@@ -335,7 +335,8 @@ export const formatRenderedBashResult = (
 const renderBashOutputLine = (line: RenderedBashOutputLine, theme: RenderTheme): string => {
   if (line.kind === "collapsedElision") {
     return (
-      theme.fg("muted", line.prefix) + theme.fg("dim", line.key) + theme.fg("muted", line.suffix)
+      theme.fg("muted", line.prefix) +
+      ` ${theme.fg("dim", line.key)}${theme.fg("muted", line.suffix)})`
     );
   }
   if (line.kind === "expandedElision") return theme.fg("muted", line.text);
