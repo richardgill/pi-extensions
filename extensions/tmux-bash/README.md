@@ -28,7 +28,7 @@ Or try it out without installing:
 pi -e npm:@richardgill/pi-tmux-bash 'Run: for i in $(seq 1 90); do echo "$i"; sleep 1; done. Poll every 10s.'
 ```
 
-See [Config](#config) for defaults and overrides.
+See [Configuration](#configuration) for defaults and overrides.
 
 ## `bash` tool
 
@@ -95,7 +95,7 @@ The `tmux` tool allows the model to inspect running bash processes.
 { "action": "unpoll", "window": "@123" }
 ```
 
-## Config
+## Configuration
 
 You can override individual settings in `tmux-bash.jsonc`.
 
