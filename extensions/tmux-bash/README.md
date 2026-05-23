@@ -86,7 +86,7 @@ Default config settings:
 ```jsonc
 {
   // ─────────────────────────────────────────────────────────────
-  // Bash tool behavior
+  // Bash tool settings
   // ─────────────────────────────────────────────────────────────
 
   // Default seconds to wait for bash-in-tmux before applying timeoutAction.
