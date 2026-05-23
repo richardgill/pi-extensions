@@ -329,5 +329,5 @@ The status key is `backgroundBashTmuxCommands`. Status values are strings; tmux-
 
 ## Credits
 
-Credit to [`indigoviolet/pi-tmux`](https://github.com/indigoviolet/pi-tmux), which this extension is based on.
+This extension was inspired by [`indigoviolet/pi-tmux`](https://github.com/indigoviolet/pi-tmux).
 
