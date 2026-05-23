@@ -272,56 +272,40 @@ Default config settings:
 
 Other extensions can import tmux-bash helpers to target the same background tmux sessions and scoped windows.
 
-```ts
-import { loadTmuxBashConfig, type ResolvedOptions } from "@richardgill/pi-tmux-bash/core";
+### `loadTmuxBashConfig`
 
-// Example:
-// const options = loadTmuxBashConfig();
-//
-// Reads ~/.pi/agent/tmux-bash.jsonc with the same schema as the extension entrypoint.
-export const loadTmuxBashConfig = (): ResolvedOptions => {};
+Reads `~/.pi/agent/tmux-bash.jsonc`.
+
+```ts
+import { loadTmuxBashConfig } from "@richardgill/pi-tmux-bash/core";
+
+const options = loadTmuxBashConfig();
 ```
+
+### `resolveTmuxBashContext`
+
+Resolves the current git root, configured tmux session, and scoped window filters.
 
 ```ts
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import {
-  listBashWindows,
-  resolveTmuxBashContext,
-  type TmuxBashContext,
-  type TmuxWindow,
-  type TmuxWindowFilters,
-  type ResolvedOptions,
-} from "@richardgill/pi-tmux-bash/core";
+import { loadTmuxBashConfig, resolveTmuxBashContext } from "@richardgill/pi-tmux-bash/core";
 
-export type TmuxBashContext = {
-  gitRoot: string;
-  session: string;
-  filters: TmuxWindowFilters;
-  tmuxBinary: string;
-};
+const options = loadTmuxBashConfig();
+const context = resolveTmuxBashContext(ctx, options);
+if (!context) ctx.ui.notify("Not in a git repository.", "error");
+```
 
-// Example:
-// const options = loadTmuxBashConfig();
-// const context = resolveTmuxBashContext(ctx, options);
-// if (!context) ctx.ui.notify("Not in a git repository.", "error");
-//
-// Resolves:
-// - current git root
-// - tmux session name from config
-// - window filters from config
-export const resolveTmuxBashContext = (
-  ctx: ExtensionContext,
-  options: ResolvedOptions,
-): TmuxBashContext | null => {};
+### `listBashWindows`
 
-// Example:
-// const windows = listBashWindows(context);
-// // [
-// //   { id: "@2172", index: 3, title: "hello-sleep-done", outputFile: "/tmp/..." },
-// // ]
-//
-// Lists only bash-created windows matching the resolved scope.
-export const listBashWindows = (context: TmuxBashContext): TmuxWindow[] => {};
+Lists bash-created tmux windows matching the resolved scope.
+
+```ts
+import { listBashWindows, resolveTmuxBashContext } from "@richardgill/pi-tmux-bash/core";
+
+const options = loadTmuxBashConfig();
+const context = resolveTmuxBashContext(ctx, options);
+const windows = context ? listBashWindows(context) : [];
+// [{ id: "@2172", index: 3, title: "hello-sleep-done", outputFile: "/tmp/..." }]
 ```
 
 ## Credits
