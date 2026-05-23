@@ -144,6 +144,8 @@ describe("tmux-bash unit", () => {
         tmuxEnvExportDenylist: ["CUSTOM"],
         foregroundBashUpdateIntervalMs: 100,
         bashContextLines: 123,
+        tmuxWindowNameTemplate: "bg-{{nameOrCommand}}",
+        maxTmuxWindowNameLength: 42,
         maxOutputBytes: 456,
       });
 
@@ -161,6 +163,8 @@ describe("tmux-bash unit", () => {
       expect(result.tmuxEnvExportDenylist).toEqual(["CUSTOM"]);
       expect(result.foregroundBashUpdateIntervalMs).toBe(100);
       expect(result.bashContextLines).toBe(123);
+      expect(result.tmuxWindowNameTemplate).toBe("bg-{{nameOrCommand}}");
+      expect(result.maxTmuxWindowNameLength).toBe(42);
       expect(result.maxOutputBytes).toBe(456);
     });
   });

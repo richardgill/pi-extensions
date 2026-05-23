@@ -597,7 +597,7 @@ describe("tmux-bash e2e", () => {
   }, 20_000);
 
   it("honors configured window name templates", async () => {
-    const workspace = createWorkspace({ windowNameTemplate: "bg-{{nameOrCommand}}" });
+    const workspace = createWorkspace({ tmuxWindowNameTemplate: "bg-{{nameOrCommand}}" });
 
     const result = await workspace.run({
       script: [

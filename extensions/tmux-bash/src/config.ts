@@ -20,7 +20,7 @@ const DEFAULT_BASH_SYSTEM_PROMPT_SNIPPET = "Execute bash commands in background 
 const DEFAULT_TMUX_SYSTEM_PROMPT_SNIPPET =
   "Inspect and control the background tmux sessions created by bash tool";
 const DEFAULT_BASH_TOOL_DESCRIPTION =
-  'Execute a bash command in a background tmux window. Output is truncated to last {{bashContextLines}} lines or {{maxOutputKb}}KB. Defaults to a {{defaultTimeoutSeconds}}s timeout, max {{maxTimeoutSeconds}}s; timeoutAction defaults to "background". Use background for long-running commands.';
+  'Execute a bash command in a background tmux window. Output is truncated to last {{bashContextLines}} lines or {{maxOutputKb}}KB. Defaults to a {{defaultTimeoutSeconds}}s timeout, max {{maxTimeoutSeconds}}s; timeoutAction defaults to "{{defaultTimeoutAction}}". Use background for long-running commands.';
 const DEFAULT_TMUX_TOOL_DESCRIPTION =
   "Inspect and control background tmux windows created by bash.";
 
@@ -38,6 +38,7 @@ const promptTemplateVariables = [
   "attachCommand",
   "bashContextLines",
   "bashTool",
+  "defaultTimeoutAction",
   "defaultTimeoutSeconds",
   "maxOutputKb",
   "maxTimeoutSeconds",
@@ -69,8 +70,8 @@ const promptTemplateSchema = templatedString({
   .trim()
   .min(1);
 const promptToolEntrySchema = z.union([promptTemplateSchema, z.literal(false)]);
-const promptGuidelinesSchema = z.union([z.array(promptTemplateSchema), z.literal(false)]);
-const windowNameTemplateSchema = templatedString({
+const promptGuidelinesSchema = z.array(promptTemplateSchema);
+const tmuxWindowNameTemplateSchema = templatedString({
   variables: ["command", "name", "nameOrCommand"],
   missing: "keep",
 });
@@ -109,13 +110,14 @@ const buildTmuxBashOptionsSchema = () =>
       peekCompactDisplayLines: positiveIntegerSchema.default(5),
       peekTruncatedCompactDisplayLines: positiveIntegerSchema.default(2),
       peekExpandedDisplayLines: positiveIntegerSchema.default(DEFAULT_MAX_LINES),
-      windowNameTemplate: windowNameTemplateSchema.default("{{nameOrCommand}}"),
-      maxWindowNameLength: positiveIntegerSchema.default(30),
+      tmuxWindowNameTemplate: tmuxWindowNameTemplateSchema.default("{{nameOrCommand}}"),
+      maxTmuxWindowNameLength: positiveIntegerSchema.default(30),
       autoCloseWindowsOnCompletion: z.boolean().default(true),
       alwaysShowOutputFilePath: z.boolean().default(false),
       preserveOutputFiles: z.boolean().default(true),
       outputDir: nonEmptyStringSchema.default("/tmp/pi-tmux-bash"),
       defaultTimeoutSeconds: positiveIntegerSchema.default(30),
+      defaultTimeoutAction: z.enum(["kill", "background"]).default("background"),
       maxTimeoutSeconds: positiveIntegerSchema.default(60),
       defaultPollInterval: z.number().int().nonnegative().default(0),
       pollDelivery: z.enum(["model", "display"]).default("model"),

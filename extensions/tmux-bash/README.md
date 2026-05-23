@@ -1,20 +1,20 @@
 # @richardgill/pi-tmux-bash
 
-Drop-in `bash` tool replacement with background tmux invocations.
+Drop-in pi `bash` tool replacement which uses background tmux.
 
 ## How it works
 
-Replaces pi's built-in `bash` tool with a `bash` tool which uses tmux under the hood.
-
 - Foreground `bash` timeouts keep running in background (or kill)
-- Background `bash` notifies pi when `bash` finishes.
-- Model can `tmux:peek` to see latest background output.
+- Background `bash` sends a follow-up result when the command finishes.
 - Model can enable polling to receive periodic updates on background output.
+- Model can `tmux:peek` to see latest background output.
 - Model can `tmux:kill` to kill managed tmux windows.
+- Output matches pi's built-in `bash` tool (enforced with e2e parity tests)
+
 
 ## `bash` tool
 
-Runs all bash commands in a tmux window. If it hits `timeout`, either leave it running in the background or kill it.
+Runs all bash commands in a tmux window. If a foreground bash command hits a timeout, either leave it running in the background or kill it.
 
 ```jsonc
 {
@@ -39,37 +39,39 @@ Run a bash command in the background and return immediately, with optional perio
 
 ## `tmux` tool
 
-List background windows.
+The `tmux` tool allows the model to inspect running bash processes.
+
+### List background windows.
 
 ```jsonc
 { "action": "list" }
 ```
 
-List windows with active periodic check-ins.
+### List windows with active periodic check-ins.
 
 ```jsonc
 { "action": "list-polls" }
 ```
 
-Capture output from one window.
+### Capture output from one window.
 
 ```jsonc
 { "action": "peek", "window": "@123" }
 ```
 
-Kill one window by stable tmux `#{window_id}`.
+### Kill one window by stable tmux `#{window_id}`.
 
 ```jsonc
 { "action": "kill", "window": "@123" }
 ```
 
-Start periodic output check-ins for a window.
+### Start periodic output check-ins for a window.
 
 ```jsonc
 { "action": "poll", "window": "@123", "pollInterval": 10, "pollLines": 40 }
 ```
 
-Stop periodic output check-ins for a window.
+### Stop periodic output check-ins for a window.
 
 ```jsonc
 { "action": "unpoll", "window": "@123" }
@@ -80,102 +82,176 @@ Stop periodic output check-ins for a window.
 Create `~/.pi/agent/tmux-bash.jsonc`:
 
 
+Default config settings:
 ```jsonc
 {
+  // ─────────────────────────────────────────────────────────────
+  // Bash tool behavior
+  // ─────────────────────────────────────────────────────────────
+
+  // Default seconds to wait for bash-in-tmux before applying timeoutAction.
+  "defaultTimeoutSeconds": 30,
+
+  // Default action when a foreground bash command hits timeout.
+  "defaultTimeoutAction": "background", // "background" (default) | "kill"
+
+  // Maximum accepted bash-in-tmux timeout. Values larger than max are clamped.
+  "maxTimeoutSeconds": 60,
+
+  // Milliseconds between streaming foreground bash output updates.
+  "foregroundBashUpdateIntervalMs": 250,
+
+  // ─────────────────────────────────────────────────────────────
+  // System prompt customization
+  // ─────────────────────────────────────────────────────────────
+
+  // Bash tool name exposed to the agent. Change if another extension registers "bash".
+  "bashToolName": "bash",
+
+  // Tmux inspection/control tool name exposed to the agent.
+  "tmuxToolName": "tmux",
+
+  // Template variables:
+  // `{{bashTool}}`: configured with `bashToolName`, default `bash`
+  // `{{tmuxTool}}`: configured with `tmuxToolName`, default `tmux`
+  // `{{attachCommand}}`:
+  //   Uses `tmux switch-client -t @123` when Pi is already inside tmux. Otherwise `tmux attach -t @123`.
+  //   Uses configured `tmuxBinary`.
+  // `{{defaultTimeoutSeconds}}` / `{{defaultTimeoutAction}}` / `{{maxTimeoutSeconds}}`
+  // `{{bashContextLines}}` / `{{maxOutputKb}}`
+
+  // Bash tool description sent to the model tool schema.
+  // Supports the same template variables as systemPromptGuidelines below.
+  "bashToolDescription": "Execute a bash command in a background tmux window. Output is truncated to last {{bashContextLines}} lines or {{maxOutputKb}}KB. Defaults to a {{defaultTimeoutSeconds}}s timeout, max {{maxTimeoutSeconds}}s; timeoutAction defaults to \"{{defaultTimeoutAction}}\". Use background for long-running commands.",
+
+  // Tmux tool description sent to the model tool schema.
+  // Supports the same template variables as systemPromptGuidelines below.
+  "tmuxToolDescription": "Inspect and control background tmux windows created by bash.",
+
+  // Controls whether tmux-bash contributes to Pi's generated system prompt.
+  // This does not replace Pi's whole system prompt; use Pi's SYSTEM.md or
+  // --system-prompt for full prompt replacement.
+  // Set to false to omit all tmux-bash Available tools entries and guidelines.
+  "systemPrompt": true,
+
+  // Tool snippets for Pi's generated system prompt Available tools section.
+  "bashSystemPromptSnippet": "Execute bash commands in background tmux windows", // string | false (to disable)
+  "tmuxSystemPromptSnippet": "Inspect and control the background tmux sessions created by bash tool", // string | false (to disable)
+
+  // Guideline bullets appended to Pi's generated system prompt:
+  //   Omit systemPromptGuidelines to use defaults.
+  //   [] to disable tmux-bash guidelines.
+  "systemPromptGuidelines": [ // string[]
+    "Use {{bashTool}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
+    "Background bash commands will report automatically when they finish.",
+    "Set pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
+    "Use {{tmuxTool}} list to find background windows and their stable #{window_id} values like @123.",
+    "Use {{tmuxTool}} peek/kill/poll/unpoll with a stable #{window_id} like @123.",
+    "If asked, you can attach to tmux window using: {{attachCommand}}, where @123 is a #{window_id}.",
+    "Use {{tmuxTool}} poll/unpoll to start or stop periodic check-ins for an existing background window."
+  ],
+
+  // ─────────────────────────────────────────────────────────────
+  // Tmux settings
+  // ─────────────────────────────────────────────────────────────
+
   // Use a global tmux session, or a per-git-root tmux session.
   "tmuxSessionScope": "global", // "global" (default) | "git-root"
 
   // Which windows inside the selected tmux session list/peek/kill/poll commands can access.
   "tmuxWindowScope": "pi-session", // "pi-session" (default) | "git-root" | "all"
 
+  // Background tmux session name when tmuxSessionScope is "global".
+  "globalTmuxSessionName": "pi-background",
+
   // Template for the background tmux session name when tmuxSessionScope is "git-root".
   // "{{gitRootSessionName}}" is replaced with the normal git-root session name.
-  "gitRootTmuxSessionNameTemplate": "{{gitRootSessionName}}-bg", // default
-
-  // Background tmux session name when tmuxSessionScope is "global".
-  "globalTmuxSessionName": "pi-background", // default
-
-  // Bash tool name exposed to the agent. Change if another extension registers "bash".
-  "bashToolName": "bash", // default
-
-  // Tmux inspection/control tool name exposed to the agent.
-  "tmuxToolName": "tmux", // default
-
-  // Bash tool description sent to the model tool schema.
-  // Supports the same template variables as systemPromptGuidelines below.
-  "bashToolDescription": "Execute a bash command in a background tmux window. Output is truncated to last {{bashContextLines}} lines or {{maxOutputKb}}KB. Defaults to a {{defaultTimeoutSeconds}}s timeout, max {{maxTimeoutSeconds}}s; timeoutAction defaults to \"background\". Use background for long-running commands.", // default
-
-  // Tmux tool description sent to the model tool schema.
-  // Supports the same template variables as systemPromptGuidelines below.
-  "tmuxToolDescription": "Inspect and control background tmux windows created by bash.", // default
-
-  // tmux binary/path used for all tmux invocations.
-  "tmuxBinary": "tmux", // default
-
-  // Environment names not exported from Pi into bash-in-tmux scripts.
-  // Skips shell/tmux bookkeeping that should be owned by the new tmux window.
-  "tmuxEnvExportDenylist": ["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"], // default
-
-  // Milliseconds between streaming foreground bash output updates.
-  "foregroundBashUpdateIntervalMs": 250, // default
-
-  // Foreground bash output lines sent to model context.
-  "bashContextLines": 2000, // default
-
-  // Foreground bash output lines shown in compact TUI cards.
-  "bashCompactDisplayLines": 5, // default
-
-  // Foreground bash output lines shown in compact TUI cards when output is truncated.
-  "bashTruncatedCompactDisplayLines": 2, // default
-
-  // Foreground bash output lines shown in expanded/uncompacted TUI cards.
-  "bashExpandedDisplayLines": 2000, // default
-
-  // Completed background command lines sent to model context.
-  "completedContextLines": 20, // default
-
-  // Completed background command lines shown in compact TUI cards.
-  "completedCompactDisplayLines": 5, // default
-
-  // Completed background command lines shown in compact TUI cards when output is truncated.
-  "completedTruncatedCompactDisplayLines": 2, // default
-
-  // Completed background command lines shown in expanded/uncompacted TUI cards.
-  "completedExpandedDisplayLines": 20, // default
-
-  // Poll output lines sent to model context.
-  "pollContextLines": 30, // default
-
-  // Poll output lines shown in compact TUI cards.
-  "pollCompactDisplayLines": 5, // default
-
-  // Poll output lines shown in compact TUI cards when output is truncated.
-  "pollTruncatedCompactDisplayLines": 2, // default
-
-  // Poll output lines shown in expanded/uncompacted TUI cards.
-  "pollExpandedDisplayLines": 30, // default
-
-  // Peek output lines sent to model context.
-  "peekContextLines": 2000, // default
-
-  // Peek output lines shown in compact TUI cards.
-  "peekCompactDisplayLines": 5, // default
-
-  // Peek output lines shown in compact TUI cards when output is truncated.
-  "peekTruncatedCompactDisplayLines": 2, // default
-
-  // Peek output lines shown in expanded/uncompacted TUI cards.
-  "peekExpandedDisplayLines": 2000, // default
+  "gitRootTmuxSessionNameTemplate": "{{gitRootSessionName}}-bg",
 
   // Template for created tmux window names.
   // Supports {{nameOrCommand}}, {{name}}, and {{command}}.
-  "windowNameTemplate": "{{nameOrCommand}}", // default
+  "tmuxWindowNameTemplate": "{{nameOrCommand}}",
 
   // Maximum tmux window name length.
-  "maxWindowNameLength": 30, // default
+  "maxTmuxWindowNameLength": 30,
 
   // Kill tmux windows after command completes.
   "autoCloseWindowsOnCompletion": true, // true (default) | false
+
+  // tmux binary/path used for all tmux invocations.
+  "tmuxBinary": "tmux",
+
+  // ─────────────────────────────────────────────────────────────
+  // Polling and output limits
+  // ─────────────────────────────────────────────────────────────
+
+  // Default seconds between automatic poll check-ins. 0 disables default polling.
+  "defaultPollInterval": 0,
+
+  // Whether poll cards trigger model turns or display only in the TUI.
+  "pollDelivery": "model", // "model" (default) | "display"
+
+  // Minimum seconds between model-delivered poll turns. Does not throttle display-only polls.
+  "minimumPollIntervalSeconds": 10,
+
+  // Maximum output bytes kept for model context and TUI cards.
+  "maxOutputBytes": 51200,
+
+  // Foreground bash output lines sent to model context.
+  "bashContextLines": 2000,
+
+  // Completed background command lines sent to model context.
+  "completedContextLines": 20,
+
+  // Poll output lines sent to model context.
+  "pollContextLines": 30,
+
+  // Peek output lines sent to model context.
+  "peekContextLines": 2000,
+
+  // Foreground bash output lines shown in compact TUI cards.
+  "bashCompactDisplayLines": 5,
+
+  // Foreground bash output lines shown in compact TUI cards when output is truncated.
+  "bashTruncatedCompactDisplayLines": 2,
+
+  // Foreground bash output lines shown in expanded/uncompacted TUI cards.
+  "bashExpandedDisplayLines": 2000,
+
+  // Completed background command lines shown in compact TUI cards.
+  "completedCompactDisplayLines": 5,
+
+  // Completed background command lines shown in compact TUI cards when output is truncated.
+  "completedTruncatedCompactDisplayLines": 2,
+
+  // Completed background command lines shown in expanded/uncompacted TUI cards.
+  "completedExpandedDisplayLines": 20,
+
+  // Poll output lines shown in compact TUI cards.
+  "pollCompactDisplayLines": 5,
+
+  // Poll output lines shown in compact TUI cards when output is truncated.
+  "pollTruncatedCompactDisplayLines": 2,
+
+  // Poll output lines shown in expanded/uncompacted TUI cards.
+  "pollExpandedDisplayLines": 30,
+
+  // Peek output lines shown in compact TUI cards.
+  "peekCompactDisplayLines": 5,
+
+  // Peek output lines shown in compact TUI cards when output is truncated.
+  "peekTruncatedCompactDisplayLines": 2,
+
+  // Peek output lines shown in expanded/uncompacted TUI cards.
+  "peekExpandedDisplayLines": 2000,
+
+  // ─────────────────────────────────────────────────────────────
+  // Advanced settings
+  // ─────────────────────────────────────────────────────────────
+
+  // Marker used to hide wrapper/shim code from displayed command names/output.
+  // Set to "" to disable. Uses the last marker when multiple wrappers are present.
+  "displayCommandStartMarker": "# SHIM_END", // use "" to disable
 
   // Show the .out file path even when output is not truncated.
   "alwaysShowOutputFilePath": false, // true | false (default)
@@ -184,64 +260,11 @@ Create `~/.pi/agent/tmux-bash.jsonc`:
   "preserveOutputFiles": true, // true (default) | false
 
   // Base directory for per-session signal files, generated scripts, and .out files.
-  "outputDir": "/tmp/pi-tmux-bash", // default
+  "outputDir": "/tmp/pi-tmux-bash",
 
-  // Default seconds to wait for bash-in-tmux before applying timeoutAction.
-  "defaultTimeoutSeconds": 30, // default
-
-  // Maximum accepted bash-in-tmux timeout. Larger timeout values are clamped.
-  "maxTimeoutSeconds": 60, // default
-
-  // Default seconds between automatic poll check-ins. 0 disables default polling.
-  "defaultPollInterval": 0, // default
-
-  // Whether poll cards trigger model turns or display only in the TUI.
-  "pollDelivery": "model", // "model" (default) | "display"
-
-  // Minimum seconds between model-delivered poll turns. Does not throttle display-only polls.
-  "minimumPollIntervalSeconds": 10, // default
-
-  // Maximum output bytes kept for model context and TUI cards.
-  "maxOutputBytes": 51200, // default
-
-  // Marker used to hide wrapper/shim code from displayed command names/output.
-  // Set to "" to disable. Uses the last marker when multiple wrappers are present.
-  "displayCommandStartMarker": "# SHIM_END", // default; use "" to disable
-
-  // Controls whether tmux-bash contributes to Pi's generated system prompt.
-  // This does not replace Pi's whole system prompt; use Pi's SYSTEM.md or
-  // --system-prompt for full prompt replacement.
-  // Set to false to omit all tmux-bash Available tools entries and guidelines.
-  "systemPrompt": true, // true (default) | false
-
-  // Tool snippets for Pi's generated system prompt Available tools section.
-  // Omit to use defaults. Set one to false to hide only that tool from Available tools.
-  // Values support the template variables listed below.
-  "bashSystemPromptSnippet": "Execute bash commands in background tmux windows", // string | false
-  "tmuxSystemPromptSnippet": "Inspect and control the background tmux sessions created by bash tool", // string | false
-
-  // Guideline bullets added to Pi's generated system prompt.
-  // Omit systemPromptGuidelines to use defaults.
-  // Set to [] or false to disable tmux-bash guidelines.
-  // Strings support the template variables listed below.
-  // Template variables:
-  // `{{bashTool}}`: configured `bashToolName`, default `bash`
-  // `{{tmuxTool}}`: configured `tmuxToolName`, default `tmux`
-  // `{{attachCommand}}`:
-  //   Uses `tmux switch-client -t @123` when Pi is already inside tmux. Otherwise `tmux attach -t @123`.
-  //   Uses configured `tmuxBinary`.
-  // `{{defaultTimeoutSeconds}}` / `{{maxTimeoutSeconds}}`
-  // `{{bashContextLines}}` / `{{maxOutputKb}}`
-
-  "systemPromptGuidelines": [ // string[] | false
-    "Use {{bashTool}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
-    "Background bash commands will report automatically when they finish; do not keep polling manually unless you need interim output.",
-    "Use pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
-    "Use {{tmuxTool}} list to find background windows and their stable #{window_id} values like @123.",
-    "Use {{tmuxTool}} peek/kill/poll/unpoll with a stable #{window_id} like @123.",
-    "If asked, you can attach to tmux window using: {{attachCommand}}, where @123 is a #{window_id}.",
-    "Use {{tmuxTool}} poll/unpoll to start or stop periodic check-ins for an existing background window."
-  ]
+  // Environment names not exported from Pi into bash-in-tmux scripts.
+  // Skips shell/tmux bookkeeping that should be owned by the new tmux window.
+  "tmuxEnvExportDenylist": ["PWD", "OLDPWD", "SHLVL", "_", "TMUX", "TMUX_PANE"]
 }
 ```
 

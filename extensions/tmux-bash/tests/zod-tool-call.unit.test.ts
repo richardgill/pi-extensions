@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { buildBashToolCallSchema } from "../src/tool-call-schemas";
 
-const options = {
+type TestOptions = Parameters<typeof buildBashToolCallSchema>[0];
+
+const options: TestOptions = {
   bashToolName: "bash",
   tmuxToolName: "tmux",
   defaultTimeoutSeconds: 30,
+  defaultTimeoutAction: "background",
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
   pollContextLines: 30,
 };
 
 const invalidInput = (message: string) => ({ error: message });
-const bashToolCallSchema = () => buildBashToolCallSchema(options, invalidInput);
+const bashToolCallSchema = (overrides: Partial<typeof options> = {}) =>
+  buildBashToolCallSchema({ ...options, ...overrides }, invalidInput);
 
 describe("zod tool call schema generation", () => {
   it("generates top-level object schemas without top-level unions", () => {
@@ -48,14 +52,17 @@ describe("zod tool call schema generation", () => {
     expect(schema.properties.pollLines.default).toBe(30);
   });
 
-  it("defaults omitted timeoutAction to background", async () => {
-    const result = await bashToolCallSchema().handleInput(
-      { command: "sleep 10" },
-      (input) => input,
-    );
+  it.each(["background", "kill"] as const)(
+    "defaults omitted timeoutAction to %s",
+    async (defaultTimeoutAction) => {
+      const result = await bashToolCallSchema({ defaultTimeoutAction }).handleInput(
+        { command: "sleep 10" },
+        (input) => input,
+      );
 
-    expect(result).toMatchObject({ timeoutAction: "background" });
-  });
+      expect(result).toMatchObject({ timeoutAction: defaultTimeoutAction });
+    },
+  );
 
   it.each([
     ["explicit kill timeout action", { command: "sleep 10", timeoutAction: "kill" }, "kill"],
