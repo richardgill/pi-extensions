@@ -5,7 +5,6 @@
 "@richardgill/pi-preset": patch
 "@richardgill/pi-sub-pi": patch
 "@richardgill/pi-sub-pi-skill": patch
-"@richardgill/pi-task-context": patch
 "@richardgill/pi-tmux-bash": patch
 "@richardgill/lib": patch
 "@richardgill/pi-config": patch
