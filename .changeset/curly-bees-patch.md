@@ -1,5 +1,4 @@
 ---
-"pi-bash-timeout-guard": patch
 "@richardgill/pi-extra-context-files": patch
 "@richardgill/pi-file-collector": patch
 "@richardgill/pi-files": patch
