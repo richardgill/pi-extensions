@@ -245,8 +245,8 @@ Default config settings:
   // Advanced settings
   // ─────────────────────────────────────────────────────────────
 
-  // Marker used to hide wrapper/shim code from displayed command names/output.
-  // Set to "" to disable. Uses the last marker when multiple wrappers are present.
+  // Hides wrapper/shim lines from the displayed command by showing only lines after the last marker.
+  // Set to "" to disable.
   "displayCommandStartMarker": "# SHIM_END", // use "" to disable
 
   // Show the .out file path even when output is not truncated.
