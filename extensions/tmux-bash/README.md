@@ -78,8 +78,9 @@ The `tmux` tool allows the model to inspect running bash processes.
 
 ## Config
 
-To customize settings you can override individual settings in `~/.pi/agent/tmux-bash.jsonc`.
+You can override individual settings in `tmux-bash.jsonc`.
 
+The default location is `~/.pi/agent/tmux-bash.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/tmux-bash.jsonc` when set.
 
 Default config settings:
 ```jsonc
@@ -270,7 +271,7 @@ Other extensions can import tmux-bash helpers to target the same background tmux
 
 ### `loadTmuxBashConfig`
 
-Reads `~/.pi/agent/tmux-bash.jsonc`.
+Reads `tmux-bash.jsonc` from the extension config folder (`PI_EXTENSION_CONFIG_DIR`, then Pi's agent directory).
 
 ```ts
 import { loadTmuxBashConfig } from "@richardgill/pi-tmux-bash/core";

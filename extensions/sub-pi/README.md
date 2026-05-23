@@ -28,7 +28,7 @@ pi install ~/code/pi-extensions/main/extensions/sub-pi
 
 ## Configure
 
-Create `sub-pi.jsonc` in your pi agent config folder:
+Create `sub-pi.jsonc` in your extension config folder. The folder is `PI_EXTENSION_CONFIG_DIR` when set; otherwise Pi's agent directory (usually `~/.pi/agent`, or `PI_CODING_AGENT_DIR` if Pi is pointed elsewhere).
 
 ```jsonc
 {
