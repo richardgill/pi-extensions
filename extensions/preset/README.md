@@ -18,7 +18,9 @@ pi install ~/code/pi-extensions/main/extensions/preset
 
 ## Configure
 
-Create `preset.jsonc` in your pi agent config folder:
+You can override individual settings in `preset.jsonc`.
+
+The default location is `~/.pi/agent/preset.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/preset.jsonc` when set.
 
 ```jsonc
 {

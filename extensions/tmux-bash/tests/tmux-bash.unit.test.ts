@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@mariozechner/pi-tui";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resolveOptions } from "../src/config";
 import {
   displayCommandForCommand,
@@ -43,7 +44,18 @@ const taggedTheme = {
   fg: (name: string, text: string) => `<${name}>${text}</${name}>`,
 };
 
+const setDefaultKeybindings = (): void => {
+  setKeybindings(
+    new KeybindingsManager({
+      ...TUI_KEYBINDINGS,
+      "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
+    }),
+  );
+};
+
 describe("tmux-bash unit", () => {
+  beforeEach(setDefaultKeybindings);
+
   describe("formatTmuxOutputForContext", () => {
     const fullOutputPath = "/tmp/pi-tmux-bash-full.log";
 
@@ -126,12 +138,14 @@ describe("tmux-bash unit", () => {
         tmuxWindowScope: "all",
         bashToolName: "shell",
         tmuxToolName: "mux",
-        bashToolDescription: "Run {{bashTool}}: {{bashContextLines}}/{{maxOutputKb}}",
-        tmuxToolDescription: "Inspect {{tmuxTool}}",
+        bashToolDescription: "Run {{bashToolName}}: {{bashContextLines}}/{{maxOutputKb}}",
+        tmuxToolDescription: "Inspect {{tmuxToolName}}",
         tmuxBinary: "/opt/bin/tmux",
         tmuxEnvExportDenylist: ["CUSTOM"],
         foregroundBashUpdateIntervalMs: 100,
         bashContextLines: 123,
+        tmuxWindowNameTemplate: "bg-{{nameOrCommand}}",
+        maxTmuxWindowNameLength: 42,
         maxOutputBytes: 456,
       });
 
@@ -142,13 +156,15 @@ describe("tmux-bash unit", () => {
       expect(result.bashToolName).toBe("shell");
       expect(result.tmuxToolName).toBe("mux");
       expect(result.bashToolDescription).toBe(
-        "Run {{bashTool}}: {{bashContextLines}}/{{maxOutputKb}}",
+        "Run {{bashToolName}}: {{bashContextLines}}/{{maxOutputKb}}",
       );
-      expect(result.tmuxToolDescription).toBe("Inspect {{tmuxTool}}");
+      expect(result.tmuxToolDescription).toBe("Inspect {{tmuxToolName}}");
       expect(result.tmuxBinary).toBe("/opt/bin/tmux");
       expect(result.tmuxEnvExportDenylist).toEqual(["CUSTOM"]);
       expect(result.foregroundBashUpdateIntervalMs).toBe(100);
       expect(result.bashContextLines).toBe(123);
+      expect(result.tmuxWindowNameTemplate).toBe("bg-{{nameOrCommand}}");
+      expect(result.maxTmuxWindowNameLength).toBe(42);
       expect(result.maxOutputBytes).toBe(456);
     });
   });
@@ -305,7 +321,7 @@ Took 5.0s`);
       });
 
       expect(result).toContain(
-        "<muted>... (4 earlier lines, </muted><dim>ctrl+o</dim><muted> to expand)</muted>",
+        "<muted>... (4 earlier lines,</muted> <dim>ctrl+o</dim><muted> to expand</muted>)",
       );
       expect(result).toContain("<toolOutput>line-7</toolOutput>");
       expect(result).toContain(

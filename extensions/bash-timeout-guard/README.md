@@ -23,7 +23,9 @@ pi -e ./extensions/bash-timeout-guard/src/index.ts
 
 ## Configuration
 
-Optional `~/.pi/bash-timeout-guard.jsonc`:
+You can override individual settings in `bash-timeout-guard.jsonc`.
+
+The default location is `~/.pi/agent/bash-timeout-guard.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/bash-timeout-guard.jsonc` when set.
 
 ```jsonc
 {

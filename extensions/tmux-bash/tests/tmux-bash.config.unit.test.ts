@@ -52,4 +52,12 @@ describe("tmux-bash config", () => {
 
     expect(loadTmuxBashConfig().foregroundBashUpdateIntervalMs).toBe(100);
   });
+
+  it("loads default timeout action config", () => {
+    const folder = createTempDir();
+    process.env.PI_EXTENSION_CONFIG_DIR = folder;
+    writeTmuxBashConfig(folder, { defaultTimeoutAction: "kill" });
+
+    expect(loadTmuxBashConfig().defaultTimeoutAction).toBe("kill");
+  });
 });

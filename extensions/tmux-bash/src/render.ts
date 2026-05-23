@@ -1,6 +1,7 @@
 import {
   DEFAULT_MAX_BYTES,
   formatSize,
+  keyText,
   truncateTail,
   type BashToolDetails,
   type TruncationOptions,
@@ -268,13 +269,16 @@ const noticeLines = (details: BashOutputRenderDetails, expanded: boolean): BashO
     (line) => line.kind === "truncationNotice" || (expanded && line.kind === "fullOutputNotice"),
   );
 
-const collapsedElisionLine = (earlierLines: number): RenderedBashOutputLine => ({
-  kind: "collapsedElision",
-  text: `... (${earlierLines} earlier lines, ctrl+o to expand)`,
-  prefix: `... (${earlierLines} earlier lines, `,
-  key: "ctrl+o",
-  suffix: " to expand)",
-});
+const collapsedElisionLine = (earlierLines: number): RenderedBashOutputLine => {
+  const key = keyText("app.tools.expand");
+  return {
+    kind: "collapsedElision",
+    text: `... (${earlierLines} earlier lines, ${key} to expand)`,
+    prefix: `... (${earlierLines} earlier lines,`,
+    key,
+    suffix: " to expand",
+  };
+};
 
 const expandedElisionLine = (earlierLines: number): RenderedBashOutputLine => ({
   kind: "expandedElision",
@@ -331,7 +335,8 @@ export const formatRenderedBashResult = (
 const renderBashOutputLine = (line: RenderedBashOutputLine, theme: RenderTheme): string => {
   if (line.kind === "collapsedElision") {
     return (
-      theme.fg("muted", line.prefix) + theme.fg("dim", line.key) + theme.fg("muted", line.suffix)
+      theme.fg("muted", line.prefix) +
+      ` ${theme.fg("dim", line.key)}${theme.fg("muted", line.suffix)})`
     );
   }
   if (line.kind === "expandedElision") return theme.fg("muted", line.text);

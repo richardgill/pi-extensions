@@ -44,7 +44,9 @@ pi install ~/code/pi-extensions/main/extensions/sub-pi-skill
 
 ## Configure
 
-Create `sub-pi-skill.jsonc` in your pi agent config folder:
+You can override individual settings in `sub-pi-skill.jsonc`.
+
+The default location is `~/.pi/agent/sub-pi-skill.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/sub-pi-skill.jsonc` when set.
 
 ```jsonc
 {

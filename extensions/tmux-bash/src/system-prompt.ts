@@ -8,11 +8,12 @@ export const renderPromptTemplate = (template: string, options: ResolvedOptions)
   const variables = {
     attachCommand: tmuxWindowAttachCommand("@123", process.env, options.tmuxBinary),
     bashContextLines: String(options.bashContextLines),
-    bashTool: options.bashToolName,
+    bashToolName: options.bashToolName,
+    defaultTimeoutAction: options.defaultTimeoutAction,
     defaultTimeoutSeconds: String(options.defaultTimeoutSeconds),
     maxOutputKb: String(options.maxOutputBytes / 1024),
     maxTimeoutSeconds: String(options.maxTimeoutSeconds),
-    tmuxTool: options.tmuxToolName,
+    tmuxToolName: options.tmuxToolName,
   };
 
   return Object.entries(variables).reduce(
@@ -33,7 +34,7 @@ export const resolveSystemPromptToolSnippet = (
 export const systemPromptGuidelines = (options: ResolvedOptions): string[] => {
   if (!options.systemPrompt) return [];
 
-  const guidelines = options.systemPromptGuidelines;
-  if (guidelines === false) return [];
-  return guidelines.map((guideline) => renderPromptTemplate(guideline, options));
+  return options.systemPromptGuidelines.map((guideline) =>
+    renderPromptTemplate(guideline, options),
+  );
 };

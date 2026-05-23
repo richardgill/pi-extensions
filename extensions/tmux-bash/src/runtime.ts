@@ -141,10 +141,10 @@ const commandLabel = (cmd: string, name: string | undefined, options: ResolvedOp
   return firstWord?.split("/").pop() || "shell";
 };
 
-const replaceWindowNameVariable = (template: string, variable: string, value: string): string =>
+const replaceTmuxWindowNameVariable = (template: string, variable: string, value: string): string =>
   template.replace(new RegExp(`{{\\s*${variable}\\s*}}`, "g"), value);
 
-const windowNameForCommand = (
+const tmuxWindowNameForCommand = (
   cmd: string,
   name: string | undefined,
   options: ResolvedOptions,
@@ -156,10 +156,10 @@ const windowNameForCommand = (
     nameOrCommand: commandLabel(cmd, name, options),
   })
     .reduce(
-      (text, [variable, value]) => replaceWindowNameVariable(text, variable, value),
-      options.windowNameTemplate,
+      (text, [variable, value]) => replaceTmuxWindowNameVariable(text, variable, value),
+      options.tmuxWindowNameTemplate,
     )
-    .slice(0, options.maxWindowNameLength);
+    .slice(0, options.maxTmuxWindowNameLength);
 };
 
 // Parse from the right so tmux session names can contain dots.
@@ -368,7 +368,7 @@ const createBashWindow = (input: CreateBashWindowInput): RunWindowResult => {
     ? `new-window -d -t ${shellQuote(input.session)}`
     : `new-session -d -s ${shellQuote(input.session)}`;
   const windowId = exec(
-    `${tmuxCommand(input.options)} ${createCommand} -n ${shellQuote(windowNameForCommand(input.command, input.name, input.options))} -c ${shellQuote(input.gitRoot)} -P -F '#{window_id}' ${shellQuote(script.scriptPath)}`,
+    `${tmuxCommand(input.options)} ${createCommand} -n ${shellQuote(tmuxWindowNameForCommand(input.command, input.name, input.options))} -c ${shellQuote(input.gitRoot)} -P -F '#{window_id}' ${shellQuote(script.scriptPath)}`,
   );
   return tagBashWindow(input, displayCommand, script.id, windowId);
 };
@@ -1136,7 +1136,7 @@ export const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in background tmux window: ${windowNameForCommand(params.command, params.name, options)} ${result.windowId}.${params.pollInterval > 0 ? ` Polling every ${pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n${tmuxWindowAttachHint(result.windowId, process.env, options.tmuxBinary)}`,
+          text: `Started in background tmux window: ${tmuxWindowNameForCommand(params.command, params.name, options)} ${result.windowId}.${params.pollInterval > 0 ? ` Polling every ${pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n${tmuxWindowAttachHint(result.windowId, process.env, options.tmuxBinary)}`,
         },
       ],
       details: undefined,

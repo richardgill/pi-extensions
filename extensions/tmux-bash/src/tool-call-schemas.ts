@@ -5,6 +5,7 @@ type SchemaOptions = {
   bashToolName: string;
   tmuxToolName: string;
   defaultTimeoutSeconds: number;
+  defaultTimeoutAction: "kill" | "background";
   maxTimeoutSeconds: number;
   defaultPollInterval: number;
   pollContextLines: number;
@@ -47,10 +48,16 @@ const pollLines = (options: SchemaOptions) =>
     .default(options.pollContextLines)
     .describe("Lines captured per check-in.");
 
-const timeoutAction = z
+const backgroundTimeoutAction = z
   .enum(["kill", "background"])
   .optional()
   .describe('"kill" or "background" on timeout.');
+
+const foregroundTimeoutAction = (options: SchemaOptions) =>
+  z
+    .enum(["kill", "background"])
+    .default(options.defaultTimeoutAction)
+    .describe('"kill" or "background" on timeout.');
 
 const background = z.literal(true).describe("Return immediately and keep running in tmux.");
 
@@ -61,7 +68,7 @@ export const buildBashInputSchema = (options: SchemaOptions) =>
       name,
       background,
       timeout: timeout(options),
-      timeoutAction,
+      timeoutAction: backgroundTimeoutAction,
       pollInterval: pollInterval(options),
       pollLines: pollLines(options),
     }),
@@ -70,16 +77,7 @@ export const buildBashInputSchema = (options: SchemaOptions) =>
       name,
       background: backgroundFalse,
       timeout: timeout(options),
-      timeoutAction: z.literal("background").default("background"),
-      pollInterval: pollInterval(options),
-      pollLines: pollLines(options),
-    }),
-    z.object({
-      command,
-      name,
-      background: backgroundFalse,
-      timeout: timeout(options),
-      timeoutAction: z.literal("kill"),
+      timeoutAction: foregroundTimeoutAction(options),
       pollInterval: pollInterval(options),
       pollLines: pollLines(options),
     }),

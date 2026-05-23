@@ -12,7 +12,9 @@ pi install npm:@richardgill/pi-file-collector
 
 ## Configure
 
-Create `file-collector.jsonc` in your pi agent config folder:
+You can override individual settings in `file-collector.jsonc`.
+
+The default location is `~/.pi/agent/file-collector.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/file-collector.jsonc` when set.
 
 ```jsonc
 {

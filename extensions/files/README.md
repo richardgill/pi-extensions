@@ -19,7 +19,9 @@ pi install git:github.com/richardgill/pi-extensions
 
 ## Configure
 
-Create `files.jsonc` in your pi agent config folder:
+You can override individual settings in `files.jsonc`.
+
+The default location is `~/.pi/agent/files.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/files.jsonc` when set.
 
 ```jsonc
 {

@@ -25,7 +25,9 @@ pi install ~/code/pi-extensions/main/extensions/extra-context-files
 
 ## Configure
 
-Create `extra-context-files.jsonc` in your pi agent config folder:
+You can override individual settings in `extra-context-files.jsonc`.
+
+The default location is `~/.pi/agent/extra-context-files.jsonc`, or `$PI_EXTENSION_CONFIG_DIR/extra-context-files.jsonc` when set.
 
 ```jsonc
 {
