@@ -84,21 +84,6 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
 
-  extensions/files:
-    dependencies:
-      '@mariozechner/pi-coding-agent':
-        specifier: '*'
-        version: 0.70.6(ws@8.20.0)(zod@4.3.6)
-      '@mariozechner/pi-tui':
-        specifier: '*'
-        version: 0.70.6
-      '@richardgill/pi-config':
-        specifier: workspace:*
-        version: link:../../packages/pi-config
-      zod:
-        specifier: 4.3.6
-        version: 4.3.6
-
   extensions/preset:
     dependencies:
       '@mariozechner/pi-ai':

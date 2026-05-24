@@ -1,10 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    "extensions/files": {
-      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
-      "project": ["src/**/*.ts", "tests/**/*.ts"]
-    },
     "extensions/extra-context-files": {
       "entry": ["tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
@@ -45,7 +41,6 @@
     "@sinclair/typebox"
   ],
   "ignoreIssues": {
-    "extensions/files/src/extension.ts": ["duplicates"],
     "extensions/preset/src/extension.ts": ["duplicates"]
   }
 }
