@@ -44,6 +44,6 @@
     "extensions": [
       "./src/index.ts"
     ],
-    "video": "https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/tmux-bash/demo.mp4"
+    "video": "https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/tmux-bash/demo/demo.mp4"
   }
 }

@@ -4,7 +4,9 @@ Drop-in pi `bash` tool replacement which uses background tmux.
 
 ## Demo
 
-<video src="https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/tmux-bash/demo.mp4" controls muted loop playsinline></video>
+<video src="https://github.com/richardgill/pi-extensions/raw/main/extensions/tmux-bash/demo/demo.mp4" controls muted loop playsinline></video>
+
+[Watch demo video](https://github.com/richardgill/pi-extensions/raw/main/extensions/tmux-bash/demo/demo.mp4)
 
 ## How it works
 
