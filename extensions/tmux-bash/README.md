@@ -303,7 +303,7 @@ const options = loadTmuxBashConfig();
 Resolves the current git root, configured tmux session, and scoped window filters.
 
 ```ts
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadTmuxBashConfig, resolveTmuxBashContext } from "@richardgill/pi-tmux-bash/core";
 
 const options = loadTmuxBashConfig();

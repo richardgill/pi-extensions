@@ -131,7 +131,7 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
   registerFauxProvider,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 
 const SCRIPTED_PROVIDER = "scripted";
 const SCRIPTED_MODEL = "scripted";

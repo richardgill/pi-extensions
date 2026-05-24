@@ -11,7 +11,7 @@ import {
   isWriteToolResult,
   type ExtensionAPI,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 
 export type RegexPatternConfig = {

@@ -1,4 +1,4 @@
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@mariozechner/pi-tui";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { resolveOptions } from "../src/config";
 import {

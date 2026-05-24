@@ -6,13 +6,13 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
   TurnEndEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { createSessionSidecarPath } from "@richardgill/pi-file-collector";
 import { describe, expect, it, vi } from "vitest";
 
 const completeSimpleMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@mariozechner/pi-ai", () => ({ completeSimple: completeSimpleMock }));
+vi.mock("@earendil-works/pi-ai", () => ({ completeSimple: completeSimpleMock }));
 import {
   buildEvidencePacket,
   buildTaskContextMarkdown,

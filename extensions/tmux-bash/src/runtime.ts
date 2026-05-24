@@ -3,7 +3,7 @@ import {
   type BashToolDetails,
   type ExtensionAPI,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { sleep } from "@richardgill/lib";
 import { randomBytes } from "node:crypto";
 import {

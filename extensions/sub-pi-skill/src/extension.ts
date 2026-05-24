@@ -8,8 +8,8 @@ import type {
   SessionStartEvent,
   ToolCallEvent,
   TurnEndEvent,
-} from "@mariozechner/pi-coding-agent";
-import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 
 type SkillInvocation = {

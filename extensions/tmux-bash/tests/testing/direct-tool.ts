@@ -4,7 +4,7 @@ import type {
   BashToolDetails,
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { tmuxBash } from "../../src/extension";
 import type { BashInput } from "../../src/tool-call-schemas";
 import type { PiTestWorkspace } from "./pi-test-workspace";

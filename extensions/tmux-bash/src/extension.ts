@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_BASH_STATUS_KEY, resolveOptions, type TmuxBashOptions } from "./config";
 import { cleanupState, createState, resetRunDir, updateBackgroundProcessStatus } from "./runtime";
 import { registerMessageRenderers } from "./renderers/messages";

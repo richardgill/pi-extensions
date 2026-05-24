@@ -8,13 +8,13 @@ import {
   type AssistantMessage,
   type Message,
   type UserMessage,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
   TurnEndEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   collectFileEventsForTurnFromSessionFile,
   type FileLineEvent,

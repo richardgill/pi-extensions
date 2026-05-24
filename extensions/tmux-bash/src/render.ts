@@ -6,7 +6,7 @@ import {
   type BashToolDetails,
   type TruncationOptions,
   type TruncationResult,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { BASH_DURATION_SEPARATOR, DEFAULT_OPTIONS, type ResolvedOptions } from "./config";
 import type { BashInput } from "./tool-call-schemas";
 
