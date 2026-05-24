@@ -54,4 +54,6 @@ runs:
           test "$pinned" = "=$latest"
         done
 
-        test "$(pnpm exec pi --version)" = "$(pnpm view @earendil-works/pi-coding-agent version)"
+        installed_pi_version="$(pnpm exec pi --version 2>&1 | tail -n 1)"
+        latest_pi_version="$(pnpm view @earendil-works/pi-coding-agent version)"
+        test "$installed_pi_version" = "$latest_pi_version"
