@@ -1,17 +1,12 @@
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { KeyId } from "@earendil-works/pi-tui";
+import { resolveOptions, type ParrotOptions } from "./config";
 
-export type ParrotOptions = {
-  keyboardShortcut?: KeyId | false;
-};
-
-export type ParrotConfig = {
-  keyboardShortcut: KeyId | false;
-};
-
-export const DEFAULT_OPTIONS: ParrotConfig = {
-  keyboardShortcut: "alt+r",
-};
+export {
+  DEFAULT_OPTIONS,
+  ParrotConfigSchema,
+  ParrotOptionsSchema,
+  type ParrotOptions,
+} from "./config";
 
 export const PARROT_DESCRIPTION = "Populate the input box with the last assistant message";
 
@@ -40,12 +35,12 @@ export const populateParrotInput = (ctx: ExtensionContext): void => {
   ctx.ui.setEditorText(lastAssistantText);
 };
 
-export const parrot = (options: ParrotOptions = {}) => {
-  const config = { ...DEFAULT_OPTIONS, ...options };
+export const parrot = (input: ParrotOptions = {}) => {
+  const options = resolveOptions(input);
 
   return (pi: ExtensionAPI): void => {
-    if (config.keyboardShortcut) {
-      pi.registerShortcut(config.keyboardShortcut, {
+    if (options.keyboardShortcut) {
+      pi.registerShortcut(options.keyboardShortcut, {
         description: PARROT_DESCRIPTION,
         handler: async (ctx) => {
           populateParrotInput(ctx);
