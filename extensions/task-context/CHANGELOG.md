@@ -1,5 +1,13 @@
 # @richardgill/pi-task-context
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [[`011758f`](https://github.com/richardgill/pi-extensions/commit/011758f71b700eef6930a7a20d1323f6097e9f7d), [`7fb828a`](https://github.com/richardgill/pi-extensions/commit/7fb828a60be7cb2303239d808f055150016b261d)]:
+  - @richardgill/pi-file-collector@0.0.10
+  - @richardgill/pi-config@0.0.8
+
 ## 0.0.3
 
 ### Patch Changes

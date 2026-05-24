@@ -1,5 +1,16 @@
 # @richardgill/pi-file-collector
 
+## 0.0.10
+
+### Patch Changes
+
+- [#34](https://github.com/richardgill/pi-extensions/pull/34) [`011758f`](https://github.com/richardgill/pi-extensions/commit/011758f71b700eef6930a7a20d1323f6097e9f7d) Thanks [@richardgill](https://github.com/richardgill)! - Refresh published packages listed in the README.
+
+- [#34](https://github.com/richardgill/pi-extensions/pull/34) [`7fb828a`](https://github.com/richardgill/pi-extensions/commit/7fb828a60be7cb2303239d808f055150016b261d) Thanks [@richardgill](https://github.com/richardgill)! - Mark Pi host packages as optional peers to avoid npm auto-installing deprecated Pi package scopes.
+
+- Updated dependencies [[`011758f`](https://github.com/richardgill/pi-extensions/commit/011758f71b700eef6930a7a20d1323f6097e9f7d), [`7fb828a`](https://github.com/richardgill/pi-extensions/commit/7fb828a60be7cb2303239d808f055150016b261d)]:
+  - @richardgill/pi-config@0.0.8
+
 ## 0.0.9
 
 ### Patch Changes
