@@ -28,10 +28,6 @@ Replaces Pi's bash tool with a tmux-backed version for background jobs and polli
 
 ## Packages
 
-### [`@richardgill/lib`](./packages/lib)
-
-Small shared utilities used by the extensions.
-
 ### [`@richardgill/pi-config`](./packages/pi-config)
 
 Loads JSONC config files with Zod defaults and templated strings.
@@ -39,3 +35,7 @@ Loads JSONC config files with Zod defaults and templated strings.
 ### [`@richardgill/pi-zod-tool-call`](./packages/pi-zod-tool-call)
 
 Defines Pi tool calls from Zod schemas with provider-compatible TypeBox parameters.
+
+### [`@richardgill/lib`](./packages/lib)
+
+Small shared utilities used by the extensions.
