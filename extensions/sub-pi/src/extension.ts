@@ -2,8 +2,8 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage, ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
 import {
   type ExtensionAPI,
   getAgentDir,
@@ -12,8 +12,8 @@ import {
   type Skill,
   type Theme,
   type ThemeColor,
-} from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { z } from "zod";
 import { Type } from "@sinclair/typebox";
 import {

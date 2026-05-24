@@ -3,8 +3,8 @@ import type {
   BashToolInput,
   ExtensionAPI,
   ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
-import { createBashTool } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
+import { createBashTool } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 
 export const DEFAULT_TIMEOUT_SECONDS = 30;

@@ -1,10 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    "extensions/files": {
-      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
-      "project": ["src/**/*.ts", "tests/**/*.ts"]
-    },
     "extensions/extra-context-files": {
       "entry": ["tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
@@ -38,14 +34,13 @@
     "type": true
   },
   "ignoreDependencies": [
-    "@mariozechner/pi-agent-core",
-    "@mariozechner/pi-ai",
-    "@mariozechner/pi-coding-agent",
-    "@mariozechner/pi-tui",
+    "@earendil-works/pi-agent-core",
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-tui",
     "@sinclair/typebox"
   ],
   "ignoreIssues": {
-    "extensions/files/src/extension.ts": ["duplicates"],
     "extensions/preset/src/extension.ts": ["duplicates"]
   }
 }

@@ -1,5 +1,5 @@
-import { Text } from "@mariozechner/pi-tui";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ResolvedOptions } from "../config";
 import {
   renderPromptTemplate,
@@ -10,7 +10,7 @@ import { runBashInTmux, toolError, type ExtensionState } from "../runtime";
 import {
   renderBackgroundBashResultText,
   renderBashCallText,
-  renderBashResultText,
+  renderForegroundBashResultComponent,
   type TmuxBashToolDetails,
 } from "../render";
 import { buildBashToolCallSchema, type BashInput } from "../tool-call-schemas";
@@ -106,16 +106,15 @@ export const registerBashTool = (
       }
 
       updateBashResultTiming(bashContext, isPartial);
-      const renderedResult = renderBashResultText({
+      return renderForegroundBashResultComponent({
         raw,
-        details: details?.render,
+        details,
         expanded,
         isPartial,
         state: bashContext.state,
         theme,
         options,
       });
-      return new Text(`\n${renderedResult}`, 0, 0);
     },
   });
 };

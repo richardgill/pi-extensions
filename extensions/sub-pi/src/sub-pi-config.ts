@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ProviderModel, TaskThinking, TaskWorkItem } from "./sub-pi-params";
 import { resolveModel } from "./sub-pi-params";
 

@@ -393,7 +393,7 @@ const contextLimitCases: TmuxBashE2eTestCase[] = [
     tmuxBashConfig: { bashContextLines: 3 },
     steps: [bash("printf 'line-1\\nline-2\\nline-3\\nline-4\\nline-5\\n'")],
     expectedModelText: (_workspace, outputFile) =>
-      `line-4\nline-5\n\n\n[Showing lines 4-6 of 6. Full output: ${outputFile}]`,
+      `line-3\nline-4\nline-5\n\n[Showing lines 3-5 of 5. Full output: ${outputFile}]`,
     expectedOutputFileContent: "line-1\nline-2\nline-3\nline-4\nline-5\n",
     expectedTmuxSessionExists: false,
   },
