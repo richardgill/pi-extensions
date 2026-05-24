@@ -67,12 +67,14 @@ const normalizeWrappedFullOutputPaths = (text: string): string => {
     const nextVisible = stripAnsi(lines[index + 1] ?? "").trim();
 
     const isStandaloneFullOutputNotice = visible === "[Full output: <path>]";
-    if (visible.includes("Full output:") && !visible.endsWith("]") && nextVisible.startsWith("/")) {
-      normalized.push(`${line.replace(/\s*$/, "")} <path>]`);
-      index += 1;
-    } else if (visible.startsWith("[Full output: <path>") && nextVisible.startsWith("Truncated:")) {
-      index += 1;
-    } else if (!isStandaloneFullOutputNotice) {
+    const isWrappedFullOutputNotice =
+      visible.startsWith("[Full output: <path>") &&
+      !visible.endsWith("]") &&
+      (nextVisible.startsWith("/") || nextVisible.endsWith("]"));
+
+    if (isWrappedFullOutputNotice || isStandaloneFullOutputNotice) {
+      index += isWrappedFullOutputNotice ? 1 : 0;
+    } else {
       normalized.push(line);
     }
   }
