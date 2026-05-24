@@ -4,7 +4,7 @@
 
 ### [`@richardgill/pi-extra-context-files`](./extensions/extra-context-files/README.md)
 
-Loads custom named context files such as `AGENTS.local.md` to Pi’s prompt.
+Loads custom named context files such as `AGENTS.local.md` into Pi.
 
 ### [`@richardgill/pi-file-collector`](./extensions/file-collector/README.md)
 
