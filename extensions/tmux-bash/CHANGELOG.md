@@ -1,5 +1,11 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.9
+
+### Patch Changes
+
+- [`61b2e0f`](https://github.com/richardgill/pi-extensions/commit/61b2e0f6a8f27a8138b5dd89e01f92fbff036a6d) Thanks [@richardgill](https://github.com/richardgill)! - Use an animated README demo image that renders on GitHub and links to the MP4 demo.
+
 ## 0.0.8
 
 ### Patch Changes
