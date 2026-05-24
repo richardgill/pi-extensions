@@ -10,7 +10,7 @@ import { runBashInTmux, toolError, type ExtensionState } from "../runtime";
 import {
   renderBackgroundBashResultText,
   renderBashCallText,
-  renderBashResultText,
+  renderForegroundBashResultComponent,
   type TmuxBashToolDetails,
 } from "../render";
 import { buildBashToolCallSchema, type BashInput } from "../tool-call-schemas";
@@ -106,16 +106,15 @@ export const registerBashTool = (
       }
 
       updateBashResultTiming(bashContext, isPartial);
-      const renderedResult = renderBashResultText({
+      return renderForegroundBashResultComponent({
         raw,
-        details: details?.render,
+        details,
         expanded,
         isPartial,
         state: bashContext.state,
         theme,
         options,
       });
-      return new Text(`\n${renderedResult}`, 0, 0);
     },
   });
 };

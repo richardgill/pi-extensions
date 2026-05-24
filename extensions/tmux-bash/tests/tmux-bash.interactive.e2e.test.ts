@@ -213,11 +213,14 @@ Took <duration>`,
     command: "for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' \"$i\"; done",
     expectedTranscript: `$ for i in $(seq 1 4000); do printf 'overflow-line-%03d\\n' "$i"; done
 
-... (1997 earlier lines, ctrl+o to expand)
+... (1995 earlier lines, ctrl+o to expand)
+overflow-line-3996
+overflow-line-3997
+overflow-line-3998
 overflow-line-3999
 overflow-line-4000
 
-[Showing lines 2002-4001 of 4001. Full output: <path>]
+[Full output: <path>]
 
 Took <duration>`,
   },
@@ -256,11 +259,11 @@ ${singleIndentBlock(numberedLines("peek-overflow", 396, 400))}
     expectedTranscript: `tmux peek @<id>
 ✓ tmux window: peek-truncated @<id>
  $ for i in $(seq 1 4000); do printf 'peek-truncated-%03d\\n' "$i"; done; sleep 30
- ... (1997 earlier lines, ctrl+o to expand)
+ ... (1998 earlier lines, ctrl+o to expand)
  peek-truncated-3999
  peek-truncated-4000
 
- [Showing lines 2002-4001 of 4001. Full output: <path>]
+ [Showing lines 2001-4000 of 4000. Full output: <path>]
 
  Attach with: tmux switch-client -t @<id>`,
   },
@@ -291,11 +294,11 @@ Attach with: tmux switch-client -t @<id>`,
     expectedTranscript: `tmux poll: poll-overflow @<id>
 
 $ for i in $(seq 1 400); do printf 'poll-overflow-%03d\\n' "$i"; done; sleep 30
-... (2 earlier lines, ctrl+o to expand)
+... (3 earlier lines, ctrl+o to expand)
 poll-overflow-399
 poll-overflow-400
 
-[Showing lines 397-401 of 401. Full output: <path>]
+[Showing lines 396-400 of 400. Full output: <path>]
 
 Attach with: tmux switch-client -t @<id>`,
   },
@@ -307,11 +310,11 @@ Attach with: tmux switch-client -t @<id>`,
     expectedTranscript: `tmux poll: poll-truncated @<id>
 
 $ for i in $(seq 1 4000); do printf 'poll-truncated-%03d\\n' "$i"; done; sleep 30
-... (2 earlier lines, ctrl+o to expand)
+... (3 earlier lines, ctrl+o to expand)
 poll-truncated-3999
 poll-truncated-4000
 
-[Showing lines 3997-4001 of 4001. Full output: <path>]
+[Showing lines 3996-4000 of 4000. Full output: <path>]
 
 Attach with: tmux switch-client -t @<id>`,
   },

@@ -84,12 +84,12 @@ describe("tmux-bash unit", () => {
         content: "abcdefghijk\n",
         fullOutputPath,
         truncationOptions: { maxBytes: 5 },
-        expectedText: `(no output)\n\n[Showing lines 2-2 of 2 (5B limit). Full output: ${fullOutputPath}]`,
+        expectedText: `ghijk\n\n[Showing last 5B of line 1 (line is 0B). Full output: ${fullOutputPath}]`,
         expectedFullOutputPath: fullOutputPath,
         expectedTruncation: {
           truncated: true,
           outputLines: 1,
-          totalLines: 2,
+          totalLines: 1,
         },
       },
       {

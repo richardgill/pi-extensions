@@ -1,8 +1,11 @@
+import { Container, Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import {
   DEFAULT_MAX_BYTES,
   formatSize,
+  keyHint,
   keyText,
   truncateTail,
+  truncateToVisualLines,
   type BashToolDetails,
   type TruncationOptions,
   type TruncationResult,
@@ -85,12 +88,53 @@ type FormatRenderedPollMessageOptions = {
   options?: ResolvedOptions;
 };
 
+type RenderForegroundBashResultOptions = Omit<RenderBashResultOptions, "details"> & {
+  details?: TmuxBashToolDetails;
+};
+
 export type CompletionMessageRenderDetails = {
   summary: string;
   output: BashOutputRenderDetails;
   exitCode: number;
   status: "success" | "failed";
 };
+
+class BashResultRenderComponent extends Container {}
+
+class BashOutputPreviewComponent implements Component {
+  private cachedWidth: number | undefined;
+  private cachedLines: string[] | undefined;
+  private cachedSkipped: number | undefined;
+
+  constructor(
+    private readonly output: string,
+    private readonly theme: RenderTheme,
+  ) {}
+
+  render(width: number): string[] {
+    if (this.cachedLines === undefined || this.cachedWidth !== width) {
+      const preview = truncateToVisualLines(this.output, 5, width);
+      this.cachedLines = preview.visualLines;
+      this.cachedSkipped = preview.skippedCount;
+      this.cachedWidth = width;
+    }
+
+    if (this.cachedSkipped && this.cachedSkipped > 0) {
+      const hint =
+        this.theme.fg("muted", `... (${this.cachedSkipped} earlier lines,`) +
+        ` ${keyHint("app.tools.expand", "to expand")})`;
+      return ["", truncateToWidth(hint, width, "..."), ...(this.cachedLines ?? [])];
+    }
+
+    return ["", ...(this.cachedLines ?? [])];
+  }
+
+  invalidate(): void {
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
+    this.cachedSkipped = undefined;
+  }
+}
 
 export type PollMessageRenderDetails = {
   summary: string;
@@ -435,6 +479,76 @@ export const renderBashResultText = ({
 
   if (!renderedOutput) return isPartial ? `\n${renderedDuration}` : renderedDuration;
   return [renderedOutput, renderedDuration].filter(Boolean).join(BASH_DURATION_SEPARATOR);
+};
+
+const stripFinalTruncationFooter = (
+  output: string,
+  details: TmuxBashToolDetails | undefined,
+  isPartial: boolean,
+): string => {
+  if (
+    isPartial ||
+    !details?.truncation?.truncated ||
+    !details.fullOutputPath ||
+    !output.endsWith("]")
+  ) {
+    return output;
+  }
+
+  const footerStart = output.lastIndexOf("\n\n[");
+  if (footerStart === -1 || !output.slice(footerStart).includes(details.fullOutputPath)) {
+    return output;
+  }
+
+  return output.slice(0, footerStart).trimEnd();
+};
+
+const foregroundWarningText = (details: TmuxBashToolDetails | undefined): string | undefined => {
+  const warnings: string[] = [];
+  const truncation = details?.truncation;
+
+  if (details?.fullOutputPath) warnings.push(`Full output: ${details.fullOutputPath}`);
+  if (truncation?.truncated && truncation.truncatedBy === "lines") {
+    warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
+  }
+  if (truncation?.truncated && truncation.truncatedBy !== "lines") {
+    warnings.push(
+      `Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+    );
+  }
+
+  return warnings.length > 0 ? `[${warnings.join(". ")}]` : undefined;
+};
+
+export const renderForegroundBashResultComponent = ({
+  raw,
+  details,
+  expanded,
+  isPartial,
+  state,
+  theme,
+}: RenderForegroundBashResultOptions): Component => {
+  const component = new BashResultRenderComponent();
+  const output = stripFinalTruncationFooter(raw.trim(), details, isPartial);
+  const duration = bashDurationText(state, isPartial);
+  const warning = foregroundWarningText(details);
+
+  if (output) {
+    const styledOutput = output
+      .split("\n")
+      .map((line) => theme.fg("toolOutput", line))
+      .join("\n");
+    component.addChild(
+      expanded
+        ? new Text(`\n${styledOutput}`, 0, 0)
+        : new BashOutputPreviewComponent(styledOutput, theme),
+    );
+  }
+
+  if (warning) component.addChild(new Text(`\n${theme.fg("warning", warning)}`, 0, 0));
+  if (duration) component.addChild(new Text(`\n${theme.fg("muted", duration)}`, 0, 0));
+
+  return component;
 };
 
 export const hasOnlyEmptyBashOutput = (details: BashOutputRenderDetails): boolean =>
