@@ -19,7 +19,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
@@ -48,7 +48,7 @@ jobs:
     name: Publish packages
     needs: create-release-pr
     if: needs.create-release-pr.outputs.should_publish == 'true'
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
