@@ -2,6 +2,10 @@
 
 Drop-in pi `bash` tool replacement which uses background tmux.
 
+## Demo
+
+https://github.com/user-attachments/assets/02791406-27d1-4168-ae98-dee853c304fc
+
 ## How it works
 
 - Foreground `bash` timeouts keep running in background (or kill)
