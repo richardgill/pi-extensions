@@ -5,6 +5,7 @@ export type ScriptedStep =
   | ScriptedToolCallStep
   | ScriptedToolCallWithLatestWindowIdStep
   | ScriptedTextStep
+  | ScriptedErrorStep
   | ScriptedExpectLatestToolResultStep
   | ScriptedRecordLatestToolResultStep
   | ScriptedRecordSystemPromptStep;
@@ -26,6 +27,11 @@ type ScriptedToolCallWithLatestWindowIdStep = {
 type ScriptedTextStep = {
   type: "text";
   text: string;
+};
+
+type ScriptedErrorStep = {
+  type: "error";
+  message: string;
 };
 
 type ExpectedToolResult = {
@@ -89,6 +95,11 @@ export const bash = (command: string, options: Record<string, unknown> = {}): Sc
   scriptedToolCall("bash", { timeout: 5, ...options, command });
 
 export const reply = scriptedText;
+
+export const providerError = (message: string): ScriptedStep => ({
+  type: "error",
+  message,
+});
 
 export const expectLatestToolResult = (
   toolName: string,
@@ -211,11 +222,15 @@ const scriptedStepSource = (step: ScriptedStep): string => {
   if (step.type === "toolCall") return scriptedToolCallSource(step);
   if (step.type === "toolCallWithLatestWindowId")
     return scriptedToolCallWithLatestWindowIdSource(step);
+  if (step.type === "error") return scriptedErrorSource(step);
   if (step.type === "expectLatestToolResult") return scriptedExpectLatestToolResultSource(step);
   if (step.type === "recordLatestToolResult") return scriptedRecordLatestToolResultSource(step);
   if (step.type === "recordSystemPrompt") return scriptedRecordSystemPromptSource(step);
   return `fauxAssistantMessage(${JSON.stringify(step.text)})`;
 };
+
+const scriptedErrorSource = (step: ScriptedErrorStep): string =>
+  `fauxAssistantMessage([], { stopReason: "error", errorMessage: ${JSON.stringify(step.message)} })`;
 
 const scriptedToolCallSource = (step: ScriptedToolCallStep): string => {
   const response = `fauxAssistantMessage([fauxToolCall(${JSON.stringify(step.name)}, ${JSON.stringify(step.args)})], { stopReason: "toolUse" })`;
