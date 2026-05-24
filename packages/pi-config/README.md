@@ -1,4 +1,4 @@
-# @richardgill/pi-config
+# pi-config
 
 JSONC config loading helpers for Pi extensions.
 

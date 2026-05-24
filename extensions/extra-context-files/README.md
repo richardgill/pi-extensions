@@ -1,4 +1,4 @@
-# @richardgill/pi-extra-context-files
+# pi-extra-context-files
 
 pi extension for loading extra context files into the system prompt.
 

@@ -1,4 +1,4 @@
-# @richardgill/pi-file-collector
+# pi-file-collector
 
 Pi extension for collecting file/line evidence seen or cited during a session.
 

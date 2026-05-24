@@ -1,4 +1,4 @@
-# @richardgill/pi-tmux-bash
+# pi-tmux-bash
 
 Drop-in pi `bash` tool replacement which uses background tmux.
 
