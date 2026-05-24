@@ -4,6 +4,7 @@
 
 - [`pi-extra-context-files`](./extensions/extra-context-files/README.md) — Loads custom named context files such as `AGENTS.local.md` into Pi.
 - [`pi-file-collector`](./extensions/file-collector/README.md) — Records files and line ranges that Pi reads, edits, writes, or cites in a JSONL file.
+- [`pi-parrot`](./extensions/parrot/README.md) — Populates Pi's input box with the last assistant message.
 - [`pi-preset`](./extensions/preset/README.md) — Pi’s preset example extension.
 - [`pi-sub-pi`](./extensions/sub-pi/README.md) — Pi tool which runs isolated Pi subprocesses for single, chained, or parallel tasks.
 - [`pi-sub-pi-skill`](./extensions/sub-pi-skill/README.md) — Routes opted-in `/skill:` commands through the `sub-pi` tool.

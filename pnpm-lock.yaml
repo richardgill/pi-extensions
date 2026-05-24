@@ -84,6 +84,21 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
 
+  extensions/parrot:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: '*'
+        version: 0.75.5(ws@8.20.0)(zod@4.3.6)
+      '@earendil-works/pi-tui':
+        specifier: '*'
+        version: 0.75.5
+      '@richardgill/pi-config':
+        specifier: workspace:*
+        version: link:../../packages/pi-config
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+
   extensions/preset:
     dependencies:
       '@earendil-works/pi-ai':
