@@ -1,7 +1,13 @@
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 
-import { findLastAssistantMessage, parrot, populateParrotInput } from "../src/extension";
+import {
+  applyParrotContent,
+  findLastAssistantMessage,
+  handleEditorResult,
+  parrot,
+  populateParrotInput,
+} from "../src/extension";
 
 const messageEntry = (role: string, content: unknown[]): SessionEntry =>
   ({
@@ -12,11 +18,12 @@ const messageEntry = (role: string, content: unknown[]): SessionEntry =>
     message: { role, content, timestamp: Date.now() },
   }) as SessionEntry;
 
-const createCtx = (branch: SessionEntry[], hasUI = true) => {
+const createCtx = (branch: SessionEntry[], hasUI = true, idle = true) => {
   const notifications: { message: string; level: string }[] = [];
   const editorTexts: string[] = [];
   const ctx = {
     hasUI,
+    isIdle: () => idle,
     sessionManager: { getBranch: () => branch },
     ui: {
       notify: (message: string, level: string) => notifications.push({ message, level }),
@@ -25,6 +32,16 @@ const createCtx = (branch: SessionEntry[], hasUI = true) => {
   } as unknown as ExtensionContext;
 
   return { ctx, notifications, editorTexts };
+};
+
+const createPi = () => {
+  const userMessages: { content: string; options?: unknown }[] = [];
+  const pi = {
+    sendUserMessage: (content: string, options?: unknown) =>
+      userMessages.push({ content, options }),
+  } as unknown as ExtensionAPI;
+
+  return { pi, userMessages };
 };
 
 describe("findLastAssistantMessage", () => {
@@ -72,6 +89,56 @@ describe("populateParrotInput", () => {
 
     expect(editorTexts).toEqual([]);
     expect(notifications).toEqual([{ message: "No assistant messages found", level: "error" }]);
+  });
+});
+
+describe("editor result handling", () => {
+  it("places edited content in the editor by default", () => {
+    const { ctx, editorTexts } = createCtx([]);
+    const { pi, userMessages } = createPi();
+
+    handleEditorResult(
+      pi,
+      ctx,
+      { content: "edited", error: null, exitCode: 0 },
+      { sendAfterEditorClose: false },
+    );
+
+    expect(editorTexts).toEqual(["edited"]);
+    expect(userMessages).toEqual([]);
+  });
+
+  it("can submit edited content after the external editor closes", () => {
+    const { ctx, editorTexts } = createCtx([]);
+    const { pi, userMessages } = createPi();
+
+    applyParrotContent(pi, ctx, "edited", { sendAfterEditorClose: true });
+
+    expect(editorTexts).toEqual([]);
+    expect(userMessages).toEqual([{ content: "edited", options: undefined }]);
+  });
+
+  it("uses steering delivery when submitting while busy", () => {
+    const { ctx } = createCtx([], true, false);
+    const { pi, userMessages } = createPi();
+
+    applyParrotContent(pi, ctx, "edited", { sendAfterEditorClose: true });
+
+    expect(userMessages).toEqual([{ content: "edited", options: { deliverAs: "steer" } }]);
+  });
+
+  it("reports external editor errors", () => {
+    const { ctx, notifications } = createCtx([]);
+    const { pi } = createPi();
+
+    handleEditorResult(
+      pi,
+      ctx,
+      { content: null, error: "no editor", exitCode: null },
+      { sendAfterEditorClose: false },
+    );
+
+    expect(notifications).toEqual([{ message: "Editor error: no editor", level: "error" }]);
   });
 });
 

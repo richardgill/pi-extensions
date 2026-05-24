@@ -4,15 +4,21 @@ import { z } from "zod";
 
 export type ParrotOptions = {
   keyboardShortcut?: KeyId | false;
+  openExternalEditor?: boolean;
+  sendAfterEditorClose?: boolean;
 };
 
-type ResolvedOptions = {
+export type ResolvedOptions = {
   keyboardShortcut: KeyId | false;
+  openExternalEditor: boolean;
+  sendAfterEditorClose: boolean;
 };
 
 const buildParrotOptionsSchema = () =>
   z.object({
     keyboardShortcut: z.union([z.string(), z.literal(false)]).default("alt+r"),
+    openExternalEditor: z.boolean().default(false),
+    sendAfterEditorClose: z.boolean().default(false),
   });
 
 export const ParrotOptionsSchema = buildParrotOptionsSchema();

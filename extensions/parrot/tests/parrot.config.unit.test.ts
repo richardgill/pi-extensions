@@ -48,4 +48,19 @@ describe("parrot config", () => {
 
     expect(loadParrotConfig().keyboardShortcut).toBe(false);
   });
+
+  it("loads external editor behavior config", () => {
+    const folder = createTempDir();
+    process.env.PI_EXTENSION_CONFIG_DIR = folder;
+    writeParrotConfig(folder, {
+      openExternalEditor: true,
+      sendAfterEditorClose: true,
+    });
+
+    expect(loadParrotConfig()).toEqual({
+      keyboardShortcut: "alt+r",
+      openExternalEditor: true,
+      sendAfterEditorClose: true,
+    });
+  });
 });
