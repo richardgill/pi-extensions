@@ -1,5 +1,11 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.11
+
+### Patch Changes
+
+- [`ccb1fd0`](https://github.com/richardgill/pi-extensions/commit/ccb1fd053099f11088b15bc6ed92bb257fed1a01) Thanks [@richardgill](https://github.com/richardgill)! - Update tmux-bash README description.
+
 ## 0.0.10
 
 ### Patch Changes
