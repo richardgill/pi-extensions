@@ -1,5 +1,11 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.7
+
+### Patch Changes
+
+- [`b9e2dda`](https://github.com/richardgill/pi-extensions/commit/b9e2dda4cc6cab7a0783e1015d2d6ce990848d74) Thanks [@richardgill](https://github.com/richardgill)! - Use a stable repository-hosted MP4 demo URL.
+
 ## 0.0.6
 
 ### Patch Changes
