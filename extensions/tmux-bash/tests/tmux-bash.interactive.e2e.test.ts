@@ -434,6 +434,7 @@ completion-two`);
           background: true,
           name: "completion-error",
         }),
+        reply(doneMarker),
         providerError("WebSocket error"),
       ],
       { waitFor: "Error: WebSocket error" },

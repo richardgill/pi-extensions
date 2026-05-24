@@ -10,11 +10,13 @@ type ResolvedOptions = {
   keyboardShortcut: KeyId | false;
 };
 
-export const ParrotOptionsSchema = z.object({
-  keyboardShortcut: z.union([z.string(), z.literal(false)]).default("alt+r"),
-});
+const buildParrotOptionsSchema = () =>
+  z.object({
+    keyboardShortcut: z.union([z.string(), z.literal(false)]).default("alt+r"),
+  });
 
-export const ParrotConfigSchema = ParrotOptionsSchema;
+export const ParrotOptionsSchema = buildParrotOptionsSchema();
+export const ParrotConfigSchema = buildParrotOptionsSchema();
 
 export const DEFAULT_OPTIONS = ParrotOptionsSchema.parse({}) as ResolvedOptions;
 
