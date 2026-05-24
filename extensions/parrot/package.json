@@ -1,0 +1,46 @@
+{
+  "name": "@richardgill/pi-parrot",
+  "version": "0.0.1",
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/parrot",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/parrot"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/extension.ts"
+  },
+  "scripts": {
+    "tsc": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@richardgill/pi-config": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

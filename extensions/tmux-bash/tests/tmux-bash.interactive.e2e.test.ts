@@ -4,6 +4,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { createPiE2eWorkspace, type PiE2eWorkspace } from "./testing/pi-test-utils";
 import {
   bash,
+  providerError,
   reply,
   scriptedToolCall,
   scriptedToolCallWithLatestWindowId,
@@ -422,6 +423,27 @@ completion-two`);
     expect(result.pane).not.toContain("Background job");
     expect(result.pane).not.toContain("Output:");
     expect(result.pane).not.toContain("tmux:");
+  }, 30_000);
+
+  it("surfaces provider errors from background completion follow-up turns", async () => {
+    const workspace = createWorkspace();
+    const result = await runTui(
+      workspace,
+      [
+        bash("printf 'before-provider-error\\n'", {
+          background: true,
+          name: "completion-error",
+        }),
+        reply(doneMarker),
+        providerError("WebSocket error"),
+      ],
+      { waitFor: "Error: WebSocket error" },
+    );
+
+    expect(result.pane).toContain("Background bash finished");
+    expect(result.pane).toContain("before-provider-error");
+    expect(result.pane).toContain("Error: WebSocket error");
+    expect(result.pane).not.toContain("Working...");
   }, 30_000);
 
   it("renders background poll output without requesting another assistant turn", async () => {
