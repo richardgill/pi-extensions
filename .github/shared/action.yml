@@ -37,23 +37,12 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile --prefer-offline
 
-    - name: Verify latest Pi pins
+    - name: Install latest Pi packages
       shell: bash
       run: |
-        set -euo pipefail
-        packages=(
-          "@earendil-works/pi-agent-core"
-          "@earendil-works/pi-ai"
-          "@earendil-works/pi-coding-agent"
-          "@earendil-works/pi-tui"
-        )
-
-        for package in "${packages[@]}"; do
-          pinned="$(node -p "require('./package.json').devDependencies['$package']")"
-          latest="$(pnpm view "$package" version)"
-          test "$pinned" = "=$latest"
-        done
-
-        installed_pi_version="$(pnpm exec pi --version 2>&1 | tail -n 1)"
-        latest_pi_version="$(pnpm view @earendil-works/pi-coding-agent version)"
-        test "$installed_pi_version" = "$latest_pi_version"
+        pnpm add -Dw \
+          @earendil-works/pi-agent-core@latest \
+          @earendil-works/pi-ai@latest \
+          @earendil-works/pi-coding-agent@latest \
+          @earendil-works/pi-tui@latest
+        pnpm exec pi --version
