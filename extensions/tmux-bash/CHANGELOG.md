@@ -1,5 +1,11 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.6
+
+### Patch Changes
+
+- [`9de8ee6`](https://github.com/richardgill/pi-extensions/commit/9de8ee67e263f246d220b179b3ea9c142deb3c5b) Thanks [@richardgill](https://github.com/richardgill)! - Add a README demo video link for tmux-bash.
+
 ## 0.0.5
 
 ### Patch Changes
