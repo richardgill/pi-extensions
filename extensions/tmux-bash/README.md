@@ -4,7 +4,7 @@ Drop-in pi `bash` tool replacement which uses background tmux.
 
 ## Demo
 
-https://github.com/user-attachments/assets/cc1e66e0-7805-404d-b175-2e6b9016a538
+https://raw.githubusercontent.com/richardgill/pi-extensions/main/extensions/tmux-bash/demo.mp4
 
 ## How it works
 
