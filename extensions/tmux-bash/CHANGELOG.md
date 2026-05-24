@@ -1,5 +1,11 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.10
+
+### Patch Changes
+
+- [`bcc8e74`](https://github.com/richardgill/pi-extensions/commit/bcc8e74ac3f188fdfa9f0f807281d14258b5eea9) Thanks [@richardgill](https://github.com/richardgill)! - Revert the release workflow runner to the default GitHub runner.
+
 ## 0.0.9
 
 ### Patch Changes
