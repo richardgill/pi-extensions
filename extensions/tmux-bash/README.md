@@ -1,6 +1,6 @@
 # pi-tmux-bash
 
-Drop-in pi `bash` tool replacement which uses background tmux.
+Drop-in `bash` replacement that runs commands in the background using tmux.
 
 ## Demo
 
@@ -10,6 +10,7 @@ Drop-in pi `bash` tool replacement which uses background tmux.
 
 ## How it works
 
+- All `bash` calls happen inside tmux
 - Foreground `bash` timeouts keep running in background (or kill)
 - Background `bash` sends a follow-up result when the command finishes.
 - Model can enable polling to receive periodic updates on background output.
