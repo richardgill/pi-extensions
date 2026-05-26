@@ -9,6 +9,7 @@
 - [`pi-sub-pi`](./extensions/sub-pi/README.md) — Pi tool which runs isolated Pi subprocesses for single, chained, or parallel tasks.
 - [`pi-sub-pi-skill`](./extensions/sub-pi-skill/README.md) — Routes opted-in `/skill:` commands through the `sub-pi` tool.
 - [`pi-tmux-bash`](./extensions/tmux-bash/README.md) — Replaces Pi's bash tool with a tmux-backed version for background jobs and polling.
+- [`pi-up-history`](./extensions/pi-up-history/README.md) — Seeds Pi's Up-arrow prompt history from saved sessions for the current cwd.
 
 ## Packages
 

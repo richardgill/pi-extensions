@@ -9,6 +9,10 @@
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
+    "extensions/pi-up-history": {
+      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
     "extensions/tmux-bash": {
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
