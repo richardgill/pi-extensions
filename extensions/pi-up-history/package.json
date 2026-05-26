@@ -1,6 +1,7 @@
 {
   "name": "@richardgill/pi-up-history",
   "version": "0.0.0",
+  "private": true,
   "keywords": [
     "pi-package"
   ],
