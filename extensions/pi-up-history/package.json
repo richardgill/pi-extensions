@@ -1,0 +1,38 @@
+{
+  "name": "@richardgill/pi-up-history",
+  "version": "0.0.0",
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/pi-up-history",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/pi-up-history"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/extension.ts"
+  },
+  "scripts": {
+    "tsc": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
