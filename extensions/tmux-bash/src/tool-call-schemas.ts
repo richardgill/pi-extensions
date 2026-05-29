@@ -1,5 +1,6 @@
 import { defineZodToolCall } from "@richardgill/pi-zod-tool-call";
 import { z } from "zod";
+import type { TmuxAction } from "./config";
 
 type SchemaOptions = {
   bashToolName: string;
@@ -9,6 +10,8 @@ type SchemaOptions = {
   maxTimeoutSeconds: number;
   defaultPollInterval: number;
   pollContextLines: number;
+  tmuxEnabledActions: readonly TmuxAction[];
+  bashPollIntervalEnabled: boolean;
 };
 
 type InvalidInput<TInvalidResult> = (message: string) => TInvalidResult;
@@ -61,16 +64,52 @@ const foregroundTimeoutAction = (options: SchemaOptions) =>
 
 const background = z.literal(true).describe("Return immediately and keep running in tmux.");
 
-export const buildBashInputSchema = (options: SchemaOptions) =>
-  z.union([
+const bashPollProperties = (options: SchemaOptions) =>
+  options.bashPollIntervalEnabled
+    ? { pollInterval: pollInterval(options), pollLines: pollLines(options) }
+    : {};
+
+type BackgroundBashInput = {
+  command: string;
+  name?: string;
+  background: true;
+  timeout: number;
+  timeoutAction?: "kill" | "background";
+  pollInterval?: number;
+  pollLines?: number;
+};
+
+type ForegroundBashInput = {
+  command: string;
+  name?: string;
+  background?: false;
+  timeout: number;
+  timeoutAction: "kill" | "background";
+  pollInterval?: number;
+  pollLines?: number;
+};
+
+export type BashInput = BackgroundBashInput | ForegroundBashInput;
+
+export type TmuxInput =
+  | { action: "list" }
+  | { action: "kill"; window: string }
+  | { action: "list-polls" }
+  | { action: "peek"; window: string }
+  | { action: "poll"; window: string; pollInterval: number; pollLines: number }
+  | { action: "unpoll"; window: string };
+
+const buildBashInputSchema = (options: SchemaOptions): z.ZodType<BashInput> => {
+  const pollProperties = bashPollProperties(options);
+
+  return z.union([
     z.object({
       command,
       name,
       background,
       timeout: timeout(options),
       timeoutAction: backgroundTimeoutAction,
-      pollInterval: pollInterval(options),
-      pollLines: pollLines(options),
+      ...pollProperties,
     }),
     z.object({
       command,
@@ -78,35 +117,45 @@ export const buildBashInputSchema = (options: SchemaOptions) =>
       background: backgroundFalse,
       timeout: timeout(options),
       timeoutAction: foregroundTimeoutAction(options),
-      pollInterval: pollInterval(options),
-      pollLines: pollLines(options),
+      ...pollProperties,
     }),
-  ]);
+  ]) as unknown as z.ZodType<BashInput>;
+};
 
-export const buildTmuxInputSchema = (options: SchemaOptions) =>
-  z.discriminatedUnion("action", [
-    z.object({ action: tmuxAction("list") }),
-    z.object({ action: tmuxAction("kill"), window: tmuxWindowId }),
-    z.object({ action: tmuxAction("list-polls") }),
-    z.object({ action: tmuxAction("peek"), window: tmuxWindowId }),
-    z.object({
-      action: tmuxAction("poll"),
-      window: tmuxWindowId,
-      pollInterval: z
-        .number()
-        .int()
-        .nonnegative()
-        .default(options.defaultPollInterval)
-        .describe("Seconds between check-ins."),
-      pollLines: z
-        .number()
-        .int()
-        .positive()
-        .default(options.pollContextLines)
-        .describe("Lines captured per check-in."),
-    }),
-    z.object({ action: tmuxAction("unpoll"), window: tmuxWindowId }),
-  ]);
+const tmuxInputSchemas = (options: SchemaOptions) => ({
+  list: z.object({ action: tmuxAction("list") }),
+  kill: z.object({ action: tmuxAction("kill"), window: tmuxWindowId }),
+  "list-polls": z.object({ action: tmuxAction("list-polls") }),
+  peek: z.object({ action: tmuxAction("peek"), window: tmuxWindowId }),
+  poll: z.object({
+    action: tmuxAction("poll"),
+    window: tmuxWindowId,
+    pollInterval: z
+      .number()
+      .int()
+      .nonnegative()
+      .default(options.defaultPollInterval)
+      .describe("Seconds between check-ins."),
+    pollLines: z
+      .number()
+      .int()
+      .positive()
+      .default(options.pollContextLines)
+      .describe("Lines captured per check-in."),
+  }),
+  unpoll: z.object({ action: tmuxAction("unpoll"), window: tmuxWindowId }),
+});
+
+const buildTmuxInputSchema = (options: SchemaOptions): z.ZodType<TmuxInput> => {
+  const schemas = tmuxInputSchemas(options);
+  const enabledSchemas = options.tmuxEnabledActions.map((action) => schemas[action]);
+  const [firstSchema, ...remainingSchemas] = enabledSchemas;
+
+  if (!firstSchema) return z.never() as z.ZodType<TmuxInput>;
+  if (remainingSchemas.length === 0) return firstSchema as z.ZodType<TmuxInput>;
+
+  return z.discriminatedUnion("action", [firstSchema, ...remainingSchemas]) as z.ZodType<TmuxInput>;
+};
 
 export const buildBashToolCallSchema = <TInvalidResult>(
   options: SchemaOptions,
@@ -127,6 +176,3 @@ export const buildTmuxToolCallSchema = <TInvalidResult>(
     zodSchema: buildTmuxInputSchema(options),
     invalidInput,
   });
-
-export type BashInput = z.infer<ReturnType<typeof buildBashInputSchema>>;
-export type TmuxInput = z.infer<ReturnType<typeof buildTmuxInputSchema>>;

@@ -25,7 +25,7 @@ export const tmuxBash = (input: TmuxBashOptions = {}) => {
     });
 
     registerBashTool(pi, state, options);
-    registerTmuxTool(pi, state, options);
+    if (options.tmuxEnabledActions.length > 0) registerTmuxTool(pi, state, options);
     registerMessageRenderers(pi, options);
   };
 };

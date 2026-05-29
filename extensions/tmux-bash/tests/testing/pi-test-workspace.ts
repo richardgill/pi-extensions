@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { TMUX_ACTIONS } from "../../src/config";
 
 export type PiTestWorkspace = {
   tempRoot: string;
@@ -88,6 +89,8 @@ const buildTmuxBashConfig = (
   outputDir,
   preserveOutputFiles: true,
   globalTmuxSessionName: `pi-tmux-bash-e2e-${path.basename(tempRoot)}`,
+  tmuxEnabledActions: [...TMUX_ACTIONS],
+  bashPollIntervalEnabled: true,
   ...overrides,
 });
 

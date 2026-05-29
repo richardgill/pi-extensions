@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TMUX_ACTIONS } from "../src/config";
 import { buildBashToolCallSchema } from "../src/tool-call-schemas";
 
 type TestOptions = Parameters<typeof buildBashToolCallSchema>[0];
@@ -11,6 +12,8 @@ const options: TestOptions = {
   maxTimeoutSeconds: 60,
   defaultPollInterval: 0,
   pollContextLines: 30,
+  tmuxEnabledActions: TMUX_ACTIONS,
+  bashPollIntervalEnabled: true,
 };
 
 const invalidInput = (message: string) => ({ error: message });
