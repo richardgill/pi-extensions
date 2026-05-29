@@ -1,5 +1,5 @@
 import { tmuxWindowAttachCommand } from "./tmux-utils";
-import type { ResolvedOptions } from "./config";
+import { DEFAULT_SYSTEM_PROMPT_GUIDELINES, type ResolvedOptions, type TmuxAction } from "./config";
 
 const replaceTemplateVariable = (template: string, variable: string, value: string): string =>
   template.replace(new RegExp(`{{\\s*${variable}\\s*}}`, "g"), value);
@@ -31,10 +31,50 @@ export const resolveSystemPromptToolSnippet = (
   return renderPromptTemplate(snippet, options);
 };
 
+const enabledTmuxActions = (actions: readonly TmuxAction[], candidates: TmuxAction[]): string =>
+  candidates.filter((action) => actions.includes(action)).join("/");
+
+const resolveDefaultGuideline = (
+  guideline: string,
+  options: ResolvedOptions,
+): string | undefined => {
+  if (guideline === DEFAULT_SYSTEM_PROMPT_GUIDELINES[2] && !options.bashPollIntervalEnabled) {
+    return undefined;
+  }
+  if (guideline === DEFAULT_SYSTEM_PROMPT_GUIDELINES[3]) {
+    return options.tmuxEnabledActions.includes("list") ? guideline : undefined;
+  }
+  if (guideline === DEFAULT_SYSTEM_PROMPT_GUIDELINES[4]) {
+    const actions = enabledTmuxActions(options.tmuxEnabledActions, [
+      "peek",
+      "kill",
+      "poll",
+      "unpoll",
+    ]);
+    return actions
+      ? `Use {{tmuxToolName}} ${actions} with a stable #{window_id} like @123.`
+      : undefined;
+  }
+  if (guideline === DEFAULT_SYSTEM_PROMPT_GUIDELINES[6]) {
+    const actions = enabledTmuxActions(options.tmuxEnabledActions, ["poll", "unpoll"]);
+    return actions
+      ? `Use {{tmuxToolName}} ${actions} to start or stop periodic check-ins for an existing background window.`
+      : undefined;
+  }
+
+  return guideline;
+};
+
+const resolveGuideline = (guideline: string, options: ResolvedOptions): string | undefined => {
+  const resolved = resolveDefaultGuideline(guideline, options);
+  return resolved === undefined ? undefined : renderPromptTemplate(resolved, options);
+};
+
 export const systemPromptGuidelines = (options: ResolvedOptions): string[] => {
   if (!options.systemPrompt) return [];
 
-  return options.systemPromptGuidelines.map((guideline) =>
-    renderPromptTemplate(guideline, options),
-  );
+  return options.systemPromptGuidelines.flatMap((guideline) => {
+    const resolved = resolveGuideline(guideline, options);
+    return resolved === undefined ? [] : [resolved];
+  });
 };

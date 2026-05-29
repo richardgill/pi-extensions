@@ -102,6 +102,15 @@ The `tmux` tool allows the model to inspect running bash processes.
 { "action": "unpoll", "window": "@123" }
 ```
 
+You can limit available tmux actions and bash-started polling:
+
+```jsonc
+{
+  "tmuxEnabledActions": ["peek", "kill"],
+  "bashPollIntervalEnabled": false
+}
+```
+
 ## Configuration
 
 You can override individual settings in `tmux-bash.jsonc`.
@@ -136,6 +145,12 @@ Default config settings:
 
   // Tmux inspection/control tool name exposed to the agent.
   "tmuxToolName": "tmux",
+
+  // Tmux actions exposed to the agent. Set [] to disable registering the tmux tool.
+  "tmuxEnabledActions": ["list", "peek", "kill"],
+
+  // Whether bash exposes pollInterval/pollLines and can start polling from a bash call.
+  "bashPollIntervalEnabled": false,
 
   // Template variables:
   // `{{bashToolName}}`: configured with `bashToolName`, default `bash`
@@ -209,6 +224,7 @@ Default config settings:
   // ─────────────────────────────────────────────────────────────
 
   // Default seconds between automatic poll check-ins. 0 disables default polling.
+  // Ignored by bash calls when bashPollIntervalEnabled is false.
   "defaultPollInterval": 0,
 
   // Whether poll cards trigger model turns or display only in the TUI.

@@ -1,6 +1,8 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { resolveOptions } from "../src/config";
+import { tmuxBash } from "../src/extension";
 import {
   displayCommandForCommand,
   formatCompletionSummary,
@@ -37,6 +39,31 @@ type FormatOutputCase = {
 const plainTheme = {
   bold: (text: string) => text,
   fg: (_name: string, text: string) => text,
+};
+
+type RegisteredTool = {
+  name: string;
+  parameters: { properties?: Record<string, unknown> };
+  promptGuidelines?: string[];
+};
+
+const registeredToolsForOptions = (options: Parameters<typeof tmuxBash>[0]): RegisteredTool[] => {
+  const tools: RegisteredTool[] = [];
+  const pi = {
+    on: () => {},
+    registerTool: (tool: RegisteredTool) => tools.push(tool),
+    registerCommand: () => {},
+    registerMessageRenderer: () => {},
+  } as unknown as ExtensionAPI;
+
+  tmuxBash(options)(pi);
+  return tools;
+};
+
+const registeredTool = (tools: RegisteredTool[], name: string): RegisteredTool => {
+  const tool = tools.find((item) => item.name === name);
+  if (!tool) throw new Error(`${name} tool was not registered`);
+  return tool;
 };
 
 const taggedTheme = {
@@ -166,6 +193,43 @@ describe("tmux-bash unit", () => {
       expect(result.tmuxWindowNameTemplate).toBe("bg-{{nameOrCommand}}");
       expect(result.maxTmuxWindowNameLength).toBe(42);
       expect(result.maxOutputBytes).toBe(456);
+    });
+  });
+
+  describe("tool registration", () => {
+    it("omits tmux tool when all tmux actions are disabled", () => {
+      const tools = registeredToolsForOptions({ tmuxEnabledActions: [] });
+
+      expect(tools.map((tool) => tool.name)).toEqual(["bash"]);
+    });
+
+    it("registers tmux tool with default actions only", () => {
+      const tools = registeredToolsForOptions({});
+      const tmuxTool = registeredTool(tools, "tmux");
+      const action = tmuxTool.parameters.properties?.action as { enum?: string[] };
+
+      expect(action.enum).toEqual(["list", "peek", "kill"]);
+      expect(tmuxTool.promptGuidelines?.join("\n")).toContain("tmux peek/kill");
+      expect(tmuxTool.promptGuidelines?.join("\n")).not.toContain("poll/unpoll");
+    });
+
+    it("registers tmux tool with configured actions only", () => {
+      const tools = registeredToolsForOptions({ tmuxEnabledActions: ["peek", "kill"] });
+      const tmuxTool = registeredTool(tools, "tmux");
+      const action = tmuxTool.parameters.properties?.action as { enum?: string[] };
+
+      expect(action.enum).toEqual(["peek", "kill"]);
+      expect(tmuxTool.promptGuidelines?.join("\n")).toContain("tmux peek/kill");
+      expect(tmuxTool.promptGuidelines?.join("\n")).not.toContain("tmux list");
+    });
+
+    it("removes bash polling parameters by default", () => {
+      const tools = registeredToolsForOptions({});
+      const bashTool = registeredTool(tools, "bash");
+
+      expect(bashTool.parameters.properties).not.toHaveProperty("pollInterval");
+      expect(bashTool.parameters.properties).not.toHaveProperty("pollLines");
+      expect(bashTool.promptGuidelines?.join("\n")).not.toContain("pollInterval");
     });
   });
 

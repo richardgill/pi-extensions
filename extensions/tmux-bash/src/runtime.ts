@@ -40,6 +40,7 @@ import {
   DEFAULT_OPTIONS,
   SHELL_IDENTIFIER_REGEX,
   type ResolvedOptions,
+  type TmuxAction,
 } from "./config";
 import type { BashInput, TmuxInput } from "./tool-call-schemas";
 import {
@@ -1079,6 +1080,21 @@ export const executeTool = (
   return listPollsAction(session, filters, state, options);
 };
 
+const bashPollInterval = (params: BashInput): number =>
+  "pollInterval" in params ? (params.pollInterval ?? 0) : 0;
+
+const bashPollLines = (params: BashInput, options: ResolvedOptions): number =>
+  "pollLines" in params ? (params.pollLines ?? options.pollContextLines) : options.pollContextLines;
+
+const timeoutBackgroundHint = (options: ResolvedOptions): string => {
+  const actions = (["peek", "list", "kill"] as TmuxAction[]).filter((action) =>
+    options.tmuxEnabledActions.includes(action),
+  );
+  if (actions.length === 0) return "Result will be reported when it finishes.";
+
+  return `Use ${options.tmuxToolName} ${actions.join("/")} to inspect or stop it. Result will be reported when it finishes.`;
+};
+
 export const runBashInTmux = async (
   params: BashInput,
   signal: AbortSignal | undefined,
@@ -1118,15 +1134,16 @@ export const runBashInTmux = async (
   updateBackgroundProcessStatus(ctx, options);
 
   if (params.background === true) {
-    const pollInterval = effectivePollInterval(params.pollInterval, options);
-    if (params.pollInterval > 0)
+    const requestedPollInterval = bashPollInterval(params);
+    const pollInterval = effectivePollInterval(requestedPollInterval, options);
+    if (requestedPollInterval > 0)
       startPoller(
         pi,
         state,
         session,
         result.windowId,
         pollInterval,
-        params.pollLines,
+        bashPollLines(params, options),
         options,
         gitRoot,
         piSessionId,
@@ -1136,7 +1153,7 @@ export const runBashInTmux = async (
       content: [
         {
           type: "text" as const,
-          text: `Started in background tmux window: ${tmuxWindowNameForCommand(params.command, params.name, options)} ${result.windowId}.${params.pollInterval > 0 ? ` Polling every ${pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n${tmuxWindowAttachHint(result.windowId, process.env, options.tmuxBinary)}`,
+          text: `Started in background tmux window: ${tmuxWindowNameForCommand(params.command, params.name, options)} ${result.windowId}.${requestedPollInterval > 0 ? ` Polling every ${pollInterval}s.` : ""}\nResult will be reported when it finishes.\n\n${tmuxWindowAttachHint(result.windowId, process.env, options.tmuxBinary)}`,
         },
       ],
       details: undefined,
@@ -1184,21 +1201,22 @@ export const runBashInTmux = async (
       throw new Error(`${text}\n\nCommand timed out after ${params.timeout} seconds`);
     }
 
-    const pollInterval = effectivePollInterval(params.pollInterval, options);
-    if (params.pollInterval > 0)
+    const requestedPollInterval = bashPollInterval(params);
+    const pollInterval = effectivePollInterval(requestedPollInterval, options);
+    if (requestedPollInterval > 0)
       startPoller(
         pi,
         state,
         session,
         result.windowId,
         pollInterval,
-        params.pollLines,
+        bashPollLines(params, options),
         options,
         gitRoot,
         piSessionId,
         commandRun,
       );
-    const timeoutText = `Still running after ${params.timeout}s in background tmux${params.pollInterval > 0 ? ` and polling every ${pollInterval}s` : ""}. Use ${options.tmuxToolName} peek/list/kill to inspect or stop it. Result will be reported when it finishes.`;
+    const timeoutText = `Still running after ${params.timeout}s in background tmux${requestedPollInterval > 0 ? ` and polling every ${pollInterval}s` : ""}. ${timeoutBackgroundHint(options)}`;
     return {
       content: [
         {

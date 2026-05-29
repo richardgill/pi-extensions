@@ -24,7 +24,10 @@ const DEFAULT_BASH_TOOL_DESCRIPTION =
 const DEFAULT_TMUX_TOOL_DESCRIPTION =
   "Inspect and control background tmux windows created by bash.";
 
-const DEFAULT_SYSTEM_PROMPT_GUIDELINES = [
+export const TMUX_ACTIONS = ["list", "peek", "kill", "poll", "unpoll", "list-polls"] as const;
+const DEFAULT_TMUX_ENABLED_ACTIONS = ["list", "peek", "kill"] as const;
+
+export const DEFAULT_SYSTEM_PROMPT_GUIDELINES = [
   'Use {{bashToolName}} with background: true or timeoutAction: "background" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.',
   "Background bash commands will report automatically when they finish; do not keep polling manually unless you need interim output.",
   "Use pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
@@ -71,6 +74,7 @@ const promptTemplateSchema = templatedString({
   .min(1);
 const promptToolEntrySchema = z.union([promptTemplateSchema, z.literal(false)]);
 const promptGuidelinesSchema = z.array(promptTemplateSchema);
+const tmuxActionSchema = z.enum(TMUX_ACTIONS);
 const tmuxWindowNameTemplateSchema = templatedString({
   variables: ["command", "name", "nameOrCommand"],
   missing: "keep",
@@ -87,6 +91,10 @@ const buildTmuxBashOptionsSchema = () =>
       tmuxWindowScope: z.enum(["pi-session", "git-root", "all"]).default("pi-session"),
       bashToolName: nonEmptyStringSchema.default("bash"),
       tmuxToolName: nonEmptyStringSchema.default("tmux"),
+      tmuxEnabledActions: z
+        .array(tmuxActionSchema)
+        .default(() => [...DEFAULT_TMUX_ENABLED_ACTIONS]),
+      bashPollIntervalEnabled: z.boolean().default(false),
       bashToolDescription: promptTemplateSchema.default(DEFAULT_BASH_TOOL_DESCRIPTION),
       tmuxToolDescription: promptTemplateSchema.default(DEFAULT_TMUX_TOOL_DESCRIPTION),
       tmuxBinary: nonEmptyStringSchema.default("tmux"),
@@ -141,11 +149,21 @@ export const TmuxBashConfigSchema = buildTmuxBashOptionsSchema();
 type ParsedTmuxBashOptions = z.input<typeof TmuxBashOptionsSchema>;
 type ParsedResolvedOptions = z.output<typeof TmuxBashOptionsSchema>;
 
-export type TmuxBashOptions = Omit<ParsedTmuxBashOptions, "tmuxEnvExportDenylist"> & {
+export type TmuxAction = (typeof TMUX_ACTIONS)[number];
+
+export type TmuxBashOptions = Omit<
+  ParsedTmuxBashOptions,
+  "tmuxEnabledActions" | "tmuxEnvExportDenylist"
+> & {
+  tmuxEnabledActions?: readonly TmuxAction[];
   tmuxEnvExportDenylist?: readonly string[];
 };
 
-export type ResolvedOptions = Omit<ParsedResolvedOptions, "tmuxEnvExportDenylist"> & {
+export type ResolvedOptions = Omit<
+  ParsedResolvedOptions,
+  "tmuxEnabledActions" | "tmuxEnvExportDenylist"
+> & {
+  tmuxEnabledActions: readonly TmuxAction[];
   tmuxEnvExportDenylist: readonly string[];
 };
 
