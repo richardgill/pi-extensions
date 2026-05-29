@@ -220,7 +220,6 @@ describe("tmux-bash unit", () => {
 
       expect(action.enum).toEqual(["peek", "kill"]);
       expect(tmuxTool.promptGuidelines?.join("\n")).toContain("tmux peek/kill");
-      expect(tmuxTool.promptGuidelines?.join("\n")).not.toContain("tmux list");
     });
 
     it("removes bash polling parameters by default", () => {

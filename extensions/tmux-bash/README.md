@@ -181,12 +181,10 @@ Default config settings:
   //   [] to disable tmux-bash guidelines.
   "systemPromptGuidelines": [
     "Use {{bashToolName}} with background: true or timeoutAction: \"background\" for long-running commands, servers, watchers, REPLs, interactive prompts, and background bash commands.",
-    "Background bash commands will report automatically when they finish.",
-    "Set pollInterval only when periodic progress updates are useful or if asked to watch or poll something.",
-    "Use {{tmuxToolName}} list to find background windows and their stable #{window_id} values like @123.",
-    "Use {{tmuxToolName}} peek/kill/poll/unpoll with a stable #{window_id} like @123.",
-    "If asked, you can attach to tmux window using: {{attachCommand}}, where @123 is a #{window_id}.",
-    "Use {{tmuxToolName}} poll/unpoll to start or stop periodic check-ins for an existing background window."
+    "Background bash commands will report automatically when they finish; do not keep polling manually unless you need interim output.",
+    "Use {{tmuxToolName}} list to find background windows",
+    "Use {{tmuxToolName}} peek/kill with a stable #{window_id} like @123.",
+    "If asked, you can attach to tmux window using: {{attachCommand}}, where @123 is a #{window_id}."
   ],
 
   // ─────────────────────────────────────────────────────────────
