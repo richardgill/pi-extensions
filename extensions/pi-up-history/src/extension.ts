@@ -2,6 +2,7 @@ import {
   CustomEditor,
   SessionManager,
   type ExtensionAPI,
+  type ExtensionContext,
   type SessionEntry,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
@@ -130,26 +131,40 @@ export const seedEditorHistory = (editor: HistoryEditor, promptsNewestFirst: str
   [...promptsNewestFirst].reverse().forEach((prompt: string) => editor.addToHistory?.(prompt));
 };
 
+const installPromptHistory = (ctx: ExtensionContext, promptsNewestFirst: string[]): void => {
+  const previousEditorFactory = ctx.ui.getEditorComponent();
+  ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+    const editor =
+      previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
+    seedEditorHistory(editor, promptsNewestFirst);
+    return editor;
+  });
+};
+
 export const upHistory = () => {
   return (pi: ExtensionAPI): void => {
-    pi.on("session_start", async (_event, ctx) => {
+    let loadVersion = 0;
+
+    pi.on("session_start", (_event, ctx) => {
       if (!ctx.hasUI) {
         return;
       }
 
-      const prompts = await loadRecentPrompts(ctx.cwd).catch(() => []);
-      if (prompts.length === 0) {
-        return;
-      }
+      const currentLoadVersion = ++loadVersion;
+      // Loading old sessions can be slow in large repos, so seed history after startup.
+      void loadRecentPrompts(ctx.cwd)
+        .then((prompts) => {
+          if (currentLoadVersion !== loadVersion || prompts.length === 0) {
+            return;
+          }
 
-      const previousEditorFactory = ctx.ui.getEditorComponent();
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-        const editor =
-          previousEditorFactory?.(tui, theme, keybindings) ??
-          new CustomEditor(tui, theme, keybindings);
-        seedEditorHistory(editor, prompts);
-        return editor;
-      });
+          installPromptHistory(ctx, prompts);
+        })
+        .catch(() => undefined);
+    });
+
+    pi.on("session_shutdown", () => {
+      loadVersion += 1;
     });
   };
 };
