@@ -12,16 +12,14 @@ Seeds Pi's native editor history from previous saved sessions for the current wo
 
 ## Install
 
-This package is private and is not published to npm.
-
 ```bash
-pi install /home/rich/code/pi-extensions/pi-up-history/extensions/pi-up-history
+pi install npm:@richardgill/pi-up-history
 ```
 
 Development:
 
 ```bash
-pi --no-extensions -e /home/rich/code/pi-extensions/pi-up-history/extensions/pi-up-history/src/index.ts
+pi --no-extensions -e ./extensions/pi-up-history/src/index.ts
 ```
 
 ## Manual smoke test
