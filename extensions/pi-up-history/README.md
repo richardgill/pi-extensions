@@ -4,24 +4,22 @@ Seeds Pi's native editor history from previous saved sessions for the current wo
 
 ## Behavior
 
-- On interactive Pi startup, reads existing session JSONL through Pi's `SessionManager`.
-- Extracts up to 100 unique non-empty user prompts for the current cwd.
+- On interactive Pi startup, reads existing session JSONL for the current cwd.
+- Extracts up to 30 unique non-empty user prompts for the current cwd.
 - Seeds the built-in editor history so the normal Up arrow recalls the most recent saved prompt first.
 - Wraps any existing custom editor factory instead of replacing it blindly.
 - Does not create settings, keybindings, commands, UI, or a separate history file.
 
 ## Install
 
-This package is private and is not published to npm.
-
 ```bash
-pi install /home/rich/code/pi-extensions/pi-up-history/extensions/pi-up-history
+pi install npm:@richardgill/pi-up-history
 ```
 
 Development:
 
 ```bash
-pi --no-extensions -e /home/rich/code/pi-extensions/pi-up-history/extensions/pi-up-history/src/index.ts
+pi --no-extensions -e ./extensions/pi-up-history/src/index.ts
 ```
 
 ## Manual smoke test
