@@ -1,5 +1,11 @@
 # @richardgill/pi-tmux-bash
 
+## 0.0.12
+
+### Patch Changes
+
+- [#49](https://github.com/richardgill/pi-extensions/pull/49) [`a44b3ed`](https://github.com/richardgill/pi-extensions/commit/a44b3ed5135a059c5456fbb3f5cf6eb0d6ef3542) Thanks [@richardgill](https://github.com/richardgill)! - Make tmux peek return compact output to the model by default to avoid bloating context.
+
 ## 0.0.11
 
 ### Patch Changes
