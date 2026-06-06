@@ -66,6 +66,20 @@ const peekContextOutput = (workspace: PiE2eWorkspace): string => {
   return `tmux window: peek-test ${window?.id}\n$ printf 'peek-me\\n'; sleep 30\npeek-me`;
 };
 
+const compactPeekContextOutput = (workspace: PiE2eWorkspace): string => {
+  const window = getWindows(workspace.tmuxSession()).find((item) => item.title === "peek-compact");
+  return [
+    `tmux window: peek-compact ${window?.id}`,
+    `$ for i in $(seq 1 8); do printf 'peek-compact-%s\\n' "$i"; done; sleep 30`,
+    "... (3 earlier lines omitted)",
+    "peek-compact-4",
+    "peek-compact-5",
+    "peek-compact-6",
+    "peek-compact-7",
+    "peek-compact-8",
+  ].join("\n");
+};
+
 const contextPath = (workspace: PiE2eWorkspace, name: string): string =>
   workspace.contextOutputPath(name);
 
@@ -383,6 +397,21 @@ const backgroundCommandCases: TmuxBashE2eTestCase[] = [
     captureTool: "tmux",
     expectedModelText: peekContextOutput,
     expectedOutputFileContent: "peek-me\n",
+    expectedTmuxSessionExists: true,
+  },
+  {
+    name: "peeks background tmux output compactly",
+    steps: [
+      bash("for i in $(seq 1 8); do printf 'peek-compact-%s\\n' \"$i\"; done; sleep 30", {
+        background: true,
+        name: "peek-compact",
+      }),
+      scriptedToolCallWithLatestWindowId("tmux", { action: "peek" }, { delayMs: 500 }),
+    ],
+    captureTool: "tmux",
+    expectedModelText: compactPeekContextOutput,
+    expectedOutputFileContent:
+      "peek-compact-1\npeek-compact-2\npeek-compact-3\npeek-compact-4\npeek-compact-5\npeek-compact-6\npeek-compact-7\npeek-compact-8\n",
     expectedTmuxSessionExists: true,
   },
 ];

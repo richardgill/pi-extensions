@@ -22,7 +22,8 @@ const DEFAULT_TMUX_SYSTEM_PROMPT_SNIPPET =
 const DEFAULT_BASH_TOOL_DESCRIPTION =
   'Execute a bash command in a background tmux window. Output is truncated to last {{bashContextLines}} lines or {{maxOutputKb}}KB. Defaults to a {{defaultTimeoutSeconds}}s timeout, max {{maxTimeoutSeconds}}s; timeoutAction defaults to "{{defaultTimeoutAction}}". Use background for long-running commands.';
 const DEFAULT_TMUX_TOOL_DESCRIPTION =
-  "Inspect and control background tmux windows created by bash.";
+  "Inspect and control background tmux windows created by bash. Peek output is compact by default.";
+const DEFAULT_PEEK_EXPANDED_DISPLAY_LINES = 50;
 
 export const TMUX_ACTIONS = ["list", "peek", "kill", "poll", "unpoll", "list-polls"] as const;
 const DEFAULT_TMUX_ENABLED_ACTIONS = ["list", "peek", "kill"] as const;
@@ -115,7 +116,7 @@ const buildTmuxBashOptionsSchema = () =>
       peekContextLines: positiveIntegerSchema.default(DEFAULT_MAX_LINES),
       peekCompactDisplayLines: positiveIntegerSchema.default(5),
       peekTruncatedCompactDisplayLines: positiveIntegerSchema.default(2),
-      peekExpandedDisplayLines: positiveIntegerSchema.default(DEFAULT_MAX_LINES),
+      peekExpandedDisplayLines: positiveIntegerSchema.default(DEFAULT_PEEK_EXPANDED_DISPLAY_LINES),
       tmuxWindowNameTemplate: tmuxWindowNameTemplateSchema.default("{{nameOrCommand}}"),
       maxTmuxWindowNameLength: positiveIntegerSchema.default(30),
       autoCloseWindowsOnCompletion: z.boolean().default(true),
