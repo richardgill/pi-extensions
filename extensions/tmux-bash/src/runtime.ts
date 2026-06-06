@@ -882,6 +882,22 @@ const peekWindowCollapsedLines = (window: TmuxWindow, options: ResolvedOptions):
     ),
   );
 
+const compactPeekContextLine = (line: string): string =>
+  line.replace(/^\.\.\. \((\d+) earlier lines,.*to expand\)$/, "... ($1 earlier lines omitted)");
+
+const peekWindowContextLines = (window: TmuxWindow, options: ResolvedOptions): string[] => [
+  `tmux window: ${window.title} ${window.id}`,
+  ...bashWindowDisplayLines(
+    window,
+    false,
+    options,
+    options.peekContextLines,
+    options.peekCompactDisplayLines,
+    options.peekExpandedDisplayLines,
+    options.peekTruncatedCompactDisplayLines,
+  ).map(compactPeekContextLine),
+];
+
 const renderPeekDetails = (window: TmuxWindow, options: ResolvedOptions): TmuxRenderDetails => ({
   summary: `tmux window: ${window.title} ${window.id}`,
   expandedLines: peekWindowExpandedLines(window, options),
@@ -930,18 +946,7 @@ const peekAction = (
   const window = requireBashWindowById("peek", session, filters, options, params.window);
   if ("isError" in window) return window;
 
-  const output = [
-    `tmux window: ${window.title} ${window.id}`,
-    ...bashWindowDisplayLines(
-      window,
-      true,
-      options,
-      options.peekContextLines,
-      options.peekCompactDisplayLines,
-      options.peekContextLines,
-      options.peekTruncatedCompactDisplayLines,
-    ),
-  ].join("\n");
+  const output = peekWindowContextLines(window, options).join("\n");
   const render = renderPeekDetails(window, options);
   return renderedToolText(output, render, { session });
 };
