@@ -5,7 +5,7 @@ export const ANSI_ESCAPE_PATTERN = new RegExp(
   "g",
 );
 const FULL_OUTPUT_PATH_IN_ANSI_PATTERN = new RegExp(`Full output: [^\\]${ANSI_ESCAPE}\\n]+`, "g");
-const EMPTY_REVERSE_VIDEO = "\u001b[7m\u001b[27m";
+const REVERSE_VIDEO_PATTERN = new RegExp(`${ANSI_ESCAPE}\\[(?:7|27)m`, "g");
 
 type AnsiToken = {
   text: string;
@@ -88,7 +88,7 @@ export const stableFullOutputPath = (text: string): string =>
 
 export const stableAnsiBashTranscript = (pane: string, doneMarker: string): string =>
   normalizeWrappedFullOutputPaths(
-    ansiBashTranscript(pane.replaceAll(EMPTY_REVERSE_VIDEO, ""), doneMarker)
+    ansiBashTranscript(pane.replace(REVERSE_VIDEO_PATTERN, ""), doneMarker)
       .replace(/Took [0-9]+\.[0-9]s/g, "Took <duration>")
       .replace(FULL_OUTPUT_PATH_IN_ANSI_PATTERN, "Full output: <path>"),
   );
