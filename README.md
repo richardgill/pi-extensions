@@ -2,6 +2,7 @@
 
 ## Extensions
 
+- [`pi-context-commands`](./extensions/context-commands/README.md) — Registers slash commands that load executable output into Pi context.
 - [`pi-extra-context-files`](./extensions/extra-context-files/README.md) — Loads custom named context files such as `AGENTS.local.md` into Pi.
 - [`pi-file-collector`](./extensions/file-collector/README.md) — Records files and line ranges that Pi reads, edits, writes, or cites in a JSONL file.
 - [`pi-parrot`](./extensions/parrot/README.md) — Populates Pi's input box with the last assistant message.

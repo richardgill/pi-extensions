@@ -12,6 +12,7 @@
     "types": ["node"],
     "noEmit": true,
     "paths": {
+      "@richardgill/pi-context-commands": ["./extensions/context-commands/src/extension.ts"],
       "@richardgill/pi-tmux-bash": ["./extensions/tmux-bash/src/extension.ts"],
       "@richardgill/pi-tmux-bash/core": ["./extensions/tmux-bash/src/core.ts"],
       "@richardgill/pi-file-collector": ["./extensions/file-collector/src/extension.ts"],

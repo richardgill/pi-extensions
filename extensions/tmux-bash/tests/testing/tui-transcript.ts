@@ -85,9 +85,18 @@ const normalizeWrappedFullOutputPaths = (text: string): string => {
 export const stableFullOutputPath = (text: string): string =>
   text.replace(/Full output:\s*[\s\S]*?\]/g, "Full output: <path>]");
 
+const normalizeExpandHint = (text: string): string =>
+  text
+    .split("\n")
+    .map((line) => {
+      const visible = stripAnsi(line).replaceAll("\u001b_pi:c\u0007", "");
+      return visible.includes(" to expand") ? visible.replace(/\s+\)/g, ")") : line;
+    })
+    .join("\n");
+
 export const stableAnsiBashTranscript = (pane: string, doneMarker: string): string =>
   normalizeWrappedFullOutputPaths(
-    ansiBashTranscript(pane, doneMarker)
+    normalizeExpandHint(ansiBashTranscript(pane, doneMarker))
       .replace(/Took [0-9]+\.[0-9]s/g, "Took <duration>")
       .replace(FULL_OUTPUT_PATH_IN_ANSI_PATTERN, "Full output: <path>"),
   );
