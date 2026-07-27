@@ -6,6 +6,7 @@ export const ANSI_ESCAPE_PATTERN = new RegExp(
 );
 const FULL_OUTPUT_PATH_IN_ANSI_PATTERN = new RegExp(`Full output: [^\\]${ANSI_ESCAPE}\\n]+`, "g");
 const CURSOR_PATTERN = new RegExp(`${ANSI_ESCAPE}\\[7m ?${ANSI_ESCAPE}\\[27m`, "g");
+const SPACE_BEFORE_CLOSE_PATTERN = new RegExp(` (?=(?:${ANSI_ESCAPE_PATTERN.source})*\\))`, "g");
 
 type AnsiToken = {
   text: string;
@@ -89,6 +90,7 @@ export const stableFullOutputPath = (text: string): string =>
 export const stableAnsiBashTranscript = (pane: string, doneMarker: string): string =>
   normalizeWrappedFullOutputPaths(
     ansiBashTranscript(pane.replace(CURSOR_PATTERN, ""), doneMarker)
+      .replace(SPACE_BEFORE_CLOSE_PATTERN, "")
       .replace(/Took [0-9]+\.[0-9]s/g, "Took <duration>")
       .replace(FULL_OUTPUT_PATH_IN_ANSI_PATTERN, "Full output: <path>"),
   );
