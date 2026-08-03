@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfigOrDefault } from "@richardgill/pi-config";
@@ -46,6 +47,12 @@ const getAncestorDirs = (cwd: string): string[] => {
   return [...getAncestorDirs(parent), dir];
 };
 
+const getSkillAncestorDirs = (cwd: string): string[] => {
+  const dirs = getAncestorDirs(cwd);
+  const homeIndex = dirs.indexOf(path.resolve(os.homedir()));
+  return homeIndex === -1 ? dirs : dirs.slice(homeIndex + 1);
+};
+
 const isDirectory = (directoryPath: string): boolean => {
   try {
     return statSync(directoryPath).isDirectory();
@@ -80,7 +87,7 @@ export const discoverProjectSkillDirectories = (
   options: Pick<ResolvedProjectResourcesOptions, "skillDirectoryPaths">,
 ): string[] => [
   ...new Set(
-    getAncestorDirs(cwd)
+    getSkillAncestorDirs(cwd)
       .flatMap((dir) =>
         options.skillDirectoryPaths.map((skillPath) => path.resolve(dir, skillPath)),
       )

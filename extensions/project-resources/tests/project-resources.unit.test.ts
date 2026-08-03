@@ -41,6 +41,7 @@ const makeContext = ({ cwd, trusted }: { cwd: string; trusted: boolean }) =>
   }) as unknown as ExtensionContext;
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -88,13 +89,52 @@ describe("loadProjectContextFiles", () => {
     expect(files.map((file) => file.content)).toEqual(["root rules", "project rules"]);
   });
 
+  it("continues loading context files from HOME ancestors", () => {
+    const home = makeTempDir();
+    const cwd = path.join(home, "code", "project");
+    const filename = "ROOT.local.md";
+    const homeContextFile = path.join(home, filename);
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(homeContextFile, "home rules", "utf8");
+
+    expect(loadProjectContextFiles(cwd, resolveOptions({ contextFilenames: [filename] }))).toEqual([
+      { path: homeContextFile, content: "home rules" },
+    ]);
+  });
+
   it("ignores missing files", () => {
     expect(loadProjectContextFiles(makeTempDir(), resolveOptions())).toEqual([]);
   });
 });
 
 describe("discoverProjectSkillDirectories", () => {
-  it("discovers ancestor directories in top-down order", () => {
+  it("excludes HOME itself", () => {
+    const home = makeTempDir();
+    const cwd = path.join(home, "code", "project");
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+    mkdirSync(path.join(home, ".pi", "skills"), { recursive: true });
+
+    expect(discoverProjectSkillDirectories(cwd, resolveOptions())).toEqual([]);
+  });
+
+  it("discovers ancestors above a Git root and below HOME", () => {
+    const home = makeTempDir();
+    const root = path.join(home, "code");
+    const gitRoot = path.join(root, "org", "repo");
+    const cwd = path.join(gitRoot, "src");
+    const inheritedSkills = path.join(root, ".claude", "skills");
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    mkdirSync(path.join(gitRoot, ".git"), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(inheritedSkills, { recursive: true });
+
+    expect(discoverProjectSkillDirectories(cwd, resolveOptions())).toEqual([inheritedSkills]);
+  });
+
+  it("preserves filesystem-root ancestor discovery outside HOME", () => {
     const root = makeTempDir();
     const project = path.join(root, "project");
     const nested = path.join(project, "src");
