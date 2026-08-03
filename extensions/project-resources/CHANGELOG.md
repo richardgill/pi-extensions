@@ -1,5 +1,11 @@
 # @richardgill/pi-project-resources
 
+## 0.1.0
+
+### Minor Changes
+
+- [#54](https://github.com/richardgill/pi-extensions/pull/54) [`cd2affb`](https://github.com/richardgill/pi-extensions/commit/cd2affb8aa1e4e9ed1b51af29ed84bd82fc90eec) Thanks [@richardgill](https://github.com/richardgill)! - Discover trusted ancestor `.pi/skills` and `.claude/skills` directories.
+
 ## 0.0.8
 
 ### Patch Changes
