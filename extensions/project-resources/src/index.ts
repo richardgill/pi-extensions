@@ -4,28 +4,28 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { z } from "zod";
 
-export type ExtraContextFilesOptions = {
-  filenames?: string[];
-  sectionTitle?: string;
+export type ProjectResourcesOptions = {
+  contextFilenames?: string[];
+  contextSectionTitle?: string;
   skillDirectoryPaths?: string[];
 };
 
-type ResolvedOptions = Required<ExtraContextFilesOptions>;
+type ResolvedProjectResourcesOptions = Required<ProjectResourcesOptions>;
 
-export type ExtraContextFile = {
+export type ProjectContextFile = {
   path: string;
   content: string;
 };
 
-export const DEFAULT_OPTIONS: ResolvedOptions = {
-  filenames: ["AGENTS.local.md", "CLAUDE.local.md"],
-  sectionTitle: "Extra Context Files",
+export const DEFAULT_OPTIONS: ResolvedProjectResourcesOptions = {
+  contextFilenames: ["AGENTS.local.md", "CLAUDE.local.md"],
+  contextSectionTitle: "Extra Context Files",
   skillDirectoryPaths: [".pi/skills", ".claude/skills"],
 };
 
 const OptionsSchema = z.object({
-  filenames: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.filenames]),
-  sectionTitle: z.string().default(DEFAULT_OPTIONS.sectionTitle),
+  contextFilenames: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.contextFilenames]),
+  contextSectionTitle: z.string().default(DEFAULT_OPTIONS.contextSectionTitle),
   skillDirectoryPaths: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.skillDirectoryPaths]),
 });
 
@@ -33,8 +33,9 @@ const ConfigSchema = OptionsSchema;
 
 const isPresent = <T>(value: T | null): value is T => value !== null;
 
-export const resolveOptions = (input: ExtraContextFilesOptions = {}): ResolvedOptions =>
-  OptionsSchema.parse(input);
+export const resolveOptions = (
+  input: ProjectResourcesOptions = {},
+): ResolvedProjectResourcesOptions => OptionsSchema.parse(input);
 
 const getAncestorDirs = (cwd: string): string[] => {
   const dir = path.resolve(cwd);
@@ -53,7 +54,7 @@ const isDirectory = (directoryPath: string): boolean => {
   }
 };
 
-const loadContextFile = (filePath: string): ExtraContextFile | null => {
+const loadContextFile = (filePath: string): ProjectContextFile | null => {
   try {
     if (!existsSync(filePath) || !statSync(filePath).isFile()) {
       return null;
@@ -64,19 +65,19 @@ const loadContextFile = (filePath: string): ExtraContextFile | null => {
   }
 };
 
-export const loadExtraContextFiles = (
+export const loadProjectContextFiles = (
   cwd: string,
-  options: Pick<ResolvedOptions, "filenames">,
-): ExtraContextFile[] =>
+  options: Pick<ResolvedProjectResourcesOptions, "contextFilenames">,
+): ProjectContextFile[] =>
   getAncestorDirs(cwd).flatMap((dir) =>
-    options.filenames
+    options.contextFilenames
       .map((filename) => loadContextFile(path.join(dir, filename)))
       .filter(isPresent),
   );
 
-export const discoverSkillDirectories = (
+export const discoverProjectSkillDirectories = (
   cwd: string,
-  options: Pick<ResolvedOptions, "skillDirectoryPaths">,
+  options: Pick<ResolvedProjectResourcesOptions, "skillDirectoryPaths">,
 ): string[] => [
   ...new Set(
     getAncestorDirs(cwd)
@@ -88,15 +89,15 @@ export const discoverSkillDirectories = (
 ];
 
 export const formatContextSection = (
-  files: ExtraContextFile[],
-  options: Pick<ResolvedOptions, "sectionTitle">,
+  files: ProjectContextFile[],
+  options: Pick<ResolvedProjectResourcesOptions, "contextSectionTitle">,
 ): string => {
   if (files.length === 0) {
     return "";
   }
 
   const body = files.map((file) => `## ${file.path}\n\n${file.content}`).join("\n\n");
-  return `\n\n# ${options.sectionTitle}\n\nAdditional project instructions and guidelines:\n\n${body}\n`;
+  return `\n\n# ${options.contextSectionTitle}\n\nAdditional project instructions and guidelines:\n\n${body}\n`;
 };
 
 const formatDisplayPath = (filePath: string, cwd: string): string => {
@@ -109,15 +110,15 @@ const formatDisplayPath = (filePath: string, cwd: string): string => {
 
 const printStartupSection = (
   ctx: ExtensionContext,
-  files: ExtraContextFile[],
-  options: Pick<ResolvedOptions, "sectionTitle">,
+  files: ProjectContextFile[],
+  options: Pick<ResolvedProjectResourcesOptions, "contextSectionTitle">,
 ): void => {
   if (!ctx.hasUI || files.length === 0) {
     return;
   }
 
   const unindent = "\b";
-  const header = `${unindent}${ctx.ui.theme.fg("mdHeading", `[${options.sectionTitle}]`)}`;
+  const header = `${unindent}${ctx.ui.theme.fg("mdHeading", `[${options.contextSectionTitle}]`)}`;
   const paths = files
     .map(
       (file) =>
@@ -127,14 +128,14 @@ const printStartupSection = (
   ctx.ui.notify(`${header}\n${paths}`, "info");
 };
 
-export const extraContextFiles = (input: ExtraContextFilesOptions = {}) => {
+export const projectResources = (input: ProjectResourcesOptions = {}) => {
   const options = resolveOptions(input);
 
   return (pi: ExtensionAPI): void => {
-    let loadedFiles: ExtraContextFile[] | undefined;
+    let loadedFiles: ProjectContextFile[] | undefined;
 
     pi.on("session_start", async (_event, ctx) => {
-      loadedFiles = loadExtraContextFiles(ctx.cwd, options);
+      loadedFiles = loadProjectContextFiles(ctx.cwd, options);
       printStartupSection(ctx, loadedFiles, options);
     });
 
@@ -143,11 +144,11 @@ export const extraContextFiles = (input: ExtraContextFilesOptions = {}) => {
       if (!trustedContext.isProjectTrusted()) {
         return { skillPaths: [] };
       }
-      return { skillPaths: discoverSkillDirectories(event.cwd, options) };
+      return { skillPaths: discoverProjectSkillDirectories(event.cwd, options) };
     });
 
     pi.on("before_agent_start", async (event, ctx) => {
-      loadedFiles = loadedFiles ?? loadExtraContextFiles(ctx.cwd, options);
+      loadedFiles = loadedFiles ?? loadProjectContextFiles(ctx.cwd, options);
       const section = formatContextSection(loadedFiles, options);
       if (!section) {
         return;
@@ -158,8 +159,8 @@ export const extraContextFiles = (input: ExtraContextFilesOptions = {}) => {
 };
 
 const config = loadConfigOrDefault({
-  filename: "extra-context-files.jsonc",
+  filename: "project-resources.jsonc",
   schema: ConfigSchema,
 });
 
-export default extraContextFiles(config);
+export default projectResources(config);
