@@ -1,13 +1,18 @@
 # pi-extra-context-files
 
-pi extension for loading extra context files into the system prompt.
+Pi extension for loading extra context files and skill directories inherited from ancestor directories.
 
 By default it loads these files while walking from the filesystem root to the current working directory:
 
 - `AGENTS.local.md`
 - `CLAUDE.local.md`
 
-When files are found, the extension shows them at startup and appends their contents to the system prompt.
+It also discovers these skill directories along the same path for trusted projects:
+
+- `.pi/skills`
+- `.claude/skills`
+
+When context files are found, the extension shows them at startup and appends their contents to the system prompt. Existing skill directories are contributed through Pi's `resources_discover` event.
 
 Part of [`pi-extensions`](../../README.md).
 
@@ -32,6 +37,7 @@ The default location is `~/.pi/agent/extra-context-files.jsonc`, or `$PI_EXTENSI
 ```jsonc
 {
   "filenames": ["AGENTS.local.md", "CLAUDE.local.md"],
-  "sectionTitle": "Extra Context Files"
+  "sectionTitle": "Extra Context Files",
+  "skillDirectoryPaths": [".pi/skills", ".claude/skills"]
 }
 ```

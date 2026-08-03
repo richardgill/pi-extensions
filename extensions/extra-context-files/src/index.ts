@@ -7,6 +7,7 @@ import { z } from "zod";
 export type ExtraContextFilesOptions = {
   filenames?: string[];
   sectionTitle?: string;
+  skillDirectoryPaths?: string[];
 };
 
 type ResolvedOptions = Required<ExtraContextFilesOptions>;
@@ -19,11 +20,13 @@ export type ExtraContextFile = {
 export const DEFAULT_OPTIONS: ResolvedOptions = {
   filenames: ["AGENTS.local.md", "CLAUDE.local.md"],
   sectionTitle: "Extra Context Files",
+  skillDirectoryPaths: [".pi/skills", ".claude/skills"],
 };
 
 const OptionsSchema = z.object({
   filenames: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.filenames]),
   sectionTitle: z.string().default(DEFAULT_OPTIONS.sectionTitle),
+  skillDirectoryPaths: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.skillDirectoryPaths]),
 });
 
 const ConfigSchema = OptionsSchema;
@@ -40,6 +43,14 @@ const getAncestorDirs = (cwd: string): string[] => {
     return [dir];
   }
   return [...getAncestorDirs(parent), dir];
+};
+
+const isDirectory = (directoryPath: string): boolean => {
+  try {
+    return statSync(directoryPath).isDirectory();
+  } catch {
+    return false;
+  }
 };
 
 const loadContextFile = (filePath: string): ExtraContextFile | null => {
@@ -62,6 +73,19 @@ export const loadExtraContextFiles = (
       .map((filename) => loadContextFile(path.join(dir, filename)))
       .filter(isPresent),
   );
+
+export const discoverSkillDirectories = (
+  cwd: string,
+  options: Pick<ResolvedOptions, "skillDirectoryPaths">,
+): string[] => [
+  ...new Set(
+    getAncestorDirs(cwd)
+      .flatMap((dir) =>
+        options.skillDirectoryPaths.map((skillPath) => path.resolve(dir, skillPath)),
+      )
+      .filter(isDirectory),
+  ),
+];
 
 export const formatContextSection = (
   files: ExtraContextFile[],
@@ -112,6 +136,14 @@ export const extraContextFiles = (input: ExtraContextFilesOptions = {}) => {
     pi.on("session_start", async (_event, ctx) => {
       loadedFiles = loadExtraContextFiles(ctx.cwd, options);
       printStartupSection(ctx, loadedFiles, options);
+    });
+
+    pi.on("resources_discover", async (event, ctx) => {
+      const trustedContext = ctx as ExtensionContext & { isProjectTrusted(): boolean };
+      if (!trustedContext.isProjectTrusted()) {
+        return { skillPaths: [] };
+      }
+      return { skillPaths: discoverSkillDirectories(event.cwd, options) };
     });
 
     pi.on("before_agent_start", async (event, ctx) => {
