@@ -1,4 +1,4 @@
-# @richardgill/pi-extra-context-files
+# @richardgill/pi-project-resources
 
 ## 0.0.8
 

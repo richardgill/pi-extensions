@@ -5,7 +5,7 @@
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
-    "extensions/extra-context-files": {
+    "extensions/project-resources": {
       "entry": ["tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },

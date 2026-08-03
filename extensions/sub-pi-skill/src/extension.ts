@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type {
   ExtensionAPI,
@@ -9,7 +9,7 @@ import type {
   ToolCallEvent,
   TurnEndEvent,
 } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { z } from "zod";
 
 type SkillInvocation = {
@@ -247,37 +247,15 @@ const loadSkillMetadata = (filePath: string): SkillPiMetadata => {
   }
 };
 
-const getSkillRootDirs = (ctx: ExtensionContext): string[] => {
-  return [
-    path.join(getAgentDir(), "skills"),
-    path.join(ctx.cwd, ".pi", "skills"),
-    path.join(ctx.cwd, ".claude", "skills"),
-  ];
+const resolveSkillPath = (skillName: string): string | null => {
+  const command = extensionApi
+    ?.getCommands()
+    .find(({ name, source }) => name === `skill:${skillName}` && source === "skill");
+  return command?.sourceInfo.path ?? null;
 };
 
-const getSkillPathCandidates = (ctx: ExtensionContext, skillName: string): string[] => {
-  const candidates: string[] = [];
-  for (const root of getSkillRootDirs(ctx)) {
-    candidates.push(path.join(root, `${skillName}.md`));
-    candidates.push(path.join(root, skillName, "SKILL.md"));
-  }
-  return candidates;
-};
-
-const resolveSkillPath = (ctx: ExtensionContext, skillName: string): string | null => {
-  for (const candidate of getSkillPathCandidates(ctx, skillName)) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-};
-
-const loadSkillMetadataByName = (
-  ctx: ExtensionContext,
-  skillName: string,
-): SkillPiMetadata | null => {
-  const skillPath = resolveSkillPath(ctx, skillName);
+const loadSkillMetadataByName = (skillName: string): SkillPiMetadata | null => {
+  const skillPath = resolveSkillPath(skillName);
   if (!skillPath) {
     return null;
   }
@@ -430,7 +408,7 @@ const handleInput = async (
   }
 
   pendingSkill = skillCommand;
-  const metadata = loadSkillMetadataByName(ctx, skillCommand.name);
+  const metadata = loadSkillMetadataByName(skillCommand.name);
   if (!metadata) {
     pendingSkill = null;
     return;

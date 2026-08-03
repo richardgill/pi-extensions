@@ -16,7 +16,7 @@
       "@richardgill/pi-tmux-bash": ["./extensions/tmux-bash/src/extension.ts"],
       "@richardgill/pi-tmux-bash/core": ["./extensions/tmux-bash/src/core.ts"],
       "@richardgill/pi-file-collector": ["./extensions/file-collector/src/extension.ts"],
-      "@richardgill/pi-extra-context-files": ["./extensions/extra-context-files/src/index.ts"],
+      "@richardgill/pi-project-resources": ["./extensions/project-resources/src/index.ts"],
       "@richardgill/pi-parrot": ["./extensions/parrot/src/extension.ts"],
       "@richardgill/pi-preset": ["./extensions/preset/src/extension.ts"],
       "@richardgill/pi-sub-pi": ["./extensions/sub-pi/src/extension.ts"],
