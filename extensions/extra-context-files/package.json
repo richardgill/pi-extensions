@@ -1,14 +1,14 @@
 {
-  "name": "@richardgill/pi-project-resources",
+  "name": "@richardgill/pi-extra-context-files",
   "version": "0.0.8",
   "keywords": [
     "pi-package"
   ],
-  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/project-resources",
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/extra-context-files",
   "repository": {
     "type": "git",
     "url": "https://github.com/richardgill/pi-extensions",
-    "directory": "extensions/project-resources"
+    "directory": "extensions/extra-context-files"
   },
   "files": [
     "src"

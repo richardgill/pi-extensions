@@ -5,11 +5,10 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  discoverProjectSkillDirectories,
+  discoverSkillDirectories,
+  extraContextFiles,
   formatContextSection,
-  getAncestorDirectories,
-  loadProjectContextFiles,
-  projectResources,
+  loadExtraContextFiles,
   resolveOptions,
 } from "../src/index";
 
@@ -18,9 +17,9 @@ type EventHandler = (event: never, ctx: ExtensionContext) => unknown;
 const tempDirs: string[] = [];
 
 const makeTempDir = (): string => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "pi-project-resources-"));
-  tempDirs.push(directory);
-  return directory;
+  const dir = mkdtempSync(path.join(os.tmpdir(), "pi-extra-context-files-"));
+  tempDirs.push(dir);
+  return dir;
 };
 
 const makeExtensionHarness = () => {
@@ -30,8 +29,8 @@ const makeExtensionHarness = () => {
       handlers.set(eventName, handler);
     }),
   } as unknown as ExtensionAPI;
-  projectResources()(pi);
-  return { handlers, pi };
+  extraContextFiles()(pi);
+  return handlers;
 };
 
 const makeContext = ({ cwd, trusted }: { cwd: string; trusted: boolean }) =>
@@ -42,49 +41,36 @@ const makeContext = ({ cwd, trusted }: { cwd: string; trusted: boolean }) =>
   }) as unknown as ExtensionContext;
 
 afterEach(() => {
-  for (const directory of tempDirs.splice(0)) {
-    rmSync(directory, { recursive: true, force: true });
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 describe("resolveOptions", () => {
-  it("uses project context files and skill directories by default", () => {
+  it("uses extra context files and skill directories by default", () => {
     expect(resolveOptions()).toEqual({
-      contextFilenames: ["AGENTS.local.md", "CLAUDE.local.md"],
-      contextSectionTitle: "Extra Context Files",
+      filenames: ["AGENTS.local.md", "CLAUDE.local.md"],
+      sectionTitle: "Extra Context Files",
       skillDirectoryPaths: [".pi/skills", ".claude/skills"],
     });
   });
 
-  it("allows context and skill configuration overrides", () => {
+  it("allows configuration overrides", () => {
     expect(
       resolveOptions({
-        contextFilenames: ["PI.local.md"],
-        contextSectionTitle: "Extra Rules",
+        filenames: ["PI.local.md"],
+        sectionTitle: "Extra Rules",
         skillDirectoryPaths: [".agent/skills"],
       }),
     ).toEqual({
-      contextFilenames: ["PI.local.md"],
-      contextSectionTitle: "Extra Rules",
+      filenames: ["PI.local.md"],
+      sectionTitle: "Extra Rules",
       skillDirectoryPaths: [".agent/skills"],
     });
   });
 });
 
-describe("getAncestorDirectories", () => {
-  it("orders ancestors from the filesystem root down to cwd", () => {
-    const cwd = path.join(makeTempDir(), "project", "src");
-    mkdirSync(cwd, { recursive: true });
-
-    const directories = getAncestorDirectories(cwd);
-
-    expect(directories[0]).toBe(path.parse(cwd).root);
-    expect(directories.at(-2)).toBe(path.dirname(cwd));
-    expect(directories.at(-1)).toBe(cwd);
-  });
-});
-
-describe("loadProjectContextFiles", () => {
+describe("loadExtraContextFiles", () => {
   it("loads configured files from ancestors in top-down order", () => {
     const root = makeTempDir();
     const project = path.join(root, "project");
@@ -93,7 +79,7 @@ describe("loadProjectContextFiles", () => {
     writeFileSync(path.join(root, "AGENTS.local.md"), "root rules", "utf8");
     writeFileSync(path.join(project, "CLAUDE.local.md"), "project rules", "utf8");
 
-    const files = loadProjectContextFiles(nested, resolveOptions());
+    const files = loadExtraContextFiles(nested, resolveOptions());
 
     expect(files.map((file) => path.relative(root, file.path))).toEqual([
       "AGENTS.local.md",
@@ -103,11 +89,11 @@ describe("loadProjectContextFiles", () => {
   });
 
   it("ignores missing files", () => {
-    expect(loadProjectContextFiles(makeTempDir(), resolveOptions())).toEqual([]);
+    expect(loadExtraContextFiles(makeTempDir(), resolveOptions())).toEqual([]);
   });
 });
 
-describe("discoverProjectSkillDirectories", () => {
+describe("discoverSkillDirectories", () => {
   it("discovers ancestor directories in top-down order", () => {
     const root = makeTempDir();
     const project = path.join(root, "project");
@@ -118,10 +104,7 @@ describe("discoverProjectSkillDirectories", () => {
     mkdirSync(rootSkills, { recursive: true });
     mkdirSync(projectSkills, { recursive: true });
 
-    expect(discoverProjectSkillDirectories(nested, resolveOptions())).toEqual([
-      rootSkills,
-      projectSkills,
-    ]);
+    expect(discoverSkillDirectories(nested, resolveOptions())).toEqual([rootSkills, projectSkills]);
   });
 
   it("ignores missing paths and files", () => {
@@ -131,7 +114,7 @@ describe("discoverProjectSkillDirectories", () => {
     mkdirSync(path.join(root, ".pi"), { recursive: true });
     writeFileSync(path.join(root, ".pi", "skills"), "not a directory", "utf8");
 
-    expect(discoverProjectSkillDirectories(nested, resolveOptions())).toEqual([]);
+    expect(discoverSkillDirectories(nested, resolveOptions())).toEqual([]);
   });
 
   it("deduplicates resolved directory paths", () => {
@@ -141,20 +124,17 @@ describe("discoverProjectSkillDirectories", () => {
     mkdirSync(nested, { recursive: true });
     mkdirSync(skills, { recursive: true });
 
-    const discovered = discoverProjectSkillDirectories(
-      nested,
-      resolveOptions({ skillDirectoryPaths: [skills, skills] }),
-    );
-
-    expect(discovered).toEqual([skills]);
+    expect(
+      discoverSkillDirectories(nested, resolveOptions({ skillDirectoryPaths: [skills, skills] })),
+    ).toEqual([skills]);
   });
 });
 
 describe("formatContextSection", () => {
-  it("formats loaded files with the configured system prompt section title", () => {
+  it("formats loaded files as a system prompt section", () => {
     const section = formatContextSection(
       [{ path: "/tmp/AGENTS.local.md", content: "Use these rules." }],
-      resolveOptions({ contextSectionTitle: "Extra Rules" }),
+      resolveOptions({ sectionTitle: "Extra Rules" }),
     );
 
     expect(section).toContain("# Extra Rules");
@@ -167,21 +147,11 @@ describe("formatContextSection", () => {
   });
 });
 
-describe("projectResources", () => {
-  it("registers context and resource event handlers", () => {
-    const { handlers } = makeExtensionHarness();
-
-    expect([...handlers.keys()]).toEqual([
-      "session_start",
-      "resources_discover",
-      "before_agent_start",
-    ]);
-  });
-
-  it("does not contribute project skill paths when the project is untrusted", async () => {
+describe("extraContextFiles", () => {
+  it("does not contribute skill paths when the project is untrusted", async () => {
     const cwd = makeTempDir();
     mkdirSync(path.join(cwd, ".pi", "skills"), { recursive: true });
-    const { handlers } = makeExtensionHarness();
+    const handlers = makeExtensionHarness();
 
     const result = await handlers.get("resources_discover")?.(
       { cwd, reason: "startup" } as never,
@@ -191,13 +161,13 @@ describe("projectResources", () => {
     expect(result).toEqual({ skillPaths: [] });
   });
 
-  it("contributes discovered skill paths through resources_discover when trusted", async () => {
+  it("contributes discovered skill paths when the project is trusted", async () => {
     const root = makeTempDir();
     const cwd = path.join(root, "project", "src");
     const skills = path.join(root, ".claude", "skills");
     mkdirSync(cwd, { recursive: true });
     mkdirSync(skills, { recursive: true });
-    const { handlers } = makeExtensionHarness();
+    const handlers = makeExtensionHarness();
 
     const result = await handlers.get("resources_discover")?.(
       { cwd, reason: "startup" } as never,
@@ -205,23 +175,5 @@ describe("projectResources", () => {
     );
 
     expect(result).toEqual({ skillPaths: [skills] });
-  });
-
-  it("retains context loading from session start through system prompt assembly", async () => {
-    const cwd = makeTempDir();
-    writeFileSync(path.join(cwd, "AGENTS.local.md"), "fixture context", "utf8");
-    const { handlers } = makeExtensionHarness();
-    const context = makeContext({ cwd, trusted: true });
-
-    await handlers.get("session_start")?.({ reason: "startup" } as never, context);
-    const result = await handlers.get("before_agent_start")?.(
-      { systemPrompt: "base prompt" } as never,
-      context,
-    );
-
-    expect(result).toMatchObject({ systemPrompt: expect.stringContaining("fixture context") });
-    expect(result).toMatchObject({
-      systemPrompt: expect.stringContaining("# Extra Context Files"),
-    });
   });
 });
