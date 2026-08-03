@@ -1,5 +1,11 @@
 # @richardgill/pi-project-resources
 
+## 0.1.1
+
+### Patch Changes
+
+- [#56](https://github.com/richardgill/pi-extensions/pull/56) [`36b2ff6`](https://github.com/richardgill/pi-extensions/commit/36b2ff6efabd8879cdec5bf3ae4959012ba6e11e) Thanks [@richardgill](https://github.com/richardgill)! - Exclude home-level skill directories while retaining inherited discovery below `HOME`.
+
 ## 0.1.0
 
 ### Minor Changes
