@@ -1,6 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
+    "extensions/background-bash": {
+      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
     "extensions/context-commands": {
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]

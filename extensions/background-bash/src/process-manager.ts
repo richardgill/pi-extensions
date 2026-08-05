@@ -1,0 +1,291 @@
+import { createWriteStream, type WriteStream } from "node:fs";
+import { chmod, mkdir, rm, unlink } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
+import { resolve } from "node:path";
+import { finished } from "node:stream/promises";
+import { spawn, type ChildProcess } from "node:child_process";
+import type {
+  AgentToolResult,
+  BashOperations,
+  BashToolDetails,
+} from "@earendil-works/pi-coding-agent";
+import type { ResolvedOptions } from "./config";
+
+export type BackgroundBashDetails = BashToolDetails & {
+  pgid?: number;
+  active?: boolean;
+};
+
+export type ProcessOutcome =
+  | { result: AgentToolResult<BackgroundBashDetails | undefined>; error?: undefined }
+  | { result?: undefined; error: Error };
+
+export type ManagedProcess = {
+  pgid: number;
+  command: string;
+  name?: string;
+  startedAt: number;
+  logPath: string;
+  controller: AbortController;
+  notifyOnExit: boolean;
+  exitCode?: number;
+  latest?: AgentToolResult<BackgroundBashDetails | undefined>;
+  completion?: Promise<ProcessOutcome>;
+  settlement: Promise<void>;
+  detachAbort: () => void;
+};
+
+type ProcessMetadata = {
+  command: string;
+  name?: string;
+  controller: AbortController;
+  env: NodeJS.ProcessEnv;
+  detachAbort: () => void;
+};
+
+type Deferred<Value> = {
+  promise: Promise<Value>;
+  resolve: (value: Value) => void;
+  reject: (error: unknown) => void;
+};
+
+type PreparedExecution = {
+  operations: BashOperations;
+  spawned: Promise<ManagedProcess>;
+};
+
+const deferred = <Value>(): Deferred<Value> => {
+  let resolvePromise!: (value: Value) => void;
+  let rejectPromise!: (error: unknown) => void;
+  const promise = new Promise<Value>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
+};
+
+const signalExitCode = (signal: NodeJS.Signals | null): number | undefined => {
+  if (!signal) return undefined;
+  const number = osConstants.signals[signal];
+  return number === undefined ? undefined : 128 + number;
+};
+
+const waitForChild = (
+  child: ChildProcess,
+): Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }> =>
+  new Promise((resolveChild, rejectChild) => {
+    child.once("error", rejectChild);
+    child.once("close", (exitCode, signal) => resolveChild({ exitCode, signal }));
+  });
+
+const killProcessGroup = (pgid: number): void => {
+  try {
+    process.kill(-pgid, "SIGKILL");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ESRCH") throw error;
+  }
+};
+
+export class ProcessManager {
+  readonly processes = new Map<number, ManagedProcess>();
+  private runDir: string | undefined;
+  private shuttingDown = false;
+
+  constructor(
+    private readonly options: ResolvedOptions,
+    private readonly onBackgroundCountChange: (count: number) => void,
+  ) {}
+
+  initialize = async (sessionId: string): Promise<void> => {
+    this.shuttingDown = false;
+    const runName = `${encodeURIComponent(sessionId)}-${process.pid}-${Date.now().toString(36)}`;
+    this.runDir = resolve(this.options.outputDir, runName);
+    await mkdir(this.runDir, { recursive: true, mode: 0o700 });
+    await chmod(this.runDir, 0o700);
+  };
+
+  prepare = (metadata: ProcessMetadata): PreparedExecution => {
+    const spawned = deferred<ManagedProcess>();
+    const operations: BashOperations = {
+      exec: async (command, cwd, options) => {
+        try {
+          return await this.spawnProcess(command, cwd, options, metadata, spawned);
+        } catch (error) {
+          spawned.reject(error);
+          throw error;
+        }
+      },
+    };
+    return { operations, spawned: spawned.promise };
+  };
+
+  handoff = (
+    managed: ManagedProcess,
+    notify: (managed: ManagedProcess, outcome: ProcessOutcome) => void,
+  ): void => {
+    managed.notifyOnExit = true;
+    managed.detachAbort();
+    const completion = managed.completion;
+    if (!completion) throw new Error(`Process ${managed.pgid} has no completion promise`);
+
+    this.emitBackgroundCount();
+    void completion.then((outcome) => {
+      try {
+        if (managed.notifyOnExit && !this.shuttingDown) notify(managed, outcome);
+      } finally {
+        this.processes.delete(managed.pgid);
+        this.emitBackgroundCount();
+      }
+    });
+  };
+
+  finishForeground = (managed: ManagedProcess): void => {
+    managed.detachAbort();
+    this.processes.delete(managed.pgid);
+  };
+
+  kill = async (pgid: number): Promise<{ managed: ManagedProcess; outcome: ProcessOutcome }> => {
+    const managed = this.processes.get(pgid);
+    if (!managed?.notifyOnExit) {
+      throw new Error(`No active background process with PGID ${pgid}`);
+    }
+
+    managed.notifyOnExit = false;
+    this.emitBackgroundCount();
+    managed.detachAbort();
+    managed.controller.abort();
+    const outcome = managed.completion
+      ? await managed.completion
+      : { error: new Error("Process stopped before command execution was ready") };
+    this.processes.delete(pgid);
+    return { managed, outcome };
+  };
+
+  shutdown = async (): Promise<void> => {
+    this.shuttingDown = true;
+    const active = [...this.processes.values()];
+    active.forEach((managed) => {
+      managed.notifyOnExit = false;
+      managed.detachAbort();
+      managed.controller.abort();
+    });
+    this.emitBackgroundCount();
+    await Promise.allSettled(active.map((managed) => managed.completion ?? managed.settlement));
+    this.processes.clear();
+    if (!this.options.preserveOutputFiles && this.runDir) {
+      await rm(this.runDir, { recursive: true, force: true });
+    }
+    this.runDir = undefined;
+  };
+
+  removeTemporaryOutput = async (path: string | undefined, stablePath: string): Promise<void> => {
+    if (!path || path === stablePath) return;
+    await unlink(path).catch(() => undefined);
+  };
+
+  private emitBackgroundCount = (): void => {
+    const count = [...this.processes.values()].filter((managed) => managed.notifyOnExit).length;
+    this.onBackgroundCountChange(count);
+  };
+
+  private spawnProcess = async (
+    command: string,
+    cwd: string,
+    options: Parameters<BashOperations["exec"]>[2],
+    metadata: ProcessMetadata,
+    spawned: Deferred<ManagedProcess>,
+  ): Promise<{ exitCode: number | null }> => {
+    if (this.shuttingDown) throw new Error("Background bash is shutting down");
+    const runDir = this.runDir;
+    if (!runDir) throw new Error("Background bash is not initialized");
+    const shell = process.env.SHELL ?? "/bin/bash";
+    const child = spawn(shell, ["-c", command], {
+      cwd,
+      detached: true,
+      env: { ...options.env, ...metadata.env },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    if (!child.pid) throw new Error("Bash process started without a PID");
+
+    const pgid = child.pid;
+    const logPath = resolve(runDir, `${pgid}.log`);
+    const log = createWriteStream(logPath, { flags: "w", mode: 0o600 });
+    const childSettlement = waitForChild(child);
+    let timedOut = false;
+    const onAbort = () => killProcessGroup(pgid);
+    const timeoutHandle = options.timeout
+      ? setTimeout(() => {
+          timedOut = true;
+          killProcessGroup(pgid);
+        }, options.timeout * 1000)
+      : undefined;
+    const settlement = this.collectProcessOutput({
+      child,
+      childSettlement,
+      log,
+      onData: options.onData,
+    });
+    const managed: ManagedProcess = {
+      pgid,
+      command: metadata.command,
+      name: metadata.name,
+      startedAt: Date.now(),
+      logPath,
+      controller: metadata.controller,
+      notifyOnExit: false,
+      settlement: settlement.then(
+        () => undefined,
+        () => undefined,
+      ),
+      detachAbort: metadata.detachAbort,
+    };
+    this.processes.set(pgid, managed);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
+    spawned.resolve(managed);
+
+    try {
+      const result = await settlement;
+      managed.exitCode = result.exitCode ?? signalExitCode(result.signal) ?? 1;
+      if (options.signal?.aborted) throw new Error("aborted");
+      if (timedOut) throw new Error(`timeout:${options.timeout}`);
+      return { exitCode: managed.exitCode };
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      options.signal?.removeEventListener("abort", onAbort);
+    }
+  };
+
+  private collectProcessOutput = async ({
+    child,
+    childSettlement,
+    log,
+    onData,
+  }: {
+    child: ChildProcess;
+    childSettlement: ReturnType<typeof waitForChild>;
+    log: WriteStream;
+    onData: (data: Buffer) => void;
+  }): ReturnType<typeof waitForChild> => {
+    const logSettlement = finished(log);
+    const handleData = (data: Buffer) => {
+      log.write(data);
+      onData(data);
+    };
+    child.stdout?.on("data", handleData);
+    child.stderr?.on("data", handleData);
+
+    try {
+      const result = await childSettlement;
+      log.end();
+      await logSettlement;
+      return result;
+    } catch (error) {
+      if (child.pid) killProcessGroup(child.pid);
+      log.destroy();
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  };
+}

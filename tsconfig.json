@@ -12,6 +12,8 @@
     "types": ["node"],
     "noEmit": true,
     "paths": {
+      "@richardgill/pi-background-bash": ["./extensions/background-bash/src/extension.ts"],
+      "@richardgill/pi-background-bash/core": ["./extensions/background-bash/src/core.ts"],
       "@richardgill/pi-context-commands": ["./extensions/context-commands/src/extension.ts"],
       "@richardgill/pi-tmux-bash": ["./extensions/tmux-bash/src/extension.ts"],
       "@richardgill/pi-tmux-bash/core": ["./extensions/tmux-bash/src/core.ts"],

@@ -2,6 +2,7 @@
 
 ## Extensions (actively used)
 
+- [`pi-background-bash`](./extensions/background-bash/README.md) - Runs session-owned foreground and background process groups with stable logs and automatic completion messages.
 - [`pi-context-commands`](./extensions/context-commands/README.md) — Registers slash commands that run commands and put the output into Pi context.
 - [`pi-project-resources`](./extensions/project-resources/README.md) — Loads `AGENT.md` and `skills/` by traversing up to `~` from current folder.
 - [`pi-parrot`](./extensions/parrot/README.md) — Populates Pi's input box with the last assistant message.
