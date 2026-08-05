@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -62,6 +62,7 @@ type Harness = {
 
 const tempDirs: string[] = [];
 const activeShutdowns: Array<() => Promise<void>> = [];
+const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
 const resultText = (result: TestResult): string => {
   const content = result.content[0];
@@ -98,10 +99,15 @@ const processGroupExists = (pgid: number): boolean => {
 };
 
 const createHarness = async (
-  overrides: { preserveOutputFiles?: boolean } = {},
+  overrides: { preserveOutputFiles?: boolean; piSettings?: Record<string, unknown> } = {},
 ): Promise<Harness> => {
   const outputDir = await mkdtemp(join(tmpdir(), "pi-background-bash-test-"));
-  tempDirs.push(outputDir);
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-background-bash-agent-"));
+  tempDirs.push(outputDir, agentDir);
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  if (overrides.piSettings) {
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify(overrides.piSettings), "utf8");
+  }
   const tools: TestTool[] = [];
   const handlers = new Map<string, EventHandler[]>();
   const messages: TestMessage[] = [];
@@ -231,6 +237,8 @@ const identityTheme = {
 };
 
 afterEach(async () => {
+  if (originalAgentDir === undefined) Reflect.deleteProperty(process.env, "PI_CODING_AGENT_DIR");
+  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
   await Promise.all(activeShutdowns.splice(0).map((shutdown) => shutdown()));
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
@@ -311,7 +319,12 @@ describe("background bash", () => {
     const logPath = "/tmp/active.log";
     const rendered = renderProcessResult(
       {
-        content: [{ type: "text", text: `running\n\nFull output: ${logPath}` }],
+        content: [
+          {
+            type: "text",
+            text: `running \u001b[31mred\u001b[0m\u0000\r\n\nFull output: ${logPath}`,
+          },
+        ],
         details: { pgid: 123, active: true, fullOutputPath: logPath },
       },
       identityTheme,
@@ -321,6 +334,9 @@ describe("background bash", () => {
       .join("\n")
       .trimEnd();
 
+    expect(rendered).toContain("running red");
+    expect(rendered).not.toContain("\u001b");
+    expect(rendered).not.toContain("\u0000");
     expect(rendered).toContain(`Log: ${logPath}`);
     expect(rendered.split(logPath).length - 1).toBe(1);
     expect(rendered).toContain("Inspect group: pgrep -a -g 123");
@@ -345,6 +361,33 @@ describe("background bash", () => {
     expect(rendered.split(logPath).length - 1).toBe(1);
     expect(rendered).not.toContain("Inspect group:");
     expect(rendered).not.toContain("Kill group:");
+  });
+
+  it("honors Pi's configured shell path and command prefix", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "pi-background-bash-shell-"));
+    const shellPath = join(folder, "custom-shell");
+    tempDirs.push(folder);
+    await writeFile(
+      shellPath,
+      "#!/bin/sh\nprintf 'custom-shell\\n'\nexec /bin/sh \"$@\"\n",
+      "utf8",
+    );
+    await chmod(shellPath, 0o700);
+    const harness = await createHarness({
+      piSettings: {
+        shellPath,
+        shellCommandPrefix: "printf 'configured-prefix\\n'",
+      },
+    });
+
+    const result = await harness.runBash({
+      command: "printf body",
+      timeout: 3,
+      timeoutAction: "kill",
+    });
+
+    expect(resultText(result)).toContain("custom-shell\nconfigured-prefix\nbody");
+    await harness.shutdown();
   });
 
   it("returns foreground output with a stable private log hidden by short-output rendering", async () => {
@@ -459,6 +502,25 @@ describe("background bash", () => {
     expect(resultText(await harness.runProcess({ action: "list" }))).toBe(
       "No active background processes.",
     );
+
+    await harness.shutdown();
+  });
+
+  it("does not spawn a command when its signal is already aborted", async () => {
+    const harness = await createHarness();
+    const folder = await mkdtemp(join(tmpdir(), "pi-background-bash-abort-"));
+    const marker = join(folder, "spawned");
+    const controller = new AbortController();
+    tempDirs.push(folder);
+    controller.abort();
+
+    await expect(
+      harness.runBash(
+        { command: `touch '${marker}'`, timeout: 3, timeoutAction: "kill" },
+        { signal: controller.signal },
+      ),
+    ).rejects.toThrow("aborted");
+    await expect(stat(marker)).rejects.toMatchObject({ code: "ENOENT" });
 
     await harness.shutdown();
   });

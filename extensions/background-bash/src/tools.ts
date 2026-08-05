@@ -292,7 +292,10 @@ const runBash = async ({
     env: executionEnvironment(pi, ctx),
     detachAbort,
   });
-  const base = createBashToolDefinition(ctx.cwd, { operations: prepared.operations });
+  const base = createBashToolDefinition(ctx.cwd, {
+    operations: prepared.operations,
+    commandPrefix: manager.getCommandPrefix(),
+  });
   const rawOutcome: Promise<RawOutcome> = base
     .execute(
       "background-bash",

@@ -1,15 +1,17 @@
-import { createWriteStream, type WriteStream } from "node:fs";
-import { chmod, mkdir, rm, unlink } from "node:fs/promises";
+import { constants as fsConstants, createWriteStream, type WriteStream } from "node:fs";
+import { access, chmod, mkdir, rm, unlink } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { resolve } from "node:path";
 import { finished } from "node:stream/promises";
 import { spawn, type ChildProcess } from "node:child_process";
-import type {
-  AgentToolResult,
-  BashOperations,
-  BashToolDetails,
+import {
+  getShellConfig,
+  type AgentToolResult,
+  type BashOperations,
+  type BashToolDetails,
 } from "@earendil-works/pi-coding-agent";
 import type { ResolvedOptions } from "./config";
+import type { PiBashSettings } from "./pi-settings";
 
 export type BackgroundBashDetails = BashToolDetails & {
   pgid?: number;
@@ -90,20 +92,39 @@ const killProcessGroup = (pgid: number): void => {
 export class ProcessManager {
   readonly processes = new Map<number, ManagedProcess>();
   private runDir: string | undefined;
+  private bashSettings: PiBashSettings = {};
   private shuttingDown = false;
+  private readonly onHostExit = () => {
+    this.processes.forEach((managed) => {
+      try {
+        killProcessGroup(managed.pgid);
+      } catch {
+        return;
+      }
+    });
+  };
 
   constructor(
     private readonly options: ResolvedOptions,
     private readonly onBackgroundCountChange: (count: number) => void,
   ) {}
 
-  initialize = async (sessionId: string): Promise<void> => {
+  initialize = async (
+    sessionId: string,
+    cwd: string,
+    bashSettings: PiBashSettings,
+  ): Promise<void> => {
     this.shuttingDown = false;
+    this.bashSettings = bashSettings;
     const runName = `${encodeURIComponent(sessionId)}-${process.pid}-${Date.now().toString(36)}`;
-    this.runDir = resolve(this.options.outputDir, runName);
+    this.runDir = resolve(cwd, this.options.outputDir, runName);
     await mkdir(this.runDir, { recursive: true, mode: 0o700 });
     await chmod(this.runDir, 0o700);
+    process.removeListener("exit", this.onHostExit);
+    process.once("exit", this.onHostExit);
   };
+
+  getCommandPrefix = (): string | undefined => this.bashSettings.commandPrefix;
 
   prepare = (metadata: ProcessMetadata): PreparedExecution => {
     const spawned = deferred<ManagedProcess>();
@@ -177,6 +198,8 @@ export class ProcessManager {
       await rm(this.runDir, { recursive: true, force: true });
     }
     this.runDir = undefined;
+    this.bashSettings = {};
+    process.removeListener("exit", this.onHostExit);
   };
 
   removeTemporaryOutput = async (path: string | undefined, stablePath: string): Promise<void> => {
@@ -197,24 +220,36 @@ export class ProcessManager {
     spawned: Deferred<ManagedProcess>,
   ): Promise<{ exitCode: number | null }> => {
     if (this.shuttingDown) throw new Error("Background bash is shutting down");
+    if (options.signal?.aborted) throw new Error("aborted");
     const runDir = this.runDir;
     if (!runDir) throw new Error("Background bash is not initialized");
-    const shell = process.env.SHELL ?? "/bin/bash";
-    const child = spawn(shell, ["-c", command], {
+    try {
+      await access(cwd, fsConstants.F_OK);
+    } catch {
+      throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
+    }
+
+    const { shell, args } = getShellConfig(this.bashSettings.shellPath);
+    const child = spawn(shell, [...args, command], {
       cwd,
       detached: true,
       env: { ...options.env, ...metadata.env },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
-    if (!child.pid) throw new Error("Bash process started without a PID");
+    if (!child.pid) {
+      const error = await new Promise<Error>((resolveError) => child.once("error", resolveError));
+      throw error;
+    }
 
     const pgid = child.pid;
+    const childSettlement = waitForChild(child);
+    const onAbort = () => killProcessGroup(pgid);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
     const logPath = resolve(runDir, `${pgid}.log`);
     const log = createWriteStream(logPath, { flags: "w", mode: 0o600 });
-    const childSettlement = waitForChild(child);
     let timedOut = false;
-    const onAbort = () => killProcessGroup(pgid);
     const timeoutHandle = options.timeout
       ? setTimeout(() => {
           timedOut = true;
@@ -242,8 +277,6 @@ export class ProcessManager {
       detachAbort: metadata.detachAbort,
     };
     this.processes.set(pgid, managed);
-    options.signal?.addEventListener("abort", onAbort, { once: true });
-    if (options.signal?.aborted) onAbort();
     spawned.resolve(managed);
 
     try {

@@ -32,6 +32,8 @@ type BashInput = {
 
 Foreground commands stream and truncate output using Pi's standard 50KB/2000-line behavior. Every command also writes a stable combined stdout/stderr log. The model always receives the path, while the TUI only shows it when output is truncated.
 
+Commands honor Pi's effective `shellPath` and `shellCommandPrefix` settings, including trusted project overrides.
+
 `timeout` defaults to 30 seconds, is capped at 60 seconds by default, and must be a positive whole number. The default `timeoutAction` is `"background"`:
 
 - `background: true` returns the PGID immediately and ignores timeout fields.
@@ -99,7 +101,7 @@ kill -KILL -- -23147
 
 Prefer `bash_process kill` over raw `kill`. A process killed directly through Linux or macOS is an external termination and may still send its normal automatic completion message.
 
-Logs combine stdout and stderr in arrival order. Run directories use mode `0700`; logs use mode `0600`. `preserveOutputFiles` defaults to `true`, keeping transcript paths useful after Pi exits.
+Logs combine stdout and stderr in arrival order. Relative `outputDir` values resolve from the active session cwd. Run directories use mode `0700`; logs use mode `0600`. `preserveOutputFiles` defaults to `true`, keeping transcript paths useful after Pi exits.
 
 Every `session_shutdown`, including `/reload`, `/new`, `/resume`, `/fork`, and Pi exit, kills all active process groups and waits for their logs to close. A forced `SIGKILL` of Pi cannot run graceful cleanup.
 

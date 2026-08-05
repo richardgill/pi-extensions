@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_BASH_STATUS_KEY, resolveOptions, type BackgroundBashOptions } from "./config";
+import { resolvePiBashSettings } from "./pi-settings";
 import { ProcessManager } from "./process-manager";
 import { registerCompletionRenderer, registerTools } from "./tools";
 
@@ -27,7 +28,11 @@ export const backgroundBash = (input: BackgroundBashOptions = {}) => {
 
     pi.on("session_start", async (_event, ctx) => {
       statusContext = ctx;
-      await manager.initialize(ctx.sessionManager.getSessionId());
+      await manager.initialize(
+        ctx.sessionManager.getSessionId(),
+        ctx.cwd,
+        resolvePiBashSettings(ctx),
+      );
       if (ctx.hasUI) ctx.ui.setStatus(BACKGROUND_BASH_STATUS_KEY, undefined);
     });
     pi.on("session_shutdown", async (_event, ctx) => {
