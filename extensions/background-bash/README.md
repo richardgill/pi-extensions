@@ -16,8 +16,6 @@ pi --no-extensions -e ./extensions/background-bash/src/index.ts
 
 The default model tools are `bash` and `bash_process`.
 
-See [Manual testing](./MANUAL_TESTING.md) for the interactive acceptance flow and smoke test.
-
 ## `bash`
 
 ```ts
