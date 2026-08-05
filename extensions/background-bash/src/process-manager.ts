@@ -1,5 +1,5 @@
 import { constants as fsConstants, createWriteStream, type WriteStream } from "node:fs";
-import { access, chmod, mkdir, rm, unlink } from "node:fs/promises";
+import { access, chmod, mkdir, rm } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { resolve } from "node:path";
 import { finished } from "node:stream/promises";
@@ -42,6 +42,7 @@ type ProcessMetadata = {
   name?: string;
   controller: AbortController;
   env: NodeJS.ProcessEnv;
+  onData: (data: Buffer) => void;
   detachAbort: () => void;
 };
 
@@ -131,7 +132,13 @@ export class ProcessManager {
     const operations: BashOperations = {
       exec: async (command, cwd, options) => {
         try {
-          return await this.spawnProcess(command, cwd, options, metadata, spawned);
+          return await this.spawnProcess(
+            command,
+            cwd,
+            { ...options, onData: metadata.onData },
+            metadata,
+            spawned,
+          );
         } catch (error) {
           spawned.reject(error);
           throw error;
@@ -202,11 +209,6 @@ export class ProcessManager {
     process.removeListener("exit", this.onHostExit);
   };
 
-  removeTemporaryOutput = async (path: string | undefined, stablePath: string): Promise<void> => {
-    if (!path || path === stablePath) return;
-    await unlink(path).catch(() => undefined);
-  };
-
   private emitBackgroundCount = (): void => {
     const count = [...this.processes.values()].filter((managed) => managed.notifyOnExit).length;
     this.onBackgroundCountChange(count);
@@ -244,6 +246,7 @@ export class ProcessManager {
 
     const pgid = child.pid;
     const childSettlement = waitForChild(child);
+    child.once("exit", () => killProcessGroup(pgid));
     const onAbort = () => killProcessGroup(pgid);
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) onAbort();
@@ -303,12 +306,29 @@ export class ProcessManager {
     onData: (data: Buffer) => void;
   }): ReturnType<typeof waitForChild> => {
     const logSettlement = finished(log);
+    void logSettlement.catch(() => undefined);
+    let paused = false;
+    const resumeOutput = () => {
+      paused = false;
+      child.stdout?.resume();
+      child.stderr?.resume();
+    };
     const handleData = (data: Buffer) => {
-      log.write(data);
+      const canContinue = log.write(data);
       onData(data);
+      if (canContinue || paused) return;
+      paused = true;
+      child.stdout?.pause();
+      child.stderr?.pause();
+      log.once("drain", resumeOutput);
     };
     child.stdout?.on("data", handleData);
     child.stderr?.on("data", handleData);
+    log.once("error", () => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      if (child.pid) killProcessGroup(child.pid);
+    });
 
     try {
       const result = await childSettlement;
@@ -319,6 +339,8 @@ export class ProcessManager {
       if (child.pid) killProcessGroup(child.pid);
       log.destroy();
       throw error instanceof Error ? error : new Error(String(error));
+    } finally {
+      log.off("drain", resumeOutput);
     }
   };
 }

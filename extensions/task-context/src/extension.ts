@@ -3,12 +3,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
-import {
-  completeSimple,
-  type AssistantMessage,
-  type Message,
-  type UserMessage,
-} from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, ThinkingLevel, UserMessage } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -22,8 +18,6 @@ import {
 import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
-
-type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export type TaskContextModelOptions = {
   provider: string;
@@ -264,7 +258,7 @@ const TaskContextOptionsSchema = z.object({
       provider: z.string().default(DEFAULT_OPTIONS.model.provider),
       id: z.string().default(DEFAULT_OPTIONS.model.id),
       thinkingLevel: z
-        .enum(["minimal", "low", "medium", "high", "xhigh"])
+        .enum(["minimal", "low", "medium", "high", "xhigh", "max"])
         .default(DEFAULT_OPTIONS.model.thinkingLevel),
     })
     .default(DEFAULT_OPTIONS.model),

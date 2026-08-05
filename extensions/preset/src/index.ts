@@ -2,7 +2,7 @@ import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { DEFAULT_OPTIONS, type PresetOptions, preset } from "@richardgill/pi-preset";
 import { z } from "zod";
 
-const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 const PresetSchema = z.object({
   provider: z.string().optional(),

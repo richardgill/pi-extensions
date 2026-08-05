@@ -2,7 +2,7 @@ import { loadConfigOrDefault, templatedString } from "@richardgill/pi-config";
 import { DEFAULT_OPTIONS, taskContext } from "@richardgill/pi-task-context";
 import { z } from "zod";
 
-const ThinkingLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh"]);
+const ThinkingLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]);
 
 const CustomCommandSchema = z.object({
   command: z.string(),

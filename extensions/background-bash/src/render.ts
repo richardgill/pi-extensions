@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { Container, Text, type Component } from "@earendil-works/pi-tui";
-import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { keyHint, truncateTail, type AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { BackgroundBashDetails } from "./process-manager";
 
 export type CompletionRenderDetails = {
@@ -20,6 +20,25 @@ type RenderTheme = {
     text: string,
   ) => string;
   bold: (text: string) => string;
+};
+
+type RenderOptions = {
+  expanded: boolean;
+  outputPad?: number;
+};
+
+const COMPACT_OUTPUT_LINES = 5;
+const COMPACT_OUTPUT_BYTES = 4000;
+
+const compactDisplayOutput = (output: string, expanded: boolean): string => {
+  if (expanded) return output;
+  const compact = truncateTail(output, {
+    maxLines: COMPACT_OUTPUT_LINES,
+    maxBytes: COMPACT_OUTPUT_BYTES,
+  });
+  return compact.truncated
+    ? `... (${keyHint("app.tools.expand", "to expand")})\n${compact.content}`
+    : output;
 };
 
 const sanitizeDisplayText = (text: string): string =>
@@ -97,10 +116,14 @@ export const sanitizedResult = (
 
 export const renderProcessResult = (
   result: AgentToolResult<BackgroundBashDetails | undefined>,
+  renderOptions: RenderOptions,
   theme: RenderTheme,
 ): Component => {
   const display = sanitizedResult(result);
-  const content = sanitizeDisplayText(resultText(display.result));
+  const content = compactDisplayOutput(
+    sanitizeDisplayText(resultText(display.result)),
+    renderOptions.expanded,
+  );
   const active = Boolean(result.details?.active);
   const log =
     display.logPath && (active || display.truncated)
@@ -131,11 +154,13 @@ export const appendHints = (
 export const renderCompletionMessage = (
   content: string,
   details: CompletionRenderDetails,
+  renderOptions: RenderOptions,
   theme: RenderTheme,
 ): Component => {
   const display = sanitizeDisplayText(stripModelOnlyLogLine(content, details.logPath));
   const separator = display.indexOf("\n\n");
   const output = separator === -1 ? "" : display.slice(separator + 2).trim();
+  const renderedOutput = compactDisplayOutput(output, renderOptions.expanded);
   const label = sanitizeDisplayText(details.name ?? "Background bash");
   const elapsed = `${(details.elapsedMs / 1000).toFixed(1)}s`;
   const exit =
@@ -143,11 +168,16 @@ export const renderCompletionMessage = (
       ? ` (exit ${details.exitCode})`
       : "";
   const summary = `${details.status === "success" ? "✓" : "✗"} ${label} ${details.status === "success" ? "finished" : "failed"} in ${elapsed}${exit}`;
-  const logPath = details.truncated ? `Full output: ${details.logPath}` : "";
+  const logPath =
+    details.truncated && !output.includes(details.logPath) ? `Full output: ${details.logPath}` : "";
   const command = sanitizeDisplayText(details.command);
-  const body = [`  $ ${command}`, output, logPath].filter(Boolean).join("\n\n");
+  const body = [`  $ ${command}`, renderedOutput, logPath].filter(Boolean).join("\n\n");
   const color = details.status === "success" ? "success" : "error";
-  return new Text(`${theme.fg(color, summary)}\n${theme.fg("dim", body)}`, 0, 0);
+  return new Text(
+    `${theme.fg(color, summary)}\n${theme.fg("dim", body)}`,
+    renderOptions.outputPad ?? 0,
+    0,
+  );
 };
 
 export const renderProcessCall = (

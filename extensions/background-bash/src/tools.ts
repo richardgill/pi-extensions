@@ -1,6 +1,7 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
   createBashToolDefinition,
+  formatSize,
   type AgentToolResult,
   type AgentToolUpdateCallback,
   type BashToolDetails,
@@ -10,6 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
+import { BoundedOutput, type BoundedOutputSnapshot } from "./bounded-output";
 import type { ResolvedOptions } from "./config";
 import {
   appendHints,
@@ -50,9 +52,7 @@ export const BashProcessInputSchema = Type.Object({
 export type BashInput = Static<typeof BashInputSchema>;
 export type BashProcessInput = Static<typeof BashProcessInputSchema>;
 
-type RawOutcome =
-  | { result: AgentToolResult<BashToolDetails | undefined>; error?: undefined }
-  | { result?: undefined; error: Error };
+type RawOutcome = { error?: undefined } | { error: Error };
 
 const normalizeTimeout = (input: BashInput, options: ResolvedOptions): number =>
   Math.min(input.timeout ?? options.defaultTimeoutSeconds, options.maxTimeoutSeconds);
@@ -84,17 +84,17 @@ const renderBashCall = ({
   return component;
 };
 
+const OUTPUT_UPDATE_THROTTLE_MS = 100;
+
 const addStableLog = (
   result: AgentToolResult<BashToolDetails | undefined>,
   managed: ManagedProcess,
 ): AgentToolResult<BackgroundBashDetails> => {
   const content = result.content[0];
   const raw = content?.type === "text" ? content.text : "";
-  const temporaryPath = result.details?.fullOutputPath;
-  const replaced = temporaryPath ? raw.replaceAll(temporaryPath, managed.logPath) : raw;
-  const text = replaced.includes(managed.logPath)
-    ? replaced
-    : `${replaced.trimEnd()}${replaced.trimEnd() ? "\n\n" : ""}Full output: ${managed.logPath}`;
+  const text = raw.includes(managed.logPath)
+    ? raw
+    : `${raw.trimEnd()}${raw.trimEnd() ? "\n\n" : ""}Full output: ${managed.logPath}`;
 
   return {
     ...result,
@@ -107,19 +107,104 @@ const addStableLog = (
   };
 };
 
-const stableError = (
-  error: Error,
-  managed: ManagedProcess,
-  temporaryPath: string | undefined,
-): Error => {
-  const replaced = temporaryPath
-    ? error.message.replaceAll(temporaryPath, managed.logPath)
-    : error.message;
+const formatCapturedOutput = (
+  snapshot: BoundedOutputSnapshot,
+  logPath: string,
+  emptyText = "(no output)",
+): AgentToolResult<BashToolDetails | undefined> => {
+  const truncation = snapshot.truncation;
+  let text = snapshot.content || emptyText;
+  const details = truncation.truncated ? { truncation, fullOutputPath: logPath } : undefined;
+  if (!truncation.truncated) return { content: [{ type: "text", text }], details };
+
+  const startLine = truncation.totalLines - truncation.outputLines + 1;
+  const endLine = truncation.totalLines;
+  if (truncation.lastLinePartial) {
+    text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${formatSize(snapshot.lastLineBytes)}). Full output: ${logPath}]`;
+  } else if (truncation.truncatedBy === "lines") {
+    text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${logPath}]`;
+  } else {
+    text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(truncation.maxBytes)} limit). Full output: ${logPath}]`;
+  }
+  return { content: [{ type: "text", text }], details };
+};
+
+class ProcessOutput {
+  private readonly output = new BoundedOutput();
+  private managed: ManagedProcess | undefined;
+  private updateTimer: NodeJS.Timeout | undefined;
+  private updateDirty = false;
+  private lastUpdateAt = 0;
+
+  constructor(
+    private readonly onUpdate:
+      | AgentToolUpdateCallback<BackgroundBashDetails | undefined>
+      | undefined,
+  ) {}
+
+  append = (data: Buffer): void => {
+    this.output.append(data);
+    this.scheduleUpdate();
+  };
+
+  attach = (managed: ManagedProcess): void => {
+    this.managed = managed;
+    this.emitUpdate();
+  };
+
+  finish = (): void => {
+    this.output.finish();
+    this.clearUpdateTimer();
+    this.updateDirty = true;
+    this.emitUpdate();
+  };
+
+  snapshot = (): BoundedOutputSnapshot => this.output.snapshot();
+
+  private scheduleUpdate = (): void => {
+    this.updateDirty = true;
+    const delay = OUTPUT_UPDATE_THROTTLE_MS - (Date.now() - this.lastUpdateAt);
+    if (delay <= 0) {
+      this.clearUpdateTimer();
+      this.emitUpdate();
+      return;
+    }
+    if (this.updateTimer) return;
+    this.updateTimer = setTimeout(() => {
+      this.updateTimer = undefined;
+      this.emitUpdate();
+    }, delay);
+  };
+
+  private emitUpdate = (): void => {
+    if (!this.updateDirty || !this.managed) return;
+    this.updateDirty = false;
+    this.lastUpdateAt = Date.now();
+    const result = addStableLog(
+      formatCapturedOutput(this.output.snapshot(), this.managed.logPath, ""),
+      this.managed,
+    );
+    this.managed.latest = result;
+    this.onUpdate?.(result);
+  };
+
+  private clearUpdateTimer = (): void => {
+    if (!this.updateTimer) return;
+    clearTimeout(this.updateTimer);
+    this.updateTimer = undefined;
+  };
+}
+
+const stableError = (error: Error, managed: ManagedProcess, output: string): Error => {
+  const errorMessage = error.message.replace(/^\(no output\)\n\n/, "");
+  const combined = [output.trimEnd(), errorMessage].filter(Boolean).join("\n\n");
   const terminalRequired =
     /(?:std(?:in|out) is not a terminal|not a tty|input device is not a tty|requires? (?:a )?(?:terminal|tty))/i.test(
-      replaced,
+      combined,
     );
-  const display = terminalRequired ? "Command requires a terminal (PTY unsupported)" : replaced;
+  const display = terminalRequired
+    ? `${combined.trimEnd()}\n\nHint: command may require a terminal (PTY unsupported).`
+    : combined;
   const message = display.includes(managed.logPath)
     ? display
     : `${display.trimEnd()}\n\nFull output: ${managed.logPath}`;
@@ -129,23 +214,25 @@ const stableError = (
 const settleCompletion = async ({
   rawOutcome,
   managed,
-  manager,
-  temporaryOutputPath,
+  output,
 }: {
   rawOutcome: Promise<RawOutcome>;
   managed: ManagedProcess;
-  manager: ProcessManager;
-  temporaryOutputPath: () => string | undefined;
+  output: ProcessOutput;
 }): Promise<ProcessOutcome> => {
   const outcome = await rawOutcome;
-  const temporaryPath = outcome.result?.details?.fullOutputPath ?? temporaryOutputPath();
-  await manager.removeTemporaryOutput(temporaryPath, managed.logPath);
+  output.finish();
+  const captured = formatCapturedOutput(
+    output.snapshot(),
+    managed.logPath,
+    outcome.error ? "" : undefined,
+  );
 
   if (outcome.error) {
-    return { error: stableError(outcome.error, managed, temporaryPath) };
+    return { error: stableError(outcome.error, managed, resultText(captured)) };
   }
 
-  const result = addStableLog(outcome.result, managed);
+  const result = addStableLog(captured, managed);
   managed.latest = result;
   return { result };
 };
@@ -211,9 +298,8 @@ const completionContent = (
     `Status: ${success ? "success" : "failed"}`,
     managed.exitCode === undefined ? undefined : `Exit code: ${managed.exitCode}`,
   ].filter((line) => line !== undefined);
-  const content = [metadata.join("\n"), output, `Full output: ${managed.logPath}`]
-    .filter(Boolean)
-    .join("\n\n");
+  const logPath = output.includes(managed.logPath) ? undefined : `Full output: ${managed.logPath}`;
+  const content = [metadata.join("\n"), output, logPath].filter(Boolean).join("\n\n");
   const truncated =
     Boolean(outcome.result?.details?.truncation?.truncated) || output.includes("[Showing ");
 
@@ -285,19 +371,23 @@ const runBash = async ({
   const timeout = normalizeTimeout(input, options);
   const timeoutAction = input.timeoutAction ?? options.defaultTimeoutAction;
   let managed: ManagedProcess | undefined;
-  let temporaryOutputPath: string | undefined;
   let forwardUpdates = true;
+  const output = new ProcessOutput((update) => {
+    if (forwardUpdates) onUpdate?.(update);
+  });
   const prepared = manager.prepare({
     command: input.command,
     name: input.name,
     controller,
     env: executionEnvironment(pi, ctx),
+    onData: output.append,
     detachAbort,
   });
   const base = createBashToolDefinition(ctx.cwd, {
     operations: prepared.operations,
     commandPrefix: manager.getCommandPrefix(),
   });
+  // ProcessOutput owns streamed output so Pi's accumulator never creates a second log.
   const rawOutcome: Promise<RawOutcome> = base
     .execute(
       toolCallId,
@@ -306,25 +396,17 @@ const runBash = async ({
         timeout: input.background || timeoutAction === "background" ? undefined : timeout,
       },
       controller.signal,
-      (update) => {
-        temporaryOutputPath = update.details?.fullOutputPath ?? temporaryOutputPath;
-        const stable = managed ? addStableLog(update, managed) : update;
-        if (managed) managed.latest = stable;
-        if (forwardUpdates) onUpdate?.(stable);
-      },
+      undefined,
       ctx,
     )
     .then(
-      (result) => ({ result }),
+      () => ({}),
       (error) => ({ error: error instanceof Error ? error : new Error(String(error)) }),
     );
+  onUpdate?.({ content: [], details: undefined });
   managed = await prepared.spawned;
-  managed.completion = settleCompletion({
-    rawOutcome,
-    managed,
-    manager,
-    temporaryOutputPath: () => temporaryOutputPath,
-  });
+  output.attach(managed);
+  managed.completion = settleCompletion({ rawOutcome, managed, output });
 
   if (input.background) {
     forwardUpdates = false;
@@ -488,9 +570,10 @@ export const registerTools = (
     renderCall(args, theme) {
       return renderProcessCall(args, options.processToolName, theme);
     },
-    renderResult(result, _renderOptions, theme) {
+    renderResult(result, renderOptions, theme) {
       return renderProcessResult(
         result as AgentToolResult<BackgroundBashDetails | undefined>,
+        renderOptions,
         theme,
       );
     },
@@ -500,10 +583,10 @@ export const registerTools = (
 export const registerCompletionRenderer = (pi: ExtensionAPI): void => {
   pi.registerMessageRenderer<CompletionRenderDetails>(
     "background-bash-completion",
-    (message, _renderOptions, theme) => {
+    (message, renderOptions, theme) => {
       if (!message.details) throw new Error("Missing background bash completion details");
       const content = typeof message.content === "string" ? message.content : "";
-      return renderCompletionMessage(content, message.details, theme);
+      return renderCompletionMessage(content, message.details, renderOptions, theme);
     },
   );
 };

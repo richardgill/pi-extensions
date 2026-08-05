@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { KeyId } from "@earendil-works/pi-tui";
 import { z } from "zod";
 
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
 export type Preset = {
   provider?: string;

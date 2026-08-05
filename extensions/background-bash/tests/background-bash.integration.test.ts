@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -63,6 +63,7 @@ type Harness = {
 const tempDirs: string[] = [];
 const activeShutdowns: Array<() => Promise<void>> = [];
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalTmpDir = process.env.TMPDIR;
 
 const resultText = (result: TestResult): string => {
   const content = result.content[0];
@@ -239,6 +240,8 @@ const identityTheme = {
 afterEach(async () => {
   if (originalAgentDir === undefined) Reflect.deleteProperty(process.env, "PI_CODING_AGENT_DIR");
   else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalTmpDir === undefined) Reflect.deleteProperty(process.env, "TMPDIR");
+  else process.env.TMPDIR = originalTmpDir;
   await Promise.all(activeShutdowns.splice(0).map((shutdown) => shutdown()));
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
@@ -279,6 +282,7 @@ describe("background bash", () => {
         logPath: "/tmp/123.log",
         truncated: false,
       },
+      { expanded: false, outputPad: 0 },
       identityTheme,
     )
       .render(300)
@@ -303,6 +307,7 @@ describe("background bash", () => {
         logPath: "/tmp/456.log",
         truncated: false,
       },
+      { expanded: false, outputPad: 0 },
       identityTheme,
     )
       .render(300)
@@ -313,6 +318,38 @@ describe("background bash", () => {
     expect(rendered).toBe(
       "✗ failing-background failed in 2.1s (exit 9)\n  $ run tests\n\nstarted\nfailed",
     );
+  });
+
+  it("compacts background completion output and renders one log path", () => {
+    const logPath = "/tmp/truncated-background.log";
+    const output = [
+      ...Array.from({ length: 10 }, (_, index) => `line-${index + 1}`),
+      `[Showing lines 1-10 of 10. Full output: ${logPath}]`,
+    ].join("\n");
+    const content = [`Background bash finished\nPGID 789`, output].join("\n\n");
+    const details = {
+      status: "success" as const,
+      pgid: 789,
+      command: "long command",
+      elapsedMs: 1000,
+      exitCode: 0,
+      logPath,
+      truncated: true,
+    };
+    const render = (expanded: boolean) =>
+      renderCompletionMessage(content, details, { expanded, outputPad: 0 }, identityTheme)
+        .render(300)
+        .map((line) => line.trimEnd())
+        .join("\n");
+
+    const compact = render(false);
+    expect(compact).toContain("to expand");
+    expect(compact).not.toContain("line-1\n");
+    expect(compact.split(logPath)).toHaveLength(2);
+
+    const expanded = render(true);
+    expect(expanded).toContain("line-1\n");
+    expect(expanded.split(logPath)).toHaveLength(2);
   });
 
   it("shows one log path and controls while inspecting an active process", () => {
@@ -327,6 +364,7 @@ describe("background bash", () => {
         ],
         details: { pgid: 123, active: true, fullOutputPath: logPath },
       },
+      { expanded: false },
       identityTheme,
     )
       .render(300)
@@ -350,6 +388,7 @@ describe("background bash", () => {
         content: [{ type: "text", text: `tail\n\n[Showing 2 of 10]\nFull output: ${logPath}` }],
         details: { pgid: 456, fullOutputPath: logPath },
       },
+      { expanded: false },
       identityTheme,
     )
       .render(300)
@@ -445,6 +484,23 @@ describe("background bash", () => {
     await harness.shutdown();
   });
 
+  it("kills shell-level background jobs when their shell exits", async () => {
+    const harness = await createHarness();
+    const result = await harness.runBash({
+      command: "sleep 30 >/dev/null 2>&1 &",
+      background: true,
+    });
+    const pgid = pgidFrom(result);
+
+    await waitFor(() => harness.messages.length === 1);
+    await waitFor(() => !processGroupExists(pgid));
+
+    expect(resultText(await harness.runProcess({ action: "list" }))).toBe(
+      "No active background processes.",
+    );
+    await harness.shutdown();
+  });
+
   it("reports natural background failures", async () => {
     const harness = await createHarness();
     const result = await harness.runBash({ command: "printf failed; exit 7", background: true });
@@ -455,6 +511,7 @@ describe("background bash", () => {
     expect(harness.messages[0]?.content).toContain("Exit code: 7");
     expect(harness.messages[0]?.content).toContain("failed");
     expect(harness.messages[0]?.content).toContain(`PGID ${pgid}`);
+    expect(harness.messages[0]?.content).not.toContain("(no output)");
 
     await harness.shutdown();
   });
@@ -563,8 +620,8 @@ describe("background bash", () => {
       error = caught as Error;
     }
 
-    expect(error?.message).toContain("Command requires a terminal (PTY unsupported)");
-    expect(error?.message).not.toContain("stdout is not a terminal");
+    expect(error?.message).toContain("Hint: command may require a terminal (PTY unsupported).");
+    expect(error?.message).toContain("stdout is not a terminal");
 
     await harness.shutdown();
   });
@@ -579,6 +636,31 @@ describe("background bash", () => {
     expect(processGroupExists(pgid)).toBe(false);
     expect(harness.messages).toHaveLength(0);
     await expect(stat(result.details!.fullOutputPath!)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("uses the stable log as the only output file after truncation", async () => {
+    const harness = await createHarness();
+    const temporaryOutputDir = await mkdtemp(join(tmpdir(), "pi-background-bash-output-"));
+    tempDirs.push(temporaryOutputDir);
+    process.env.TMPDIR = temporaryOutputDir;
+    let truncated = false;
+    const execution = harness.runBash(
+      {
+        command: "for i in $(seq 1 2105); do echo line-$i; done; sleep 0.5",
+        timeout: 5,
+        timeoutAction: "kill",
+      },
+      {
+        onUpdate: (update) => {
+          truncated = Boolean(update.details?.truncation?.truncated);
+        },
+      },
+    );
+
+    await waitFor(() => truncated);
+    expect(await readdir(temporaryOutputDir)).toEqual([]);
+    await execution;
+    await harness.shutdown();
   });
 
   it("keeps completed long output bounded without stale process hints", async () => {
