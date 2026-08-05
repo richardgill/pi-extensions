@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_BASH_STATUS_KEY, resolveOptions, type BackgroundBashOptions } from "./config";
 import { resolvePiBashSettings } from "./pi-settings";
+import { registerProcCommand } from "./proc-command";
 import { ProcessManager } from "./process-manager";
 import { registerCompletionRenderer, registerTools } from "./tools";
 
@@ -42,6 +43,7 @@ export const backgroundBash = (input: BackgroundBashOptions = {}) => {
     });
 
     registerTools(pi, manager, options);
+    registerProcCommand(pi, manager);
     registerCompletionRenderer(pi);
   };
 };
