@@ -130,6 +130,7 @@ const createHarness = async (
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
     registerTool: (tool: unknown) => tools.push(tool as TestTool),
+    registerCommand: () => undefined,
     registerMessageRenderer: () => undefined,
     sendMessage: (
       message: { customType: string; content: string | unknown[]; details?: unknown },
