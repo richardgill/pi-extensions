@@ -110,10 +110,10 @@ export const contextCommands = (input: ContextCommandsOptions = {}) => {
   return (pi: ExtensionAPI): void => {
     pi.registerMessageRenderer<ContextMessageDetails>(
       CUSTOM_MESSAGE_TYPE,
-      (message, _options, theme) =>
+      (message, options, theme) =>
         new Text(
           theme.fg("customMessageLabel", message.details?.summary ?? "Context loaded"),
-          0,
+          (options as typeof options & { outputPad: number }).outputPad,
           0,
         ),
     );
