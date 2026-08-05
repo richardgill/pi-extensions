@@ -496,7 +496,7 @@ describe("background bash", () => {
     expect(resultText(peeked)).toContain("child=");
     expect(resultText(killed)).toContain("Killed background process");
     expect(resultText(killed)).toContain("child=");
-    expect(processGroupExists(pgid)).toBe(false);
+    await waitFor(() => !processGroupExists(pgid));
     await delay(100);
     expect(harness.messages).toHaveLength(0);
     expect(resultText(await harness.runProcess({ action: "list" }))).toBe(
