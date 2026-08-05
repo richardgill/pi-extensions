@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const completeSimpleMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@earendil-works/pi-ai", () => ({ completeSimple: completeSimpleMock }));
+vi.mock("@earendil-works/pi-ai/compat", () => ({ completeSimple: completeSimpleMock }));
 import {
   buildEvidencePacket,
   buildTaskContextMarkdown,
