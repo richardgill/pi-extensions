@@ -262,6 +262,7 @@ const completionBeforeTimeout = (
   });
 
 const runBash = async ({
+  toolCallId,
   pi,
   ctx,
   input,
@@ -270,6 +271,7 @@ const runBash = async ({
   manager,
   options,
 }: {
+  toolCallId: string;
   pi: ExtensionAPI;
   ctx: ExtensionContext;
   input: BashInput;
@@ -298,7 +300,7 @@ const runBash = async ({
   });
   const rawOutcome: Promise<RawOutcome> = base
     .execute(
-      "background-bash",
+      toolCallId,
       {
         command: input.command,
         timeout: input.background || timeoutAction === "background" ? undefined : timeout,
@@ -441,8 +443,8 @@ export const registerTools = (
         : undefined,
     promptGuidelines: options.systemPrompt ? options.systemPromptGuidelines : [],
     parameters: BashInputSchema,
-    execute: (_toolCallId, input, signal, onUpdate, ctx) =>
-      runBash({ pi, ctx, input, signal, onUpdate, manager, options }),
+    execute: (toolCallId, input, signal, onUpdate, ctx) =>
+      runBash({ toolCallId, pi, ctx, input, signal, onUpdate, manager, options }),
     renderCall(args, theme, context) {
       const component = builtInRenderer.renderCall!(args, theme, context);
       return renderBashCall({ args, component, options, theme });
