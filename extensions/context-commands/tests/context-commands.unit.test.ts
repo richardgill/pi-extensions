@@ -17,13 +17,14 @@ const createHarness = (
   const events: string[] = [];
   const notifications: Notification[] = [];
   const exec = vi.fn(async () => result);
+  const registerMessageRenderer = vi.fn();
   const sendMessage = vi.fn(() => events.push("context"));
   const sendUserMessage = vi.fn(() => events.push("user"));
   const pi = {
     exec,
     registerCommand: (name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">) =>
       commands.set(name, options),
-    registerMessageRenderer: vi.fn(),
+    registerMessageRenderer,
     sendMessage,
     sendUserMessage,
   } as unknown as ExtensionAPI;
@@ -35,7 +36,17 @@ const createHarness = (
     },
   } as unknown as ExtensionCommandContext;
 
-  return { commands, ctx, events, exec, notifications, pi, sendMessage, sendUserMessage };
+  return {
+    commands,
+    ctx,
+    events,
+    exec,
+    notifications,
+    pi,
+    registerMessageRenderer,
+    sendMessage,
+    sendUserMessage,
+  };
 };
 
 const getHandler = (
@@ -64,6 +75,31 @@ describe("contextCommands", () => {
       ["diff", "Load diff"],
       ["pr-diff", "Load PR diff"],
     ]);
+  });
+
+  it("renders loaded context with Pi's configured output padding", () => {
+    const harness = createHarness();
+    contextCommands()(harness.pi);
+
+    const renderer = harness.registerMessageRenderer.mock.calls[0]?.[1];
+    if (typeof renderer !== "function") throw new Error("Context renderer not registered");
+
+    const message = {
+      role: "custom",
+      customType: "context-command",
+      content: "",
+      display: true,
+      details: { summary: "Context loaded" },
+      timestamp: 0,
+    };
+    const theme = { fg: (_color: string, text: string) => text };
+
+    expect(renderer(message, { expanded: false, outputPad: 0 }, theme).render(20)[0]).toBe(
+      "Context loaded      ",
+    );
+    expect(renderer(message, { expanded: false, outputPad: 1 }, theme).render(20)[0]).toBe(
+      " Context loaded     ",
+    );
   });
 
   it("loads context without sending a user message when invoked without args", async () => {
