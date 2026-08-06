@@ -1,10 +1,13 @@
 # My Pi setup
 
-My Pi setup is deliberately very vanilla.
+My Pi setup is deliberately close to vanilla:
 
-I use it with OpenAI Codex, almost always running `gpt-5.6-sol` with `high` thinking.
+- **Provider:** OpenAI Codex · **Model:** `gpt-5.6-sol` · **Thinking level:** High
 
-My Pi agent instructions are in [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md) ([templated](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/pi/AGENTS.md.hbs)). My full Pi [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json) is also available for reference.
+For reference:
+
+- **Agent instructions:** [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/pi/AGENTS.md.hbs))
+- **Settings:** [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
 
 ## Install all extensions
 

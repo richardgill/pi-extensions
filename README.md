@@ -6,7 +6,6 @@
 ## Extensions (actively used)
 
 ### Published on npm
-- [`@richardgill/pi-bits`](./packages/pi-bits/README.md) - Bundles the footer, thinking toggle, and automatic project trust extensions.
 - [`pi-background-bash`](./extensions/background-bash/README.md) - Overrides bash tool with one that can run in the background.
   - By default bash commands which take over 30s go to background and the LLM can continue taking turns.
 - [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context.
