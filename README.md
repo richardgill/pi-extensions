@@ -1,6 +1,6 @@
 # pi-extensions
 
-> ### [Set up Pi like my Pi →](./PI_SETUP.md)
+> ### [My Pi Setup →](./PI_SETUP.md)
 
 
 ## Extensions (actively used)
