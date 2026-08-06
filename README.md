@@ -20,6 +20,8 @@ My shared agent instructions are in [`AGENTS.md.hbs`](https://github.com/richard
 - [`pi-trust-all-projects`](./extensions/trust-all-projects/README.md) - Automatically trusts every project.
 - [`pi-notify`](./extensions/notify/README.md) - Runs a local beep command after an agent run.
 - [`pi-thinking-toggle`](./extensions/thinking-toggle/README.md) - Cycles medium, high, and xhigh thinking levels.
+
+### 3rd party (not mine)
 - [`npm:@calesennett/pi-codex-fast`](https://www.npmjs.com/package/@calesennett/pi-codex-fast) - Adds OpenAI Codex `/fast` mode.
 - [`npm:pi-codex-status`](https://github.com/lhl/pi-codex-status) - `/codex:status` shows OpenAI Codex usage info.
 
