@@ -1,5 +1,7 @@
 # pi-extensions
 
+My shared agent instructions are in [`AGENTS.md.hbs`](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs).
+
 ## Extensions (actively used)
 
 ### Published on npm
