@@ -6,7 +6,7 @@ My shared agent instructions are in [`AGENTS.md.hbs`](https://github.com/richard
 
 ### Published on npm
 - [`pi-background-bash`](./extensions/background-bash/README.md) - Overrides bash tool with one that can run in the background.
-  - By default bash commands which take over 30s go to background and the LLM can continue.
+  - By default bash commands which take over 30s go to background and the LLM can continue taking turns.
 - [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context.
   - Example: `/diff` runs `git diff` and immediately populates context window with 0 LLM turns.
 - [`pi-project-resources`](./extensions/project-resources/README.md) - Loads `AGENT.md` and `skills/` by traversing up directories from current working directory until `~`.
