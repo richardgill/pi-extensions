@@ -5,9 +5,12 @@ My shared agent instructions are in [`AGENTS.md.hbs`](https://github.com/richard
 ## Extensions (actively used)
 
 ### Published on npm
-- [`pi-background-bash`](./extensions/background-bash/README.md) - Overrides bash tool with one that can run in the background. By default bash commands which take over 30s go to background and the LLM can continue.
-- [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context. `/diff` runs `git diff` and immediately populates context window with 0 LLM turns.
+- [`pi-background-bash`](./extensions/background-bash/README.md) - Overrides bash tool with one that can run in the background.
+  - By default bash commands which take over 30s go to background and the LLM can continue.
+- [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context.
+  - Example: `/diff` runs `git diff` and immediately populates context window with 0 LLM turns.
 - [`pi-project-resources`](./extensions/project-resources/README.md) - Loads `AGENT.md` and `skills/` by traversing up directories from current working directory until `~`.
+  - Allows you to use custom names e.g. `AGENT.local.md`, `CLAUDE.local.md` etc. 
 - [`pi-preset`](./extensions/preset/README.md) - Pi's preset example extension but with better config management.
 - [`pi-up-history`](./extensions/pi-up-history/README.md) - Adds Up-arrow prompt history from saved sessions for the current working directory.
 - [`pi-parrot`](./extensions/parrot/README.md) - Populates Pi's input box with the last assistant message.
