@@ -1,5 +1,11 @@
 # @richardgill/pi-bits
 
+## 0.0.2
+
+### Patch Changes
+
+- [`1dfbf35`](https://github.com/richardgill/pi-extensions/commit/1dfbf358048aa3016e1211e8d2b5ee39e2cdaffd) Thanks [@richardgill](https://github.com/richardgill)! - Remove the thinking-toggle extension from the bundle because its Shift+Tab shortcut conflicts with Pi's built-in shortcut.
+
 ## 0.0.1
 
 ### Patch Changes
