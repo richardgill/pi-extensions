@@ -18,7 +18,7 @@
 
 ### Private extension workspaces
 
-These workspaces are not published individually. Footer, trust-all-projects, and thinking-toggle are distributed through [`@richardgill/pi-bits`](./packages/pi-bits/README.md).
+These workspaces are not published individually. Footer and trust-all-projects are distributed through [`@richardgill/pi-bits`](./packages/pi-bits/README.md); thinking-toggle remains local-only.
 
 - [`pi-footer`](./extensions/footer/README.md) - Replaces the footer with model, thinking, context, and extension status information.
 - [`pi-trust-all-projects`](./extensions/trust-all-projects/README.md) - Automatically trusts every project.

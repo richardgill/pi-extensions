@@ -110,7 +110,6 @@ pi install npm:@richardgill/pi-up-history
 Bundles my small personal defaults:
 
 - A compact footer showing the model, thinking level, context usage, and extension statuses.
-- A Shift+Tab shortcut that cycle through medium, high, and xhigh thinking.
 - Automatically trust every new folder - bypassing Pi's project trust prompt.
 
 ```sh

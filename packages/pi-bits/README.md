@@ -1,9 +1,8 @@
 # @richardgill/pi-bits
 
-A Pi package containing three independent extensions:
+A Pi package containing two independent extensions:
 
 - `footer` - Replaces Pi's footer with model, thinking, context, and extension status information.
-- `thinking-toggle` - Cycles medium, high, and xhigh thinking levels with Shift+Tab or `/toggle-thinking`.
 - `trust-all-projects` - Automatically trusts and remembers every project.
 
 > [!WARNING]

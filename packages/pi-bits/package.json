@@ -11,11 +11,12 @@
     "directory": "packages/pi-bits"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "type": "module",
   "scripts": {
-    "build": "vp pack src/footer.ts src/thinking-toggle.ts src/trust-all-projects.ts --format esm --platform node --out-dir dist --clean",
+    "build": "vp pack src/footer.ts src/trust-all-projects.ts --format esm --platform node --out-dir dist --clean",
     "prepack": "pnpm run build"
   },
   "peerDependencies": {
@@ -33,7 +34,6 @@
   "pi": {
     "extensions": [
       "./dist/footer.mjs",
-      "./dist/thinking-toggle.mjs",
       "./dist/trust-all-projects.mjs"
     ]
   }
