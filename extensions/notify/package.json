@@ -1,0 +1,43 @@
+{
+  "name": "@richardgill/pi-notify",
+  "version": "0.0.0",
+  "private": true,
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://github.com/richardgill/pi-extensions/tree/main/extensions/notify",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardgill/pi-extensions",
+    "directory": "extensions/notify"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "tsc": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

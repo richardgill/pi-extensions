@@ -1,5 +1,9 @@
 # Extension Testing
 
+## Private extensions
+
+Some extension workspaces are intentionally local and unpublished. Their `package.json` files have `private: true`; do not publish them, remove that safeguard, or assume every extension has a corresponding npm package. Load private extensions directly from this repository.
+
 ## Test with -p (non-interactive)
 
 From the repo root:
