@@ -1,7 +1,6 @@
 # pi-extensions
 
-> [!TIP]
-> **[Set up Pi like my Pi](./PI_SETUP.md):** try `@richardgill/pi-bits` with `pi -e npm:@richardgill/pi-bits`, or install it with `pi install npm:@richardgill/pi-bits`.
+> ### [Set up Pi like my Pi →](./PI_SETUP.md)
 
 
 ## Extensions (actively used)
