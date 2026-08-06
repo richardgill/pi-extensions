@@ -64,7 +64,17 @@ My [`context-commands.jsonc`](https://github.com/richardgill/nix/blob/main/out-o
 
 ## Load project instructions and skills
 
-Loads project instructions and skills by traversing up directories from the current working directory.
+Loads project instructions and skills by traversing up directories from the current working directory. The default config is:
+
+```jsonc
+{
+  "contextFilenames": ["AGENTS.local.md", "CLAUDE.local.md"],
+  "contextSectionTitle": "Extra Context Files",
+  "skillDirectoryPaths": [".pi/skills", ".claude/skills"]
+}
+```
+
+For example:
 
 ```text
 ~/code/
@@ -77,15 +87,7 @@ Loads project instructions and skills by traversing up directories from the curr
         └── .claude/skills/database/SKILL.md
 ```
 
-Starting Pi in `~/code/my-app/packages/api` loads all three instruction files and both skills. The default config is:
-
-```jsonc
-{
-  "contextFilenames": ["AGENTS.local.md", "CLAUDE.local.md"],
-  "contextSectionTitle": "Extra Context Files",
-  "skillDirectoryPaths": [".pi/skills", ".claude/skills"]
-}
-```
+Starting Pi in `~/code/my-app/packages/api` loads all three instruction files and both skills.
 
 ```sh
 pi install npm:@richardgill/pi-project-resources
@@ -95,9 +97,7 @@ pi install npm:@richardgill/pi-project-resources
 
 ## Reuse prompts from previous sessions
 
-Adds Up-arrow prompt history from saved sessions for the current working directory, similar to how Claude Code works.
-
-For example, start Pi in a project and press Up in the empty prompt to recall the last prompt you sent there. Press Up again to move through older prompts from that project.
+Pressing up arrow shows prompts from previous pi sessions, similar to how Claude Code works.
 
 ```sh
 pi install npm:@richardgill/pi-up-history
