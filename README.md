@@ -1,12 +1,13 @@
 # pi-extensions
 
-My Pi agent instructions are in [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md) ([templated](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/pi/AGENTS.md.hbs)).
+> [!TIP]
+> **[Set up Pi like my Pi](./PI_SETUP.md):** try `@richardgill/pi-bits` with `pi -e npm:@richardgill/pi-bits`, or install it with `pi install npm:@richardgill/pi-bits`.
 
-My Pi settings are in [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json).
 
 ## Extensions (actively used)
 
 ### Published on npm
+- [`@richardgill/pi-bits`](./packages/pi-bits/README.md) - Bundles the footer, thinking toggle, and automatic project trust extensions.
 - [`pi-background-bash`](./extensions/background-bash/README.md) - Overrides bash tool with one that can run in the background.
   - By default bash commands which take over 30s go to background and the LLM can continue taking turns.
 - [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context.
@@ -17,10 +18,12 @@ My Pi settings are in [`settings.json`](https://github.com/richardgill/nix/blob/
 - [`pi-up-history`](./extensions/pi-up-history/README.md) - Adds Up-arrow prompt history from saved sessions for the current working directory.
 - [`pi-parrot`](./extensions/parrot/README.md) - Populates Pi's input box with the last assistant message.
 
-### Unpublished (but useful!)
+### Private extension workspaces
+
+These workspaces are not published individually. Footer, trust-all-projects, and thinking-toggle are distributed through [`@richardgill/pi-bits`](./packages/pi-bits/README.md).
+
 - [`pi-footer`](./extensions/footer/README.md) - Replaces the footer with model, thinking, context, and extension status information.
 - [`pi-trust-all-projects`](./extensions/trust-all-projects/README.md) - Automatically trusts every project.
-- [`pi-notify`](./extensions/notify/README.md) - Runs a local beep command after an agent run.
 - [`pi-thinking-toggle`](./extensions/thinking-toggle/README.md) - Cycles medium, high, and xhigh thinking levels.
 
 ### 3rd party (not mine)
@@ -48,4 +51,5 @@ My Pi settings are in [`settings.json`](https://github.com/richardgill/nix/blob/
 These packages are intentionally local, have `private: true`, and must not be published to npm.
 
 - [`pi-bash-timeout-guard`](./extensions/bash-timeout-guard/README.md)
+- [`pi-handoff`](./extensions/handoff/README.md) - Generates an editable context-transfer prompt and opens it in a new session.
 - [`pi-task-context`](./extensions/task-context)
