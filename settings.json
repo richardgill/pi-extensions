@@ -1,0 +1,13 @@
+{
+  "packages": [
+    "npm:@richardgill/pi-bits",
+    "npm:@richardgill/pi-background-bash",
+    "npm:@richardgill/pi-context-commands",
+    "npm:@richardgill/pi-project-resources",
+    "npm:@richardgill/pi-preset",
+    "npm:@richardgill/pi-up-history",
+    "npm:@richardgill/pi-parrot",
+    "npm:@calesennett/pi-codex-fast",
+    "npm:pi-codex-status"
+  ]
+}

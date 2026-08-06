@@ -302,6 +302,15 @@ importers:
 
   packages/lib: {}
 
+  packages/pi-bits:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.83.0
+        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
+      '@earendil-works/pi-tui':
+        specifier: 0.83.0
+        version: 0.83.0
+
   packages/pi-config:
     dependencies:
       jsonc-parser:
