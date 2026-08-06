@@ -1,6 +1,8 @@
 # pi-extensions
 
-My shared agent instructions are in [`AGENTS.md.hbs`](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs).
+My Pi agent instructions are in [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md) ([templated](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/pi/AGENTS.md.hbs)).
+
+My Pi settings are in [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json).
 
 ## Extensions (actively used)
 
