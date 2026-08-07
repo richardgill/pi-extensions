@@ -137,7 +137,7 @@ Create `~/.pi/agent/background-bash.jsonc`:
   "systemPromptGuidelines": [
     "Use {{bashToolName}} with background: true for commands known to be long-running.",
     "{{bashToolName}} commands that exceed their timeout remain running when timeoutAction is \"background\".",
-    "Background processes report automatically when they finish; do not repeatedly inspect them unless interim output is useful.",
+    "You will be notified when background processes finish. No need to sleep to wait.",
     "Use {{processToolName}} list/peek/kill with the PGID returned by {{bashToolName}}."
   ]
 }
