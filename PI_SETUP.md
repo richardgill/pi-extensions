@@ -6,6 +6,13 @@ My Pi setup is very vanilla:
 - **Agent instructions:** [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md?plain=1) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs?plain=1))
 - **Settings:** [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
 
+I only use `AGENT.md` + `skills` (dynamically loaded `AGENT.md`)
+
+I do not use "sub agents" etc.
+
+Pi is aware of my tmux setup and can spawn new pi windows and worktrees using the [orchestrate](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/orchestrate/SKILL.md?plain=1) and [worktree](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/worktrees/SKILL.md?plain=1) skills.
+
+
 ## Install all extensions
 
 ```sh
