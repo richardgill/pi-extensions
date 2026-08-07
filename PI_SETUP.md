@@ -6,7 +6,7 @@ My Pi setup is very vanilla:
 - **Agent instructions:** [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md?plain=1) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs?plain=1))
 - **Settings:** [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
 
-I only use `AGENT.md` + `skills` (dynamically loaded `AGENT.md`)
+I only use `AGENT.md` + skills
 
 I do not use "sub agents" etc.
 
