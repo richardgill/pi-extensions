@@ -8,6 +8,8 @@
 ### Published on npm
 - [`pi-background-bash`](./extensions/background-bash/README.md) - Overrides bash tool with one that can run in the background.
   - By default bash commands which take over 30s go to background and the LLM can continue taking turns.
+- [`pi-sub-pi`](./extensions/sub-pi/README.md) - Runs isolated Pi subprocesses for single, chained, or parallel tasks.
+- [`pi-sub-pi-skill`](./extensions/sub-pi-skill/README.md) - Routes opted-in `/skill:` commands through the `sub-pi` tool.
 - [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context.
   - Example: `/diff` runs `git diff` and immediately populates context window with 0 LLM turns.
 - [`pi-project-resources`](./extensions/project-resources/README.md) - Loads `AGENT.md` and `skills/` by traversing up directories from current working directory until `~`.
@@ -40,8 +42,6 @@ These workspaces are not published individually. Footer and trust-all-projects a
 ### Published on npm
 
 - [`pi-file-collector`](./extensions/file-collector/README.md) - Records files and line ranges that Pi reads, edits, writes, or cites in a JSONL file.
-- [`pi-sub-pi`](./extensions/sub-pi/README.md) - Runs isolated Pi subprocesses for single, chained, or parallel tasks.
-- [`pi-sub-pi-skill`](./extensions/sub-pi-skill/README.md) - Routes opted-in `/skill:` commands through the `sub-pi` tool.
 - [`pi-tmux-bash`](./extensions/tmux-bash/README.md) - Replaces Pi's bash tool with a tmux-backed version for background jobs and polling.
 
 ### Unpublished
