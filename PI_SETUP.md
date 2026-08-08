@@ -9,9 +9,10 @@ My Pi setup is very vanilla:
 I only use `AGENT.md` + skills
 
 
-I currently do not use "sub agents", but I used my [`sub-pi`](./extensions/sub-pi/README.md) and [`sub-pi-skill`](./extensions/sub-pi-skill/README.md) extensions for a long time.
 
 Pi is aware of my tmux setup and can spawn new pi windows and worktrees using the [orchestrate](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/orchestrate/SKILL.md?plain=1) and [worktree](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/worktrees/SKILL.md?plain=1) skills.
+
+If you're looking for "sub agents", check out my [`sub-pi`](./extensions/sub-pi/README.md) and [`sub-pi-skill`](./extensions/sub-pi-skill/README.md) extensions which I used for a long time.
 
 
 ## Install all extensions
