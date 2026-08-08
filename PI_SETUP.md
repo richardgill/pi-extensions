@@ -1,20 +1,22 @@
 # My Pi setup
 
-- I use Pi with OpenAI Codex `gpt-5.6-sol` on High thinking (OpenAI have a generous policy to use your own harness)
+- I use Pi with OpenAI Codex `gpt-5.6-sol` at the High thinking level (OpenAI has a generous policy allowing you to use your own harness)
 - My [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md?plain=1) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs?plain=1))
-- My pi [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
+- My Pi [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
 
-I only use `AGENT.md` + skills.
+I only use `AGENTS.md` + skills.
 
-Pi's [philosophy](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) is to keep things simple and not overdo it with bells-and-whistles.
+Pi's [philosophy](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) is to keep things simple and not overdo it with bells and whistles.
+
+Jump to [Install all extensions](#install-all-extensions).
 
 ## Run bash commands in the background
 
-- Overrides pi's built-in bash tool with a replacement that runs bash in background.
+- Overrides Pi's built-in `bash` tool with a replacement that runs commands in the background.
 - Commands taking over 30 seconds move to the background by default.
   - Prevents the agent from getting stuck if it runs `sleep 999999999999` by accident.
-- Background processes make the LLM take a turn when they complete.
-- See running processes and kill them with `/proc`
+- Background processes trigger an LLM turn when they complete.
+- See running processes and kill them with `/proc`.
 
 ```sh
 pi install npm:@richardgill/pi-background-bash
@@ -22,12 +24,11 @@ pi install npm:@richardgill/pi-background-bash
 
 [Source and documentation](./extensions/background-bash/README.md)
 
-
 ## Load custom `CLAUDE.md` and `.claude/skills`
 
-- Load custom context files: e.g. `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.local.md`.  
-- Load custom skill folders: `.claude/skills`.
-- Traverses up folders until `$HOME` loading context files and skills.
+- Load custom context files, such as `CLAUDE.md`, `CLAUDE.local.md`, and `AGENTS.local.md`.
+- Load custom skill folders, such as `.claude/skills`.
+- Traverse parent folders up to `$HOME`, loading context files and skills.
 
 ```jsonc
 // ~/.pi/agent/extension-config/project-resources.jsonc
@@ -59,15 +60,15 @@ pi install npm:@richardgill/pi-project-resources
 
 [Source and documentation](./extensions/project-resources/README.md)
 
-## Sub agents / Tasks
+## Subagents / tasks
 
-Pi is aware of my tmux setup and can spawn new pi windows and worktrees using the [orchestrate](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/orchestrate/SKILL.md?plain=1) and [worktree](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/worktrees/SKILL.md?plain=1) skills
+Pi is aware of my tmux setup and can spawn new Pi windows and worktrees using the [orchestrate](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/orchestrate/SKILL.md?plain=1) and [worktree](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/worktrees/SKILL.md?plain=1) skills.
 
 But if you're looking for "sub agents", check out my [`sub-pi`](./extensions/sub-pi/README.md) and [`sub-pi-skill`](./extensions/sub-pi-skill/README.md) extensions which I used for a long time.
 
 ## Up arrow remembers prompts from previous sessions
 
-Pressing up arrow shows prompts from previous pi sessions, similar to Claude Code.
+Pressing the up arrow shows prompts from previous Pi sessions, similar to Claude Code.
 
 ```sh
 pi install npm:@richardgill/pi-up-history
@@ -77,7 +78,7 @@ pi install npm:@richardgill/pi-up-history
 
 ## Load command output straight into context
 
-Registers slash commands that run commands and put their output into Pi context.
+Registers slash commands that run commands and put their output into Pi's context.
 
 Example, `/diff` runs `git diff` and immediately populates the context window without an LLM turn.
 
@@ -105,10 +106,7 @@ pi install npm:@richardgill/pi-context-commands
 }
 ```
 
-``
-
 [Source and documentation](./extensions/context-commands/README.md)
-
 
 ## `pi-bits`: the rest of my personal setup
 
@@ -152,4 +150,3 @@ pi install npm:@richardgill/pi-up-history
 pi install npm:@calesennett/pi-codex-fast
 pi install npm:pi-codex-status
 ```
-
