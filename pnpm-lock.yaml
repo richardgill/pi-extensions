@@ -198,6 +198,18 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
 
+  extensions/skill-metadata-templates:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: '*'
+        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
+      '@richardgill/pi-config':
+        specifier: workspace:*
+        version: link:../../packages/pi-config
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+
   extensions/sub-pi:
     dependencies:
       '@earendil-works/pi-agent-core':

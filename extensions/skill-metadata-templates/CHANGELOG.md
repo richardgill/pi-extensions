@@ -1,0 +1,7 @@
+# @richardgill/pi-skill-metadata-templates
+
+## 0.0.1
+
+### Patch Changes
+
+- Initial release.
