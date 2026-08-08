@@ -166,6 +166,21 @@ pi install npm:@richardgill/pi-sub-pi
 pi install npm:@richardgill/pi-sub-pi-skill
 ```
 
+Opt a skill into a fresh subprocess and optionally override its model and thinking level in `SKILL.md` frontmatter:
+
+```yaml
+---
+name: code-review
+description: ...
+metadata:
+  pi:
+    subProcess: true
+    subProcessContext: fresh
+    model: openai-codex/gpt-5.2
+    thinkingLevel: xhigh
+---
+```
+
 [Source and documentation](./extensions/sub-pi-skill/README.md)
 
 
