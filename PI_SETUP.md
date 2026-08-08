@@ -143,45 +143,4 @@ Adds `/codex:status` for viewing OpenAI Codex usage information.
 pi install npm:pi-codex-status
 ```
 
-## Optional extras
-
-These are not part of my default setup, but are useful when you want work to run in isolated Pi subprocesses.
-
-### Run prompts in Pi subprocesses
-
-Adds a `sub-pi` tool for running single, chained, or parallel tasks. Tasks can optionally use a skill and inherit the current model and thinking level.
-
-```sh
-pi install npm:@richardgill/pi-sub-pi
-```
-
-[Source and documentation](./extensions/sub-pi/README.md)
-
-### Run opted-in skills in Pi subprocesses
-
-Routes skills with `metadata.pi.subProcess: true` through the `sub-pi` tool instead of expanding them in the current session. This requires both extensions.
-
-```sh
-pi install npm:@richardgill/pi-sub-pi
-pi install npm:@richardgill/pi-sub-pi-skill
-```
-
-Opt a skill into a fresh subprocess and optionally override its model and thinking level in `SKILL.md` frontmatter:
-
-```yaml
----
-name: code-review
-description: ...
-metadata:
-  pi:
-    subProcess: true
-    subProcessContext: fresh
-    model: openai-codex/gpt-5.2
-    thinkingLevel: xhigh
----
-```
-
-[Source and documentation](./extensions/sub-pi-skill/README.md)
-
-
 [Source and documentation](https://github.com/lhl/pi-codex-status)
