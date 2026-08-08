@@ -10,6 +10,7 @@
   - By default bash commands which take over 30s go to background and the LLM can continue taking turns.
 - [`pi-sub-pi`](./extensions/sub-pi/README.md) - Runs isolated Pi subprocesses for single, chained, or parallel tasks.
 - [`pi-sub-pi-skill`](./extensions/sub-pi-skill/README.md) - Routes opted-in `/skill:` commands through the `sub-pi` tool.
+- [`pi-skill-metadata-templates`](./extensions/skill-metadata-templates/README.md) - Appends templated instructions to skills based on frontmatter metadata.
 - [`pi-context-commands`](./extensions/context-commands/README.md) - Registers slash commands that run commands and put the output into Pi context.
   - Example: `/diff` runs `git diff` and immediately populates context window with 0 LLM turns.
 - [`pi-project-resources`](./extensions/project-resources/README.md) - Loads `AGENT.md` and `skills/` by traversing up directories from current working directory until `~`.

@@ -23,6 +23,9 @@
       "@richardgill/pi-preset": ["./extensions/preset/src/extension.ts"],
       "@richardgill/pi-sub-pi": ["./extensions/sub-pi/src/extension.ts"],
       "@richardgill/pi-sub-pi-skill": ["./extensions/sub-pi-skill/src/extension.ts"],
+      "@richardgill/pi-skill-metadata-templates": [
+        "./extensions/skill-metadata-templates/src/extension.ts"
+      ],
       "pi-bash-timeout-guard": ["./extensions/bash-timeout-guard/src/extension.ts"],
       "@richardgill/pi-up-history": ["./extensions/pi-up-history/src/extension.ts"],
       "@richardgill/pi-config": ["./packages/pi-config/src/index.ts"],

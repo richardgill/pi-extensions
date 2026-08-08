@@ -37,6 +37,10 @@
       "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
+    "extensions/skill-metadata-templates": {
+      "entry": ["src/index.ts", "tests/**/*.{unit,integration,e2e}.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
     "packages/pi-bits": {
       "entry": ["src/*.ts"],
       "project": ["src/**/*.ts"]
