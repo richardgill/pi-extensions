@@ -38,17 +38,6 @@ pi install npm:@richardgill/pi-background-bash
 
 [Source and documentation](./extensions/background-bash/README.md)
 
-## Load command output into context
-
-Registers slash commands that run commands and put their output into Pi context.
-
-Example, `/diff` runs `git diff` and immediately populates the context window without an LLM turn.
-
-```sh
-pi install npm:@richardgill/pi-context-commands
-```
-
-[Source and documentation](./extensions/context-commands/README.md)
 
 My [`context-commands.jsonc`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/extension-config/context-commands.jsonc):
 
@@ -112,6 +101,19 @@ pi install npm:@richardgill/pi-up-history
 ```
 
 [Source and documentation](./extensions/pi-up-history/README.md)
+
+## Load command output into context
+
+Registers slash commands that run commands and put their output into Pi context.
+
+Example, `/diff` runs `git diff` and immediately populates the context window without an LLM turn.
+
+```sh
+pi install npm:@richardgill/pi-context-commands
+```
+
+[Source and documentation](./extensions/context-commands/README.md)
+
 
 ## Add my personal defaults
 
