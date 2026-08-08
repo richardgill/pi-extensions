@@ -1,19 +1,18 @@
 # My Pi setup
 
-My Pi setup is very vanilla:
+- I use OpenAI Codex `gpt-5.6-sol` on High thinking (OpenAI have a generous policy to use your own harness)
+- My [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md?plain=1) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs?plain=1))
+- My pi [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
 
-- **Provider:** OpenAI Codex · **Model:** `gpt-5.6-sol` · **Thinking level:** High
-- **Agent instructions:** [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md?plain=1) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs?plain=1))
-- **Settings:** [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
+I only use `AGENT.md` + skills.
 
-I only use `AGENT.md` + skills
-
+Pi's [philosophy](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) is to keep things simple and not overdo it with bells-and-whistles.
 
 ## Run bash commands in the background
 
-- Overrides pi's built-in bash tool with a replacement that runs in background.
+- Overrides pi's built-in bash tool with a replacement that runs bash in background.
 - Commands taking over 30 seconds move to the background by default.
-  - Preventing the agent from getting stuck if it runs `sleep 999999999999` by accident.
+  - Prevents the agent from getting stuck if it runs `sleep 999999999999` by accident.
 - Background processes make the LLM take a turn when they complete.
 - See running processes and kill them with `/proc`
 
@@ -29,8 +28,6 @@ pi install npm:@richardgill/pi-background-bash
 - Load custom context files: e.g. `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.local.md`.  
 - Load custom skill folders: `.claude/skills`.
 - Traverses up folders until `$HOME` loading context files and skills.
-
-
 
 ```jsonc
 // ~/.pi/agent/extension-config/project-resources.jsonc
