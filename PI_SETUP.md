@@ -1,6 +1,6 @@
 # My Pi setup
 
-- I use OpenAI Codex `gpt-5.6-sol` on High thinking (OpenAI have a generous policy to use your own harness)
+- I use Pi with OpenAI Codex `gpt-5.6-sol` on High thinking (OpenAI have a generous policy to use your own harness)
 - My [`AGENTS.md`](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/AGENTS.md?plain=1) ([template](https://github.com/richardgill/nix/blob/main/flake/modules/home-manager/dot-files/ai-agents/shared/partials/AGENTS.md.hbs?plain=1))
 - My pi [`settings.json`](https://github.com/richardgill/nix/blob/main/out-of-store-config/ai-agents/pi/settings.json)
 
