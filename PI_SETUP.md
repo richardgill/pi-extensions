@@ -64,7 +64,7 @@ pi install npm:@richardgill/pi-project-resources
 
 Pi is aware of my tmux setup and can spawn new Pi windows and worktrees using the [orchestrate](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/orchestrate/SKILL.md?plain=1) and [worktree](https://github.com/richardgill/nix/blob/main/built/ai-agents/pi/skills/worktrees/SKILL.md?plain=1) skills.
 
-But if you're looking for "sub agents", check out my [`sub-pi`](./extensions/sub-pi/README.md) and [`sub-pi-skill`](./extensions/sub-pi-skill/README.md) extensions which I used for a long time.
+But if you're looking for "sub agents" directly in Pi, check out my [`sub-pi`](./extensions/sub-pi/README.md) and [`sub-pi-skill`](./extensions/sub-pi-skill/README.md) extensions which I used for a long time (be warned: it's not as polished as Claude Code or Codex).
 
 ## Up arrow remembers prompts from previous sessions
 
