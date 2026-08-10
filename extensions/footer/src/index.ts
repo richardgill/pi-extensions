@@ -1,4 +1,4 @@
-import type { ContextUsage, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const horizontalPadding = 1;
@@ -27,11 +27,19 @@ const formatContextUsage = (usage: ContextUsage | undefined) => {
 };
 
 const hiddenStatusKeys = new Set(["codex-status"]);
+const backgroundBashStatusKey = "backgroundBashProcesses";
 
-const getStatuses = (statuses: ReadonlyMap<string, string>) =>
+const formatStatus = (key: string, value: string, theme: Theme) => {
+  if (key !== backgroundBashStatusKey) return theme.fg("dim", value);
+
+  const backgroundCount = value.replace(/ procs?$/, "");
+  return `${theme.fg("dim", `${backgroundCount} `)}${theme.fg("accent", theme.bold("/proc"))}`;
+};
+
+const getStatuses = (statuses: ReadonlyMap<string, string>, theme: Theme) =>
   Array.from(statuses.entries())
     .filter(([key, value]) => Boolean(value) && !hiddenStatusKeys.has(key))
-    .map(([, value]) => value)
+    .map(([key, value]) => formatStatus(key, value, theme))
     .join(" ");
 
 export default function (pi: ExtensionAPI) {
@@ -42,10 +50,10 @@ export default function (pi: ExtensionAPI) {
         const model = ctx.model?.id ?? "no-model";
         const usage = formatContextUsage(ctx.getContextUsage());
         const thinkingLevel = pi.getThinkingLevel();
-        const statuses = getStatuses(footerData.getExtensionStatuses());
+        const statuses = getStatuses(footerData.getExtensionStatuses(), theme);
         const thinking = theme.getThinkingBorderColor(thinkingLevel)(thinkingLevel);
         const left = `${theme.fg("dim", `${model} · `)}${thinking}${theme.fg("dim", ` · ${usage}`)}`;
-        const right = theme.fg("dim", statuses);
+        const right = statuses;
         const line = padFooterLine(joinFooter(left, right, width - horizontalPadding * 2), width);
         const bottomPadding = Array.from({ length: bottomPaddingLines }, () => "");
 
