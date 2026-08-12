@@ -4,6 +4,13 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 const horizontalPadding = 1;
 const bottomPaddingLines = 1;
 
+// GPT-5.6 Codex models expose a 372k backend window: https://github.com/earendil-works/pi/pull/6471
+const contextWindowOverrides = new Map([
+  ["openai-codex/gpt-5.6-sol", 372_000],
+  ["openai-codex/gpt-5.6-terra", 372_000],
+  ["openai-codex/gpt-5.6-luna", 372_000],
+]);
+
 const padFooterLine = (line: string, width: number) => {
   const contentWidth = Math.max(0, width - horizontalPadding * 2);
   return `${" ".repeat(horizontalPadding)}${truncateToWidth(line, contentWidth)}${" ".repeat(horizontalPadding)}`;
@@ -17,14 +24,21 @@ const joinFooter = (left: string, right: string, width: number) => {
 const formatTokenCount = (tokens: number) =>
   tokens < 1000 ? `${tokens}` : `${(tokens / 1000).toFixed(1)}k`;
 
-const formatContextUsage = (usage: ContextUsage | undefined) => {
-  if (!usage) return "ctx n/a";
+const formatContextUsage = (usage: ContextUsage | undefined, contextWindow: number | undefined) => {
+  if (!usage || !contextWindow) return "ctx n/a";
 
-  const window = formatTokenCount(usage.contextWindow);
+  const window = formatTokenCount(contextWindow);
   if (usage.tokens === null || usage.percent === null) return `ctx ?/${window}`;
 
-  return `ctx ${formatTokenCount(usage.tokens)}/${window} ${usage.percent.toFixed(1)}%`;
+  const percent = (usage.tokens / contextWindow) * 100;
+  return `ctx ${formatTokenCount(usage.tokens)}/${window} ${percent.toFixed(1)}%`;
 };
+
+const getContextWindow = (
+  provider: string | undefined,
+  modelId: string | undefined,
+  usage: ContextUsage | undefined,
+) => contextWindowOverrides.get(`${provider}/${modelId}`) ?? usage?.contextWindow;
 
 const hiddenStatusKeys = new Set(["codex-status"]);
 const backgroundBashStatusKey = "backgroundBashProcesses";
@@ -48,7 +62,9 @@ export default function (pi: ExtensionAPI) {
       invalidate() {},
       render(width: number): string[] {
         const model = ctx.model?.id ?? "no-model";
-        const usage = formatContextUsage(ctx.getContextUsage());
+        const contextUsage = ctx.getContextUsage();
+        const contextWindow = getContextWindow(ctx.model?.provider, ctx.model?.id, contextUsage);
+        const usage = formatContextUsage(contextUsage, contextWindow);
         const thinkingLevel = pi.getThinkingLevel();
         const statuses = getStatuses(footerData.getExtensionStatuses(), theme);
         const thinking = theme.getThinkingBorderColor(thinkingLevel)(thinkingLevel);
