@@ -14,7 +14,7 @@ Create `ipc.jsonc` in `~/.pi/agent`, or in `$PI_EXTENSION_CONFIG_DIR` when set:
 
 ```jsonc
 {
-  "inspectionCommand": ["pi-jq", "{{childSessionId}}", "--messages", "3"],
+  "inspectionCommand": ["pi-jq", "{{childSessionId}}", "--messages", "3", "--role", "assistant"],
   "inspectionTimeoutMs": 5000,
   "supervisionPrompt": "Continue supervision.",
 }

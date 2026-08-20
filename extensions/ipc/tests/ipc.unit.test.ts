@@ -356,7 +356,9 @@ describe("pi-jq output", () => {
 
     expect(truncated.startsWith("line-1\n")).toBe(true);
     expect(truncated).toContain("showing last 2000 of 2001 lines");
-    expect(truncated).toContain(`Full output: "pi-jq" "${sessionId}" "--messages" "3"`);
+    expect(truncated).toContain(
+      `Full output: "pi-jq" "${sessionId}" "--messages" "3" "--role" "assistant"`,
+    );
   });
 
   it("keeps at most 50KB of output", () => {
@@ -402,7 +404,7 @@ describe("extension lifecycle", () => {
     expect(harness.fake.receipts).toEqual([{ customType: RECEIPT_TYPE, data: value }]);
     expect(harness.fake.exec).toHaveBeenCalledExactlyOnceWith(
       "pi-jq",
-      [value.childSessionId, "--messages", "3"],
+      [value.childSessionId, "--messages", "3", "--role", "assistant"],
       { signal: expect.any(AbortSignal), timeout: 5000 },
     );
     expect(harness.fake.messages[0]?.options).toEqual(expectedOptions);

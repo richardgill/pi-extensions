@@ -2,7 +2,7 @@ import { templatedString } from "@richardgill/pi-config";
 import { z } from "zod";
 
 export const DEFAULT_IPC_CONFIG = {
-  inspectionCommand: ["pi-jq", "{{childSessionId}}", "--messages", "3"],
+  inspectionCommand: ["pi-jq", "{{childSessionId}}", "--messages", "3", "--role", "assistant"],
   inspectionTimeoutMs: 5000,
   supervisionPrompt: "Continue supervision.",
 };
