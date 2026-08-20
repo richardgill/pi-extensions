@@ -11,6 +11,9 @@
     "url": "https://github.com/richardgill/pi-extensions",
     "directory": "extensions/ipc"
   },
+  "bin": {
+    "pi-ipc-send": "./src/cli.ts"
+  },
   "files": [
     "src"
   ],
@@ -20,11 +23,13 @@
   },
   "scripts": {
     "tsc": "tsc -p tsconfig.json --noEmit",
+    "pi-ipc-send": "node --import tsx src/cli.ts",
     "test": "vitest --run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@richardgill/pi-config": "workspace:*",
+    "tsx": "4.21.0",
     "zod": "4.3.6"
   },
   "peerDependencies": {

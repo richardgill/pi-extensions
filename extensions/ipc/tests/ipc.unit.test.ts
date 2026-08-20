@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,19 +15,27 @@ import type {
 import { afterEach, describe, expect, it, test as testCases, vi } from "vitest";
 
 import {
+  compactAssistantMessageEvent,
+  createLiveEventWriter,
   eventKey,
   ipc,
+  liveEventStreamPath,
   MESSAGE_TYPE,
   PARENT_SESSION_ENV,
   parseEnvelope,
+  parseUserMessageRequest,
   RECEIPT_TYPE,
   sendEnvelope,
+  sendUserMessage,
   socketPathForSession,
   startReceiver,
   TASK_SLUG_ENV,
   truncatePiJqOutput,
   type DelegateSettledEnvelope,
   type IpcOptions,
+  type LiveEventRecord,
+  type UserMessageInput,
+  type UserMessageRequest,
 } from "../src/extension";
 import { DEFAULT_IPC_CONFIG, IpcConfigSchema } from "../src/config";
 
@@ -35,9 +43,10 @@ type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 type SentMessage = { message: unknown; options: unknown };
 type FakePi = {
   api: ExtensionAPI;
-  handlers: Map<string, Handler>;
+  handlers: Map<string, Handler[]>;
   receipts: { customType: string; data: unknown }[];
   messages: SentMessage[];
+  userMessages: SentMessage[];
   renderers: Map<string, MessageRenderer<unknown>>;
   exec: ReturnType<typeof vi.fn>;
 };
@@ -67,21 +76,25 @@ const createPi = (
     killed: false,
   },
 ): FakePi => {
-  const handlers = new Map<string, Handler>();
+  const handlers = new Map<string, Handler[]>();
   const receipts: { customType: string; data: unknown }[] = [];
   const messages: SentMessage[] = [];
+  const userMessages: SentMessage[] = [];
   const renderers = new Map<string, MessageRenderer<unknown>>();
   const exec = vi.fn(async () => execResult);
   const api = {
     exec,
-    on: (event: string, handler: Handler) => handlers.set(event, handler),
+    on: (event: string, handler: Handler) =>
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]),
     appendEntry: (customType: string, data: unknown) => receipts.push({ customType, data }),
     registerMessageRenderer: (customType: string, renderer: MessageRenderer<unknown>) =>
       renderers.set(customType, renderer),
     sendMessage: (message: unknown, options: unknown) => messages.push({ message, options }),
+    sendUserMessage: (message: unknown, options: unknown) =>
+      userMessages.push({ message, options }),
   } as unknown as ExtensionAPI;
 
-  return { api, handlers, receipts, messages, renderers, exec };
+  return { api, handlers, receipts, messages, userMessages, renderers, exec };
 };
 
 const createContext = ({
@@ -89,11 +102,13 @@ const createContext = ({
   entries = [],
   sessionId = randomUUID(),
   leafId = randomUUID(),
+  sessionFile = "/tmp/session.jsonl",
 }: {
   idle?: boolean;
   entries?: unknown[];
   sessionId?: string;
   leafId?: string;
+  sessionFile?: string;
 } = {}): ExtensionContext =>
   ({
     cwd: "/tmp/project",
@@ -102,11 +117,17 @@ const createContext = ({
       getEntries: () => entries,
       getSessionId: () => sessionId,
       getLeafId: () => leafId,
+      getSessionFile: () => sessionFile,
     },
   }) as unknown as ExtensionContext;
 
-const emit = async (fake: FakePi, event: string, ctx: ExtensionContext): Promise<void> => {
-  await fake.handlers.get(event)?.({}, ctx);
+const emit = async (
+  fake: FakePi,
+  event: string,
+  ctx: ExtensionContext,
+  value: unknown = {},
+): Promise<void> => {
+  for (const handler of fake.handlers.get(event) ?? []) await handler(value, ctx);
 };
 
 type ParentHarnessOptions = {
@@ -114,6 +135,7 @@ type ParentHarnessOptions = {
   entries?: unknown[];
   sessionId?: string;
   leafId?: string;
+  sessionFile?: string;
   env?: NodeJS.ProcessEnv;
   execResult?: ExecResult;
   configureFake?: (fake: FakePi) => void;
@@ -125,6 +147,7 @@ const startParentHarness = async ({
   entries,
   sessionId = randomUUID(),
   leafId,
+  sessionFile,
   env = {},
   execResult,
   configureFake,
@@ -133,10 +156,10 @@ const startParentHarness = async ({
   const runtimeDir = await createTempDir();
   const fake = createPi(execResult);
   configureFake?.(fake);
-  const ctx = createContext({ idle, entries, sessionId, leafId });
+  const ctx = createContext({ idle, entries, sessionId, leafId, sessionFile });
   const socketPath = socketPathForSession(sessionId, runtimeDir);
   ipc(fake.api, { env, runtimeDir, ...ipcOptions });
-  await emit(fake, "session_start", ctx);
+  await emit(fake, "session_start", ctx, { type: "session_start", reason: "startup" });
 
   return {
     runtimeDir,
@@ -147,7 +170,10 @@ const startParentHarness = async ({
     ctx,
     send: (value: DelegateSettledEnvelope, options: Parameters<typeof sendEnvelope>[2] = {}) =>
       sendEnvelope(socketPath, value, options),
-    shutdown: () => emit(fake, "session_shutdown", ctx),
+    sendUserMessage: (request: UserMessageInput) =>
+      sendUserMessage(sessionId, request, { runtimeDir }),
+    shutdown: () =>
+      emit(fake, "session_shutdown", ctx, { type: "session_shutdown", reason: "quit" }),
   };
 };
 
@@ -215,9 +241,45 @@ describe("parseEnvelope", () => {
   });
 });
 
+describe("parseUserMessageRequest", () => {
+  const request = (overrides: Partial<UserMessageRequest> = {}): UserMessageRequest => ({
+    version: 1,
+    requestId: randomUUID(),
+    type: "user_message",
+    message: "Review this",
+    deliverAs: "steer",
+    expandPromptTemplates: true,
+    ...overrides,
+  });
+
+  it("defaults prompt expansion and rejects malformed requests", () => {
+    const { expandPromptTemplates: _expandPromptTemplates, ...withoutExpansion } = request();
+    expect(parseUserMessageRequest(JSON.stringify(withoutExpansion))).toEqual({
+      ...withoutExpansion,
+      expandPromptTemplates: true,
+    });
+    expect(parseUserMessageRequest(JSON.stringify(request({ message: " " })))).toBeUndefined();
+    expect(
+      parseUserMessageRequest(JSON.stringify(request({ requestId: "bad id" }))),
+    ).toBeUndefined();
+    expect(
+      parseUserMessageRequest(JSON.stringify(request({ message: "x".repeat(3073) }))),
+    ).toBeUndefined();
+    expect(
+      parseUserMessageRequest(JSON.stringify({ ...request(), unexpected: true })),
+    ).toBeUndefined();
+  });
+});
+
 describe("ipc configuration", () => {
   it("uses the documented defaults", () => {
     expect(IpcConfigSchema.parse({})).toEqual(DEFAULT_IPC_CONFIG);
+  });
+
+  it("requires an absolute live event directory when enabled", () => {
+    expect(() => IpcConfigSchema.parse({ liveEventsDir: "relative/events" })).toThrow(
+      "must be an absolute path",
+    );
   });
 
   testCases.each([
@@ -227,6 +289,205 @@ describe("ipc configuration", () => {
     [["pi-jq", "{{childSessionId}}"], "a timeout above the bound", 60_001],
   ])("rejects %s", (inspectionCommand, _name, inspectionTimeoutMs?: number) => {
     expect(() => IpcConfigSchema.parse({ inspectionCommand, inspectionTimeoutMs })).toThrow();
+  });
+});
+
+describe("live event stream", () => {
+  const readRecords = async (filePath: string): Promise<LiveEventRecord[]> => {
+    const content = await readFile(filePath, "utf8");
+    expect(content.endsWith("\n")).toBe(true);
+    return content
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as LiveEventRecord);
+  };
+
+  it("writes complete records in sequence and closes with the shutdown event", async () => {
+    const rootDir = await createTempDir();
+    const sessionId = randomUUID();
+    const streamId = randomUUID();
+    const writer = createLiveEventWriter({
+      rootDir,
+      sessionId,
+      streamId,
+      processInstanceId: "process-1",
+    });
+
+    writer.append({ type: "agent_start" });
+    writer.append({ type: "turn_start", turnIndex: 0, timestamp: 123 });
+    await writer.close({ type: "session_shutdown", reason: "quit" });
+    writer.append({ type: "agent_settled" });
+
+    expect(writer.filePath).toBe(liveEventStreamPath(rootDir, sessionId, streamId));
+    const records = await readRecords(writer.filePath);
+    expect(records.map((record) => record.sequence)).toEqual([1, 2, 3]);
+    expect(records.map((record) => record.event.type)).toEqual([
+      "agent_start",
+      "turn_start",
+      "session_shutdown",
+    ]);
+    expect(records).toEqual(
+      records.map((record) => ({
+        ...record,
+        version: 1,
+        sessionId,
+        processInstanceId: "process-1",
+        streamId,
+      })),
+    );
+  });
+
+  it("keeps assistant deltas but removes cumulative partial messages", () => {
+    const partial = { role: "assistant", content: [{ type: "text", text: "Hello world" }] };
+    const event = {
+      type: "text_delta",
+      contentIndex: 0,
+      delta: " world",
+      partial,
+    } as Parameters<typeof compactAssistantMessageEvent>[0];
+
+    expect(compactAssistantMessageEvent(event)).toEqual({
+      type: "text_delta",
+      contentIndex: 0,
+      delta: " world",
+    });
+    expect(
+      compactAssistantMessageEvent({
+        type: "text_end",
+        contentIndex: 0,
+        content: "Hello world",
+        partial,
+      } as Parameters<typeof compactAssistantMessageEvent>[0]),
+    ).toEqual({ type: "text_end", contentIndex: 0 });
+  });
+
+  it("captures message lifecycle across reload streams without cumulative updates", async () => {
+    const liveEventsDir = await createTempDir();
+    const harness = await startParentHarness({
+      sessionFile: "/canonical/pi-session.jsonl",
+      ipcOptions: { liveEventsDir },
+    });
+    const assistantStart = {
+      type: "message_start",
+      message: { role: "assistant", content: [], timestamp: 1 },
+    };
+    await emit(harness.fake, "message_start", harness.ctx, assistantStart);
+    await emit(harness.fake, "message_update", harness.ctx, {
+      type: "message_update",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        timestamp: 1,
+      },
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "Hello",
+        partial: {
+          role: "assistant",
+          content: [{ type: "text", text: "Hello" }],
+          timestamp: 1,
+        },
+      },
+    });
+    await emit(harness.fake, "message_end", harness.ctx, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Hello" }],
+        timestamp: 1,
+      },
+    });
+    await harness.shutdown();
+
+    const sessionId = harness.ctx.sessionManager.getSessionId();
+    const [streamFile] = await readdir(join(liveEventsDir, sessionId));
+    const records = await readRecords(join(liveEventsDir, sessionId, streamFile!));
+    const update = records.find((record) => record.event.type === "message_update");
+    expect(update?.event).toMatchObject({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Hello" },
+    });
+    expect(update?.event).not.toHaveProperty("message");
+    expect(update?.event).not.toHaveProperty("assistantMessageEvent.partial");
+    expect(records.at(0)?.event).toMatchObject({ type: "session_start", reason: "startup" });
+    expect(records.at(-1)?.event).toEqual({ type: "session_shutdown", reason: "quit" });
+  });
+
+  it("segments reloads and session replacements into identifiable streams", async () => {
+    const liveEventsDir = await createTempDir();
+    const runtimeDir = await createTempDir();
+    const fake = createPi();
+    const firstSessionId = randomUUID();
+    const firstCtx = createContext({
+      sessionId: firstSessionId,
+      sessionFile: "/canonical/first.jsonl",
+    });
+    ipc(fake.api, { env: {}, runtimeDir, liveEventsDir });
+
+    await emit(fake, "session_start", firstCtx, { type: "session_start", reason: "startup" });
+    await emit(fake, "session_shutdown", firstCtx, {
+      type: "session_shutdown",
+      reason: "reload",
+    });
+    await emit(fake, "session_start", firstCtx, { type: "session_start", reason: "reload" });
+    await emit(fake, "session_shutdown", firstCtx, {
+      type: "session_shutdown",
+      reason: "resume",
+      targetSessionFile: "/canonical/second.jsonl",
+    });
+
+    const secondSessionId = randomUUID();
+    const secondCtx = createContext({
+      sessionId: secondSessionId,
+      sessionFile: "/canonical/second.jsonl",
+    });
+    await emit(fake, "session_start", secondCtx, {
+      type: "session_start",
+      reason: "resume",
+      previousSessionFile: "/canonical/first.jsonl",
+    });
+    await emit(fake, "session_shutdown", secondCtx, {
+      type: "session_shutdown",
+      reason: "quit",
+    });
+
+    const firstFiles = await readdir(join(liveEventsDir, firstSessionId));
+    const secondFiles = await readdir(join(liveEventsDir, secondSessionId));
+    expect(firstFiles).toHaveLength(2);
+    expect(secondFiles).toHaveLength(1);
+
+    const streams = await Promise.all(
+      [
+        ...firstFiles.map((file) => join(liveEventsDir, firstSessionId, file)),
+        ...secondFiles.map((file) => join(liveEventsDir, secondSessionId, file)),
+      ].map(readRecords),
+    );
+    expect(new Set(streams.map((records) => records[0]?.processInstanceId)).size).toBe(1);
+    expect(new Set(streams.map((records) => records[0]?.streamId)).size).toBe(3);
+    streams.forEach((records) => {
+      expect(records.map((record) => record.sequence)).toEqual([1, 2]);
+      expect(records[0]?.event.type).toBe("session_start");
+      expect(records[1]?.event.type).toBe("session_shutdown");
+    });
+  });
+
+  it("isolates write failures from the caller", async () => {
+    const directory = await createTempDir();
+    const rootDir = join(directory, "not-a-directory");
+    await writeFile(rootDir, "file");
+    const errors: unknown[] = [];
+    const writer = createLiveEventWriter({
+      rootDir,
+      sessionId: randomUUID(),
+      onError: (error) => errors.push(error),
+    });
+
+    writer.append({ type: "agent_start" });
+    await expect(
+      writer.close({ type: "session_shutdown", reason: "quit" }),
+    ).resolves.toBeUndefined();
+    expect(errors.length).toBeGreaterThan(0);
   });
 });
 
@@ -347,6 +608,83 @@ describe("socket paths and event keys", () => {
   });
 });
 
+describe("inbound user messages", () => {
+  it("returns a wire response and delivers immediately when idle", async () => {
+    const harness = await startParentHarness({ idle: true });
+    const requestId = randomUUID();
+
+    await expect(
+      harness.sendUserMessage({
+        requestId,
+        message: "Use /review",
+        deliverAs: "steer",
+      }),
+    ).resolves.toEqual({ version: 1, requestId, ok: true, delivery: "immediate" });
+    expect(harness.fake.userMessages).toEqual([
+      { message: "Use /review", options: { expandPromptTemplates: true } },
+    ]);
+    await harness.shutdown();
+  });
+
+  testCases.each([
+    ["steers after the current turn", "steer"],
+    ["follows up after the agent run", "followUp"],
+  ])("%s while busy", async (_name, deliverAs) => {
+    if (deliverAs !== "steer" && deliverAs !== "followUp") throw new Error("Invalid delivery mode");
+    const harness = await startParentHarness({ idle: false });
+    const requestId = randomUUID();
+
+    await expect(
+      harness.sendUserMessage({
+        requestId,
+        message: "Continue",
+        deliverAs,
+        expandPromptTemplates: false,
+      }),
+    ).resolves.toEqual({ version: 1, requestId, ok: true, delivery: deliverAs });
+    expect(harness.fake.userMessages).toEqual([
+      { message: "Continue", options: { deliverAs, expandPromptTemplates: false } },
+    ]);
+    await harness.shutdown();
+  });
+
+  it("deduplicates request IDs and ignores malformed or oversized frames", async () => {
+    const harness = await startParentHarness();
+    const requestId = randomUUID();
+    const request = {
+      requestId,
+      message: "Once",
+      deliverAs: "steer" as const,
+    };
+
+    await harness.sendUserMessage(request);
+    await harness.sendUserMessage(request);
+    expect(harness.fake.userMessages).toHaveLength(1);
+    expect(await rawExchange(harness.socketPath, ["{}"]).then((response) => response)).toBe("");
+    expect(await rawExchange(harness.socketPath, ["x".repeat(4097)])).toBe("");
+    await harness.shutdown();
+  });
+
+  it("rejects stale requests after shutdown without using Pi APIs", async () => {
+    const harness = await startParentHarness();
+    const requestId = randomUUID();
+    await harness.shutdown();
+
+    await expect(
+      sendUserMessage(
+        harness.sessionId,
+        {
+          requestId,
+          message: "Too late",
+          deliverAs: "steer",
+        },
+        { runtimeDir: harness.runtimeDir },
+      ),
+    ).resolves.toBeUndefined();
+    expect(harness.fake.userMessages).toEqual([]);
+  });
+});
+
 describe("pi-jq output", () => {
   it("keeps the last 2000 lines", () => {
     const sessionId = randomUUID();
@@ -356,7 +694,9 @@ describe("pi-jq output", () => {
 
     expect(truncated.startsWith("line-1\n")).toBe(true);
     expect(truncated).toContain("showing last 2000 of 2001 lines");
-    expect(truncated).toContain(`Full output: "pi-jq" "${sessionId}" "--messages" "3"`);
+    expect(truncated).toContain(
+      `Full output: "pi-jq" "${sessionId}" "--messages" "3" "--role" "assistant"`,
+    );
   });
 
   it("keeps at most 50KB of output", () => {
@@ -402,7 +742,7 @@ describe("extension lifecycle", () => {
     expect(harness.fake.receipts).toEqual([{ customType: RECEIPT_TYPE, data: value }]);
     expect(harness.fake.exec).toHaveBeenCalledExactlyOnceWith(
       "pi-jq",
-      [value.childSessionId, "--messages", "3"],
+      [value.childSessionId, "--messages", "3", "--role", "assistant"],
       { signal: expect.any(AbortSignal), timeout: 5000 },
     );
     expect(harness.fake.messages[0]?.options).toEqual(expectedOptions);

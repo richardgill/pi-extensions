@@ -3,6 +3,8 @@ import { loadConfigOrDefault } from "@richardgill/pi-config";
 import { IpcConfigSchema } from "./config";
 import { ipc } from "./extension";
 
+export * from "./extension";
+
 const config = loadConfigOrDefault({
   filename: "ipc.jsonc",
   schema: IpcConfigSchema,
