@@ -6,8 +6,9 @@ export const PARENT_SESSION_ENV = "PI_DELEGATE_PARENT_SESSION_ID";
 export const TASK_SLUG_ENV = "PI_DELEGATE_TASK_SLUG";
 
 const MAX_MESSAGE_BYTES = 4096;
+const MAX_USER_MESSAGE_BYTES = 3072;
 const ACK = "ACK";
-const MAX_ACK_BYTES = 256;
+const MAX_RESPONSE_BYTES = 512;
 const SOCKET_PATH_LIMIT = 100;
 const ACK_TIMEOUT_MS = 400;
 const INBOUND_TIMEOUT_MS = 1000;
@@ -25,8 +26,42 @@ export type DelegateSettledEnvelope = {
   timestamp: number;
 };
 
-type Receiver = {
-  close: () => Promise<void>;
+export type UserMessageRequest = {
+  version: 1;
+  requestId: string;
+  type: "user_message";
+  message: string;
+  deliverAs: "steer" | "followUp";
+  expandPromptTemplates: boolean;
+};
+
+export type UserMessageResponse =
+  | {
+      version: 1;
+      requestId: string;
+      ok: true;
+      delivery: "immediate" | "steer" | "followUp";
+    }
+  | {
+      version: 1;
+      requestId: string;
+      ok: false;
+      error: "shutting_down" | "unavailable";
+    };
+
+export type UserMessageInput = Omit<
+  UserMessageRequest,
+  "version" | "type" | "expandPromptTemplates"
+> & {
+  expandPromptTemplates?: boolean;
+};
+
+type Receiver = { close: () => Promise<void> };
+type ReceiverOptions = { onUserMessage?: (request: UserMessageRequest) => UserMessageResponse };
+type SenderOptions = {
+  runtimeDir?: string;
+  timeoutMs?: number;
+  retryDelaysMs?: readonly number[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -49,28 +84,85 @@ export const socketPathForSession = (
 
 export const parseEnvelope = (input: string): DelegateSettledEnvelope | undefined => {
   if (Buffer.byteLength(input) > MAX_MESSAGE_BYTES) return undefined;
-
   try {
     const value: unknown = JSON.parse(input);
     if (!isRecord(value)) return undefined;
     if (Object.keys(value).length !== 5 || !isId(value.childSessionId) || !isId(value.leafId)) {
       return undefined;
     }
-    if (typeof value.taskSlug !== "string" || !TASK_SLUG_PATTERN.test(value.taskSlug)) {
+    if (typeof value.taskSlug !== "string" || !TASK_SLUG_PATTERN.test(value.taskSlug))
       return undefined;
-    }
-    if (typeof value.cwd !== "string" || value.cwd.length < 1 || value.cwd.length > 2048) {
+    if (typeof value.cwd !== "string" || value.cwd.length < 1 || value.cwd.length > 2048)
       return undefined;
-    }
     if (!Number.isSafeInteger(value.timestamp) || (value.timestamp as number) < 0) return undefined;
+    return value as DelegateSettledEnvelope;
+  } catch {
+    return undefined;
+  }
+};
 
+export const parseUserMessageRequest = (input: string): UserMessageRequest | undefined => {
+  if (Buffer.byteLength(input) > MAX_MESSAGE_BYTES) return undefined;
+  try {
+    const value: unknown = JSON.parse(input);
+    if (!isRecord(value)) return undefined;
+    const keys = Object.keys(value);
+    const allowedKeys = new Set([
+      "version",
+      "requestId",
+      "type",
+      "message",
+      "deliverAs",
+      "expandPromptTemplates",
+    ]);
+    if (keys.length < 5 || keys.length > 6 || keys.some((key) => !allowedKeys.has(key)))
+      return undefined;
+    if (value.version !== 1 || value.type !== "user_message" || !isId(value.requestId))
+      return undefined;
+    if (typeof value.message !== "string" || !value.message.trim()) return undefined;
+    if (Buffer.byteLength(value.message) > MAX_USER_MESSAGE_BYTES) return undefined;
+    if (value.deliverAs !== "steer" && value.deliverAs !== "followUp") return undefined;
+    if (
+      value.expandPromptTemplates !== undefined &&
+      typeof value.expandPromptTemplates !== "boolean"
+    ) {
+      return undefined;
+    }
     return {
-      childSessionId: value.childSessionId,
-      taskSlug: value.taskSlug,
-      leafId: value.leafId,
-      cwd: value.cwd,
-      timestamp: value.timestamp as number,
-    };
+      ...value,
+      expandPromptTemplates: value.expandPromptTemplates ?? true,
+    } as UserMessageRequest;
+  } catch {
+    return undefined;
+  }
+};
+
+const parseResponse = (input: string, requestId: string): UserMessageResponse | undefined => {
+  try {
+    const value: unknown = JSON.parse(input);
+    if (!isRecord(value) || value.version !== 1 || value.requestId !== requestId) return undefined;
+    const keys = Object.keys(value);
+    const successKeys = ["version", "requestId", "ok", "delivery"];
+    if (
+      value.ok === true &&
+      keys.length === successKeys.length &&
+      keys.every((key) => successKeys.includes(key)) &&
+      (value.delivery === "immediate" ||
+        value.delivery === "steer" ||
+        value.delivery === "followUp")
+    ) {
+      return value as UserMessageResponse;
+    }
+    const errorKeys = ["version", "requestId", "ok", "error"];
+    if (
+      value.ok === false &&
+      keys.length === errorKeys.length &&
+      keys.every((key) => errorKeys.includes(key)) &&
+      (value.error === "shutting_down" || value.error === "unavailable")
+    ) {
+      return value as UserMessageResponse;
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -79,32 +171,45 @@ export const parseEnvelope = (input: string): DelegateSettledEnvelope | undefine
 export const eventKey = ({ childSessionId, leafId }: DelegateSettledEnvelope): string =>
   `${childSessionId}\0${leafId}`;
 
+const responsePayload = (response: UserMessageResponse): string => JSON.stringify(response);
+
 export const startReceiver = async (
   socketPath: string,
   onEnvelope: (envelope: DelegateSettledEnvelope) => void,
+  options: ReceiverOptions | number = {},
   timeoutMs = INBOUND_TIMEOUT_MS,
 ): Promise<Receiver> => {
+  const receiverOptions = typeof options === "number" ? {} : options;
+  const resolvedTimeoutMs = typeof options === "number" ? options : timeoutMs;
   await removeStaleSocket(socketPath);
   const sockets = new Set<Socket>();
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     sockets.add(socket);
     socket.setEncoding("utf8");
-    socket.setTimeout(timeoutMs, () => socket.destroy());
+    socket.setTimeout(resolvedTimeoutMs, () => socket.destroy());
     let input = "";
-
     socket.on("data", (chunk: string) => {
       input += chunk;
       if (Buffer.byteLength(input) > MAX_MESSAGE_BYTES) socket.destroy();
     });
     socket.on("end", () => {
       const envelope = parseEnvelope(input);
-      if (!envelope) {
+      if (envelope) {
+        try {
+          onEnvelope(envelope);
+          socket.end(ACK);
+        } catch {
+          socket.destroy();
+        }
+        return;
+      }
+      const request = parseUserMessageRequest(input);
+      if (!request || !receiverOptions.onUserMessage) {
         socket.destroy();
         return;
       }
       try {
-        onEnvelope(envelope);
-        socket.end(ACK);
+        socket.end(responsePayload(receiverOptions.onUserMessage(request)));
       } catch {
         socket.destroy();
       }
@@ -113,7 +218,6 @@ export const startReceiver = async (
     socket.on("error", () => undefined);
   });
   server.maxConnections = MAX_CONNECTIONS;
-
   await listen(server, socketPath);
   let closed = false;
   return {
@@ -149,9 +253,8 @@ const removeStaleSocket = async (socketPath: string): Promise<void> => {
     throw error;
   });
   if (!stats) return;
-  if (!stats.isSocket()) {
+  if (!stats.isSocket())
     throw new Error(`Delegate notification path is not a socket: ${socketPath}`);
-  }
   if ((await probeSocket(socketPath)) === "active") {
     throw new Error(`Delegate notification socket is already active: ${socketPath}`);
   }
@@ -169,34 +272,35 @@ const listen = (server: Server, socketPath: string): Promise<void> =>
   });
 
 const closeServer = (server: Server): Promise<void> =>
-  new Promise((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
+  new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-const sendAttempt = (socketPath: string, payload: string, timeoutMs: number): Promise<boolean> =>
+const sendAttempt = (
+  socketPath: string,
+  payload: string,
+  timeoutMs: number,
+): Promise<string | undefined> =>
   new Promise((resolve) => {
     const socket = createConnection(socketPath);
     socket.setEncoding("utf8");
-    let ack = "";
+    let response = "";
     let finished = false;
-    const finish = (result: boolean) => {
+    const finish = (result: string | undefined) => {
       if (finished) return;
       finished = true;
       socket.destroy();
       resolve(result);
     };
-
-    socket.setTimeout(timeoutMs, () => finish(false));
+    socket.setTimeout(timeoutMs, () => finish(undefined));
     socket.on("connect", () => socket.end(payload));
     socket.on("data", (chunk: string) => {
-      ack += chunk;
-      if (Buffer.byteLength(ack) > MAX_ACK_BYTES) finish(false);
+      response += chunk;
+      if (Buffer.byteLength(response) > MAX_RESPONSE_BYTES) finish(undefined);
     });
-    socket.on("end", () => finish(ack === ACK));
-    socket.on("error", () => finish(false));
+    socket.on("end", () => finish(response));
+    socket.on("error", () => finish(undefined));
   });
 
 export const sendEnvelope = async (
@@ -206,14 +310,31 @@ export const sendEnvelope = async (
 ): Promise<boolean> => {
   const payload = JSON.stringify(envelope);
   if (!parseEnvelope(payload)) return false;
-
   for (const delay of options.retryDelaysMs ?? RETRY_DELAYS_MS) {
     if (delay > 0) await wait(delay);
-    if (await sendAttempt(socketPath, payload, options.ackTimeoutMs ?? ACK_TIMEOUT_MS)) {
+    if ((await sendAttempt(socketPath, payload, options.ackTimeoutMs ?? ACK_TIMEOUT_MS)) === ACK)
       return true;
-    }
   }
   return false;
+};
+
+export const sendUserMessage = async (
+  sessionId: string,
+  request: UserMessageInput,
+  options: SenderOptions = {},
+): Promise<UserMessageResponse | undefined> => {
+  const payload = JSON.stringify({ version: 1, type: "user_message", ...request });
+  const parsed = parseUserMessageRequest(payload);
+  if (!parsed) return undefined;
+
+  const socketPath = socketPathForSession(sessionId, options.runtimeDir);
+  for (const delay of options.retryDelaysMs ?? RETRY_DELAYS_MS) {
+    if (delay > 0) await wait(delay);
+    const response = await sendAttempt(socketPath, payload, options.timeoutMs ?? ACK_TIMEOUT_MS);
+    const parsedResponse = response ? parseResponse(response, parsed.requestId) : undefined;
+    if (parsedResponse) return parsedResponse;
+  }
+  return undefined;
 };
 
 export const ensureRuntimeDir = async (runtimeDir: string): Promise<void> => {
