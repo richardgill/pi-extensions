@@ -5,6 +5,7 @@ import {
   initTheme,
   type AgentToolResult,
   type ExtensionAPI,
+  type ExtensionCommandContext,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
@@ -46,15 +47,21 @@ type TestMessage = {
 };
 
 type EventHandler = (event: unknown, ctx: ExtensionContext) => void | Promise<void>;
+type TestCommand = {
+  name: string;
+  handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
+};
 
 type Harness = {
   messages: TestMessage[];
   statuses: Array<string | undefined>;
+  confirmations: number;
   runBash: (
     input: BashInput,
     options?: { signal?: AbortSignal; onUpdate?: (result: TestResult) => void },
   ) => Promise<TestResult>;
   runProcess: (input: BashProcessInput) => Promise<TestResult>;
+  runProc: (interactions: Array<(component: Component) => void>) => Promise<void>;
   renderBashCall: (input: BashInput) => string;
   renderBashResult: (result: TestResult) => string;
   shutdown: () => Promise<void>;
@@ -110,11 +117,15 @@ const createHarness = async (
     await writeFile(join(agentDir, "settings.json"), JSON.stringify(overrides.piSettings), "utf8");
   }
   const tools: TestTool[] = [];
+  const commands: TestCommand[] = [];
+  const customInteractions: Array<(component: Component) => void> = [];
   const handlers = new Map<string, EventHandler[]>();
   const messages: TestMessage[] = [];
   const statuses: Array<string | undefined> = [];
+  let confirmations = 0;
   const context = {
     cwd: process.cwd(),
+    mode: "tui",
     hasUI: true,
     model: undefined,
     sessionManager: {
@@ -123,6 +134,30 @@ const createHarness = async (
     },
     ui: {
       setStatus: (_key: string, value: string | undefined) => statuses.push(value),
+      select: async () => undefined,
+      confirm: async () => {
+        confirmations += 1;
+        return true;
+      },
+      notify: () => undefined,
+      custom: async <T>(
+        factory: (
+          tui: { requestRender: () => void },
+          theme: typeof identityTheme,
+          keybindings: object,
+          done: (result: T) => void,
+        ) => Component & { dispose?: () => void },
+      ): Promise<T> =>
+        new Promise<T>((resolve) => {
+          let component: (Component & { dispose?: () => void }) | undefined;
+          component = factory({ requestRender: () => undefined }, identityTheme, {}, (result) => {
+            component?.dispose?.();
+            resolve(result);
+          });
+          const interaction = customInteractions.shift();
+          if (!interaction) throw new Error("Missing scripted custom UI interaction");
+          interaction(component!);
+        }),
     },
   } as unknown as ExtensionContext;
   const pi = {
@@ -130,7 +165,8 @@ const createHarness = async (
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
     registerTool: (tool: unknown) => tools.push(tool as TestTool),
-    registerCommand: () => undefined,
+    registerCommand: (name: string, command: { handler: TestCommand["handler"] }) =>
+      commands.push({ name, handler: command.handler }),
     registerMessageRenderer: () => undefined,
     sendMessage: (
       message: { customType: string; content: string | unknown[]; details?: unknown },
@@ -172,6 +208,9 @@ const createHarness = async (
   return {
     messages,
     statuses,
+    get confirmations() {
+      return confirmations;
+    },
     runBash: (input, options = {}) =>
       tool("bash").execute(
         "bash-test",
@@ -188,6 +227,13 @@ const createHarness = async (
         undefined,
         context,
       ),
+    runProc: async (interactions) => {
+      customInteractions.push(...interactions);
+      const command = commands.find((item) => item.name === "proc");
+      if (!command) throw new Error("Missing proc command");
+      await command.handler("", context as unknown as ExtensionCommandContext);
+      expect(customInteractions).toHaveLength(0);
+    },
     renderBashCall: (input) => {
       initTheme("dark", false);
       const renderCall = tool("bash").renderCall;
@@ -536,6 +582,58 @@ describe("background bash", () => {
     expect(resultText(result)).toContain(`shell=${pgid} before`);
     expect(harness.messages[0]?.content).toContain("after");
     expect(harness.messages).toHaveLength(1);
+
+    await harness.shutdown();
+  });
+
+  it("opens the selected process log with Enter and confirms Ctrl+C termination", async () => {
+    const harness = await createHarness();
+    const result = await harness.runBash({
+      command: "printf 'proc-log\\n'; sleep 30",
+      name: "proc-picker",
+      background: true,
+    });
+    const pgid = pgidFrom(result);
+    let peeked: TestResult | undefined;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      peeked = await harness.runProcess({ action: "peek", pgid });
+      if (resultText(peeked).includes("proc-log")) break;
+      await delay(20);
+    }
+
+    const rendered: string[] = [];
+    await harness.runProc([
+      (component) => {
+        rendered.push(component.render(120).join("\n"));
+        component.handleInput?.("\r");
+      },
+      (component) => {
+        rendered.push(component.render(120).join("\n"));
+        component.handleInput?.("\u0003");
+      },
+    ]);
+
+    expect(resultText(peeked!)).toContain("proc-log");
+    expect(rendered[0]).toContain("─".repeat(20));
+    expect(rendered[0]).toContain("Background processes");
+    expect(rendered[0]).toContain(
+      "Enter to view logs · Ctrl+C to terminate selected process · Esc to exit",
+    );
+    expect(rendered[0].indexOf("proc-picker")).toBeLessThan(
+      rendered[0].indexOf("Enter to view logs"),
+    );
+    expect(rendered[1]).toContain("─".repeat(20));
+    expect(rendered[1]).toContain("Background process log");
+    expect(rendered[1]).toContain(
+      "Esc to return to process list · Ctrl+C to terminate this process",
+    );
+    expect(rendered[1]).toContain("proc-log");
+    expect(harness.confirmations).toBe(1);
+    await waitFor(() => !processGroupExists(pgid));
+    expect(resultText(await harness.runProcess({ action: "list" }))).toBe(
+      "No active background processes.",
+    );
+    expect(harness.messages).toHaveLength(0);
 
     await harness.shutdown();
   });

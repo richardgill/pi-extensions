@@ -107,11 +107,11 @@ After killing, verify that the group is gone:
 ! pgrep -g PGID
 ```
 
-## Process picker
+## Process picker and log viewer
 
 Start two named `sleep 300` commands with `background: true`, then run `/proc`.
 
-Verify that both processes appear with their name, command, PGID, and elapsed time. Select one, confirm the kill, and verify that the process group is gone, the footer count decreases, and no automatic completion follows the intentional kill. Run `/proc` again and verify that only the remaining process appears.
+Verify that both processes appear with their name, command, PGID, and elapsed time. Select one and press Enter; verify that its latest log output is shown and that Esc returns to the process list. With a process selected, press Ctrl+C, confirm the kill, and verify that the process group is gone, the footer count decreases, and no automatic completion follows the intentional kill. Run `/proc` again and verify that only the remaining process appears.
 
 ## Long output
 
