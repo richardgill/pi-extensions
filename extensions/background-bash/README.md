@@ -73,7 +73,7 @@ Completed records are not retained. Completion messages in the Pi transcript are
 
 Active background processes are shown in Pi's footer as `1 background proc`, `2 background procs`, and so on. The status is cleared when the final process exits or is stopped.
 
-Run `/proc` to select an active background process and kill it after confirmation. The list is a snapshot taken when the command opens; if the process finishes before confirmation, `/proc` reports that it is no longer active.
+Run `/proc` to select an active background process. Press Enter to view its latest log output; the log view refreshes while the process runs and Esc returns to the process list. Press Ctrl+C to request termination of the selected process, then confirm it. The list is a snapshot taken when the command opens; if the process finishes before an action, `/proc` reports that it is no longer active.
 
 Custom footers can read the same preformatted value from Pi's extension statuses:
 
