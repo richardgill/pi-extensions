@@ -30,6 +30,14 @@ afterEach(() => {
 });
 
 describe("templatedString", () => {
+  it("declares zod as a runtime dependency", () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { dependencies?: Record<string, string> };
+
+    expect(packageJson.dependencies?.zod).toBe("4.3.6");
+  });
+
   it("renders declared variables", () => {
     const folder = createTempDir();
     const schema = z.object({
