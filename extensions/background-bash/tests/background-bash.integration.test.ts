@@ -8,7 +8,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { backgroundBash } from "../src/extension";
 import { renderCompletionMessage, renderProcessResult, sanitizedResult } from "../src/render";
 import type { BackgroundBashDetails } from "../src/process-manager";
@@ -450,6 +450,52 @@ describe("background bash", () => {
     expect((await stat(dirname(logPath!))).mode & 0o777).toBe(0o700);
 
     await harness.shutdown();
+  });
+
+  it("keeps the session alive when automatic cleanup is denied with EPERM", async () => {
+    const exitListenersBefore = process.listeners("exit");
+    const harness = await createHarness();
+    const realKill = process.kill.bind(process);
+    const cleanupAttempts: number[] = [];
+    const uncaughtErrors: unknown[] = [];
+    const onUncaughtException = (error: unknown) => uncaughtErrors.push(error);
+    process.prependListener("uncaughtException", onUncaughtException);
+    const killSpy = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+      if (pid < 0 && signal === "SIGKILL") {
+        cleanupAttempts.push(pid);
+        if (cleanupAttempts.length === 1) {
+          const error = new Error("operation not permitted") as NodeJS.ErrnoException;
+          error.code = "EPERM";
+          throw error;
+        }
+      }
+      return realKill(pid, signal);
+    });
+
+    try {
+      await harness.runBash({ command: "printf first; sleep 0.1", background: true });
+      await waitFor(() => cleanupAttempts.length === 1);
+      await waitFor(() => harness.messages.length === 1 || uncaughtErrors.length === 1);
+      const messageCountAfterFirst = harness.messages.length;
+
+      const second = await harness.runBash({ command: "printf second" });
+
+      expect(resultText(second)).toContain("second");
+      expect(uncaughtErrors).toEqual([]);
+      expect(harness.messages).toHaveLength(messageCountAfterFirst);
+    } finally {
+      killSpy.mockRestore();
+      process.removeListener("uncaughtException", onUncaughtException);
+      if (uncaughtErrors.length === 0) {
+        await harness.shutdown();
+      } else {
+        for (const listener of process.listeners("exit")) {
+          if (!exitListenersBefore.includes(listener)) process.removeListener("exit", listener);
+        }
+        const shutdownIndex = activeShutdowns.indexOf(harness.shutdown);
+        if (shutdownIndex !== -1) activeShutdowns.splice(shutdownIndex, 1);
+      }
+    }
   });
 
   it("reports one natural explicit-background completion and removes the process", async () => {

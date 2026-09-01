@@ -90,6 +90,14 @@ const killProcessGroup = (pgid: number): void => {
   }
 };
 
+const cleanupProcessGroupAfterExit = (pgid: number): void => {
+  try {
+    killProcessGroup(pgid);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+  }
+};
+
 export class ProcessManager {
   readonly processes = new Map<number, ManagedProcess>();
   private runDir: string | undefined;
@@ -246,7 +254,7 @@ export class ProcessManager {
 
     const pgid = child.pid;
     const childSettlement = waitForChild(child);
-    child.once("exit", () => killProcessGroup(pgid));
+    child.once("exit", () => cleanupProcessGroupAfterExit(pgid));
     const onAbort = () => killProcessGroup(pgid);
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) onAbort();
