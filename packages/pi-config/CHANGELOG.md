@@ -1,5 +1,11 @@
 # @richardgill/pi-config
 
+## 0.0.9
+
+### Patch Changes
+
+- [#70](https://github.com/richardgill/pi-extensions/pull/70) [`874f2d7`](https://github.com/richardgill/pi-extensions/commit/874f2d749a7301601061df1d8c1d3a6c504985d1) Thanks [@yearth](https://github.com/yearth)! - Declare Zod as a runtime dependency so Pi managed installs can load pi-config without relying on dependency hoisting.
+
 ## 0.0.8
 
 ### Patch Changes
