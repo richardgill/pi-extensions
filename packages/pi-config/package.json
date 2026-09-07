@@ -15,15 +15,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "jsonc-parser": "3.3.1"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.83.0",
+    "jsonc-parser": "3.3.1",
     "zod": "4.3.6"
   },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.83.0"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "zod": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {

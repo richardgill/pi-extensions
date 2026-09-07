@@ -340,13 +340,13 @@ importers:
       jsonc-parser:
         specifier: 3.3.1
         version: 3.3.1
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
     devDependencies:
       '@earendil-works/pi-coding-agent':
         specifier: 0.83.0
         version: 0.83.0(ws@8.20.0)(zod@4.3.6)
-      zod:
-        specifier: 4.3.6
-        version: 4.3.6
 
   packages/pi-zod-tool-call:
     devDependencies:
