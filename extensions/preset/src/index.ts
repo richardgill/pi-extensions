@@ -1,16 +1,7 @@
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadConfigOrDefault } from "@richardgill/pi-config";
-import { DEFAULT_OPTIONS, type PresetOptions, preset } from "@richardgill/pi-preset";
+import { DEFAULT_OPTIONS, PresetSchema, type PresetOptions, preset } from "@richardgill/pi-preset";
 import { z } from "zod";
-
-const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
-const PresetSchema = z.object({
-  provider: z.string().optional(),
-  model: z.string().optional(),
-  thinkingLevel: ThinkingLevelSchema.optional(),
-  tools: z.array(z.string()).optional(),
-  instructions: z.string().optional(),
-});
 
 const ConfigSchema = z.object({
   presets: z.record(z.string(), PresetSchema).default(() => ({ ...DEFAULT_OPTIONS.presets })),
@@ -21,9 +12,12 @@ const ConfigSchema = z.object({
   persistState: z.boolean().default(DEFAULT_OPTIONS.persistState),
 });
 
+const configDir = process.env.PI_EXTENSION_CONFIG_DIR ?? getAgentDir();
+
 const config = loadConfigOrDefault({
+  folder: configDir,
   filename: "preset.jsonc",
   schema: ConfigSchema,
 });
 
-export default preset(config as PresetOptions);
+export default preset({ ...config, instructionsBaseDir: configDir } as PresetOptions);

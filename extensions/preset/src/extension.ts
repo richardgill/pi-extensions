@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
@@ -5,13 +8,33 @@ import { z } from "zod";
 
 type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
+export const ThinkingLevelSchema = z.enum([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
 export type Preset = {
   provider?: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
   tools?: string[];
   instructions?: string;
+  instructionsFile?: string;
 };
+
+export const PresetSchema = z.object({
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  thinkingLevel: ThinkingLevelSchema.optional(),
+  tools: z.array(z.string()).optional(),
+  instructions: z.string().optional(),
+  instructionsFile: z.string().optional(),
+});
 
 export type PresetsConfig = Record<string, Preset>;
 
@@ -22,6 +45,7 @@ export type PresetOptions = {
   cycleShortcut?: KeyId | false;
   defaultTools?: string[];
   persistState?: boolean;
+  instructionsBaseDir?: string;
 };
 
 type ResolvedOptions = {
@@ -31,6 +55,7 @@ type ResolvedOptions = {
   cycleShortcut: KeyId | false;
   defaultTools: string[];
   persistState: boolean;
+  instructionsBaseDir: string;
 };
 
 type OriginalState = {
@@ -43,6 +68,7 @@ type PresetState = {
   activeName: string | undefined;
   activePreset: Preset | undefined;
   original: OriginalState | undefined;
+  warnedInstructionsErrors: Set<string>;
 };
 
 type PresetEntry = { data?: { name?: string } };
@@ -54,15 +80,17 @@ export const DEFAULT_OPTIONS: ResolvedOptions = {
   cycleShortcut: "ctrl+shift+u",
   defaultTools: ["read", "bash", "edit", "write"],
   persistState: true,
+  instructionsBaseDir: process.cwd(),
 };
 
 const PresetOptionsSchema = z.object({
-  presets: z.record(z.string(), z.custom<Preset>()).default(() => ({ ...DEFAULT_OPTIONS.presets })),
+  presets: z.record(z.string(), PresetSchema).default(() => ({ ...DEFAULT_OPTIONS.presets })),
   commandName: z.string().default(DEFAULT_OPTIONS.commandName),
   flagName: z.string().default(DEFAULT_OPTIONS.flagName),
   cycleShortcut: z.union([z.string(), z.literal(false)]).default(DEFAULT_OPTIONS.cycleShortcut),
   defaultTools: z.array(z.string()).default(() => [...DEFAULT_OPTIONS.defaultTools]),
   persistState: z.boolean().default(DEFAULT_OPTIONS.persistState),
+  instructionsBaseDir: z.string().default(() => DEFAULT_OPTIONS.instructionsBaseDir),
 });
 
 export const resolveOptions = (options: PresetOptions = {}): ResolvedOptions =>
@@ -72,7 +100,38 @@ const createState = (): PresetState => ({
   activeName: undefined,
   activePreset: undefined,
   original: undefined,
+  warnedInstructionsErrors: new Set(),
 });
+
+const expandHome = (filePath: string): string =>
+  filePath === "~" || filePath.startsWith("~/") || filePath.startsWith(`~${path.sep}`)
+    ? path.join(os.homedir(), filePath.slice(2))
+    : filePath;
+
+export const resolveInstructionsPath = (filePath: string, baseDir: string): string => {
+  const expanded = expandHome(filePath);
+  return path.isAbsolute(expanded) ? expanded : path.resolve(baseDir, expanded);
+};
+
+export const resolvePresetInstructions = (
+  preset: Preset,
+  baseDir: string,
+): { text: string | undefined; error: string | undefined } => {
+  if (!preset.instructionsFile) return { text: preset.instructions, error: undefined };
+  const filePath = resolveInstructionsPath(preset.instructionsFile, baseDir);
+  let fileText: string;
+  try {
+    fileText = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      text: preset.instructions,
+      error: `Preset instructions file ${filePath} could not be read: ${message}`,
+    };
+  }
+  const text = preset.instructions ? `${fileText}\n\n${preset.instructions}` : fileText;
+  return { text, error: undefined };
+};
 
 const snapshotOriginalState = (
   state: PresetState,
@@ -141,6 +200,7 @@ const applyPreset = async (
   pi: ExtensionAPI,
 ): Promise<void> => {
   snapshotOriginalState(state, ctx, pi);
+  state.warnedInstructionsErrors.clear();
   await applyPresetModel(name, preset, ctx, pi);
   if (preset.thinkingLevel) {
     pi.setThinkingLevel(preset.thinkingLevel);
@@ -158,6 +218,7 @@ const clearPreset = async (
 ): Promise<void> => {
   state.activeName = undefined;
   state.activePreset = undefined;
+  state.warnedInstructionsErrors.clear();
   if (state.original?.model) {
     await pi.setModel(state.original.model);
   }
@@ -313,9 +374,16 @@ export const preset = (input: PresetOptions = {}) => {
     });
     registerShortcut(options, state, pi);
     registerCommand(options, state, pi);
-    pi.on("before_agent_start", async (event) => {
-      if (!state.activePreset?.instructions) return;
-      return { systemPrompt: `${event.systemPrompt}\n\n${state.activePreset.instructions}` };
+    pi.on("before_agent_start", async (event, ctx) => {
+      const preset = state.activePreset;
+      if (!preset) return;
+      const { text, error } = resolvePresetInstructions(preset, options.instructionsBaseDir);
+      if (error && !state.warnedInstructionsErrors.has(error)) {
+        state.warnedInstructionsErrors.add(error);
+        ctx.ui.notify(error, "warning");
+      }
+      if (!text) return;
+      return { systemPrompt: `${event.systemPrompt}\n\n${text.trimEnd()}` };
     });
     pi.on("session_start", async (_event, ctx) => {
       await handleSessionStart(options, state, ctx, pi);
