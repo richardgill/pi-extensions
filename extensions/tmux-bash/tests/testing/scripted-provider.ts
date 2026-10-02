@@ -186,6 +186,11 @@ const assertExpectedText = (actual, expected) => {
 };
 
 export default function scriptedProvider(pi) {
+  let systemPrompt = "";
+  pi.on("before_agent_start", (event) => {
+    systemPrompt = event.systemPrompt;
+  });
+
   const registration = registerFauxProvider({
     provider: SCRIPTED_PROVIDER,
     models: [{ id: SCRIPTED_MODEL, name: "Scripted", reasoning: false }],
@@ -257,4 +262,4 @@ const scriptedRecordLatestToolResultSource = (step: ScriptedRecordLatestToolResu
   `(context) => { writeText(${JSON.stringify(step.outputPath)}, latestToolResultText(context, ${JSON.stringify(step.toolName)})); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
 
 const scriptedRecordSystemPromptSource = (step: ScriptedRecordSystemPromptStep): string =>
-  `(context) => { writeText(${JSON.stringify(step.outputPath)}, context.systemPrompt ?? ""); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;
+  `() => { writeText(${JSON.stringify(step.outputPath)}, systemPrompt); return fauxAssistantMessage(${JSON.stringify(step.text)}); }`;

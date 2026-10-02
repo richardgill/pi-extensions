@@ -267,6 +267,35 @@ const restorePresetName = (
   state.activePreset = preset;
 };
 
+const matchesCurrentPreset = (preset: Preset, ctx: ExtensionContext, pi: ExtensionAPI): boolean => {
+  if (!ctx.model || !preset.provider || !preset.model || preset.instructions) return false;
+  if (preset.provider !== ctx.model.provider || preset.model !== ctx.model.id) return false;
+  if (preset.thinkingLevel && preset.thinkingLevel !== pi.getThinkingLevel()) return false;
+  if (!preset.tools?.length) return true;
+
+  const activeTools = pi.getActiveTools();
+  return (
+    preset.tools.length === activeTools.length &&
+    preset.tools.every((tool) => activeTools.includes(tool))
+  );
+};
+
+const recognizeCurrentPreset = (
+  options: ResolvedOptions,
+  state: PresetState,
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+): void => {
+  const name = getPresetOrder(options.presets).find((name) =>
+    matchesCurrentPreset(options.presets[name], ctx, pi),
+  );
+  if (!name) return;
+
+  snapshotOriginalState(state, ctx, pi);
+  state.activeName = name;
+  state.activePreset = options.presets[name];
+};
+
 const handleSessionStart = async (
   options: ResolvedOptions,
   state: PresetState,
@@ -279,6 +308,9 @@ const handleSessionStart = async (
     return;
   }
   restorePresetName(options, state, ctx);
+  if (!state.activeName) {
+    recognizeCurrentPreset(options, state, ctx, pi);
+  }
   updateStatus(state, ctx);
 };
 
