@@ -1,5 +1,11 @@
 # @richardgill/pi-preset
 
+## 0.0.10
+
+### Patch Changes
+
+- [#74](https://github.com/richardgill/pi-extensions/pull/74) [`81608c2`](https://github.com/richardgill/pi-extensions/commit/81608c2ae45e5ccd9447c40e7232fb54fb9eb112) Thanks [@richardgill](https://github.com/richardgill)! - Recognize a matching preset at startup without reapplying its settings, so cycling advances to the next preset. Explicit and saved presets retain precedence, and presets with instructions require explicit activation.
+
 ## 0.0.9
 
 ### Patch Changes
