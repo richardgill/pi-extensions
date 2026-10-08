@@ -8,6 +8,8 @@ I only use `AGENTS.md` + skills.
 
 Pi's [philosophy](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) is to keep things simple and not overdo it with bells and whistles.
 
+You can search the [Pi Discord on Answer Overflow](https://www.answeroverflow.com/c/1456806362351669492). There is also an MCP server you can connect to search it.
+
 Jump to [Install all extensions](#install-all-extensions).
 
 ## Run bash commands in the background
