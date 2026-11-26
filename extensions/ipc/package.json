@@ -19,7 +19,9 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts",
+    "./session-status": "./src/session-status.ts"
   },
   "scripts": {
     "tsc": "tsc -p tsconfig.json --noEmit",

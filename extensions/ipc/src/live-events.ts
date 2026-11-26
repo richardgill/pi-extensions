@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
+
+import {
+  createPiSessionStatusWriter,
+  type PiSessionStatusUpdate,
+  type PiSessionStatusWriter,
+} from "./session-status";
 
 import type {
   AgentEndEvent,
@@ -91,14 +98,45 @@ export type LiveEventPayload =
   | LiveModelSelectEvent
   | LiveThinkingLevelSelectEvent;
 
-export type LiveEventRecord = {
+export type LiveEventEnvelope<Event> = {
   version: 1;
   sessionId: string;
   processInstanceId: string;
   streamId: string;
   sequence: number;
   timestamp: number;
-  event: LiveEventPayload;
+  event: Event;
+};
+
+export type LiveEventRecord = LiveEventEnvelope<LiveEventPayload>;
+export type LiveEventWireRecord = LiveEventEnvelope<Record<string, unknown> & { type: string }>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const parseLiveEventRecord = (
+  value: unknown,
+  sessionId?: string,
+): LiveEventWireRecord | undefined => {
+  if (!isRecord(value) || value.version !== 1) {
+    return undefined;
+  }
+  if (sessionId !== undefined && value.sessionId !== sessionId) {
+    return undefined;
+  }
+  if (
+    typeof value.sessionId !== "string" ||
+    typeof value.processInstanceId !== "string" ||
+    typeof value.streamId !== "string" ||
+    !Number.isSafeInteger(value.sequence) ||
+    (value.sequence as number) < 1 ||
+    typeof value.timestamp !== "number" ||
+    !isRecord(value.event) ||
+    typeof value.event.type !== "string"
+  ) {
+    return undefined;
+  }
+  return value as LiveEventWireRecord;
 };
 
 export type LiveEventWriter = {
@@ -123,18 +161,21 @@ type LiveEventWriterState = {
 };
 
 type LiveEventCapture = {
-  start: (event: SessionStartEvent, ctx: ExtensionContext) => void;
+  start: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>;
   stop: (event: SessionShutdownEvent) => Promise<void>;
 };
 
 type LiveEventCaptureState = {
   writer?: LiveEventWriter;
+  statusWriter?: PiSessionStatusWriter;
   messageSequence: number;
   activeMessage?: { id: string; sequence: number; role: string };
 };
 
 const PROCESS_INSTANCE_KEY = Symbol.for("pi-ipc.live-events.process-instance-id");
-const processGlobals = globalThis as typeof globalThis & { [PROCESS_INSTANCE_KEY]?: string };
+const processGlobals = globalThis as typeof globalThis & {
+  [PROCESS_INSTANCE_KEY]?: string;
+};
 const existingProcessInstanceId = processGlobals[PROCESS_INSTANCE_KEY];
 export const PROCESS_INSTANCE_ID = existingProcessInstanceId ?? `${process.pid}-${randomUUID()}`;
 processGlobals[PROCESS_INSTANCE_KEY] = PROCESS_INSTANCE_ID;
@@ -142,7 +183,9 @@ processGlobals[PROCESS_INSTANCE_KEY] = PROCESS_INSTANCE_ID;
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._-]{1,128}$/;
 
 const requirePathSegment = (value: string, label: string): string => {
-  if (!SAFE_PATH_SEGMENT.test(value)) throw new Error(`Invalid ${label} for live event path`);
+  if (!SAFE_PATH_SEGMENT.test(value)) {
+    throw new Error(`Invalid ${label} for live event path`);
+  }
   return value;
 };
 
@@ -161,7 +204,9 @@ const isSameOrWithin = (parent: string, candidate: string): boolean => {
 };
 
 const assertSeparateFromSessionFile = (rootDir: string, sessionFile: string | undefined): void => {
-  if (!sessionFile) return;
+  if (!sessionFile) {
+    return;
+  }
   const sessionDir = dirname(sessionFile);
   if (isSameOrWithin(rootDir, sessionDir) || isSameOrWithin(sessionDir, rootDir)) {
     throw new Error("Live events directory must be outside the Pi session directory tree");
@@ -180,7 +225,9 @@ const reportWriterError = (state: LiveEventWriterState, error: unknown): void =>
 };
 
 const appendLiveEvent = (state: LiveEventWriterState, event: LiveEventPayload): void => {
-  if (!state.accepting || state.failed) return;
+  if (!state.accepting || state.failed) {
+    return;
+  }
 
   const record: LiveEventRecord = {
     version: 1,
@@ -264,18 +311,30 @@ export const createLiveEventWriter = ({
 export const compactAssistantMessageEvent = (
   event: AssistantMessageEvent,
 ): CompactAssistantMessageEvent => {
-  if (event.type === "start") return { type: event.type };
-  if (event.type === "done") return { type: event.type, reason: event.reason };
+  if (event.type === "start") {
+    return { type: event.type };
+  }
+  if (event.type === "done") {
+    return { type: event.type, reason: event.reason };
+  }
   if (event.type === "error") {
     const errorMessage = event.error.errorMessage;
-    return { type: event.type, reason: event.reason, ...(errorMessage ? { errorMessage } : {}) };
+    return {
+      type: event.type,
+      reason: event.reason,
+      ...(errorMessage ? { errorMessage } : {}),
+    };
   }
   if (
     event.type === "text_delta" ||
     event.type === "thinking_delta" ||
     event.type === "toolcall_delta"
   ) {
-    return { type: event.type, contentIndex: event.contentIndex, delta: event.delta };
+    return {
+      type: event.type,
+      contentIndex: event.contentIndex,
+      delta: event.delta,
+    };
   }
   return { type: event.type, contentIndex: event.contentIndex };
 };
@@ -286,23 +345,66 @@ const modelIdentity = (model: ModelIdentity): ModelIdentity => ({
   name: model.name,
 });
 
+const modelOptions = (ctx: ExtensionContext): ModelIdentity[] => {
+  const scopedModels = ctx.scopedModels ?? [];
+  const availableModels = ctx.modelRegistry?.getAvailable?.() ?? [];
+  const models = scopedModels.length
+    ? scopedModels.map(({ model }) => model)
+    : availableModels.length
+      ? availableModels
+      : (ctx.modelRegistry?.getAll?.() ?? []);
+  return [
+    ...new Map(
+      models.map((model) => {
+        const identity = modelIdentity(model);
+        return [`${identity.provider}\0${identity.id}`, identity];
+      }),
+    ).values(),
+  ].slice(0, 256);
+};
+
+const statusContextUsage = (ctx: ExtensionContext) => {
+  const usage = ctx.getContextUsage();
+  return usage && usage.tokens !== null && usage.percent !== null
+    ? { ...usage, tokens: usage.tokens, percent: usage.percent }
+    : undefined;
+};
+
 const messageRole = (event: MessageStartEvent | MessageEndEvent): string => event.message.role;
 
 export const registerLiveEventCapture = (
   pi: ExtensionAPI,
-  options: { rootDir: string | null; onError?: (error: unknown) => void },
+  options: {
+    rootDir: string | null;
+    env: NodeJS.ProcessEnv;
+    onError?: (error: unknown) => void;
+  },
 ): LiveEventCapture => {
   const state: LiveEventCaptureState = { messageSequence: 0 };
   const append = (event: LiveEventPayload) => state.writer?.append(event);
+  const updateStatus = (ctx: ExtensionContext, update: PiSessionStatusUpdate) =>
+    state.statusWriter?.update({
+      contextUsage: statusContextUsage(ctx),
+      ...update,
+    });
 
   pi.on("session_info_changed", (event) => append(event));
   pi.on("session_compact", (event) => append(event));
   pi.on("session_tree", (event) => append(event));
-  pi.on("agent_start", (event) => append(event));
+  pi.on("agent_start", (event, ctx) => {
+    append(event);
+    return updateStatus(ctx, { state: "busy" });
+  });
   pi.on("agent_end", (event) => append({ type: event.type }));
-  pi.on("agent_settled", (event) => append(event));
+  pi.on("agent_settled", (event, ctx) => {
+    append(event);
+    return updateStatus(ctx, { state: "idle" });
+  });
   pi.on("turn_start", (event) => append(event));
-  pi.on("turn_end", (event) => append({ type: event.type, turnIndex: event.turnIndex }));
+  pi.on("turn_end", (event, ctx) => {
+    append({ type: event.type, turnIndex: event.turnIndex });
+    return updateStatus(ctx, {});
+  });
   pi.on("message_start", (event) => {
     state.messageSequence += 1;
     const activeMessage = {
@@ -320,7 +422,9 @@ export const registerLiveEventCapture = (
   });
   pi.on("message_update", (event) => {
     const activeMessage = state.activeMessage;
-    if (!activeMessage || activeMessage.role !== "assistant") return;
+    if (!activeMessage || activeMessage.role !== "assistant") {
+      return;
+    }
     append({
       type: event.type,
       messageId: activeMessage.id,
@@ -328,9 +432,11 @@ export const registerLiveEventCapture = (
       assistantMessageEvent: compactAssistantMessageEvent(event.assistantMessageEvent),
     });
   });
-  pi.on("message_end", (event) => {
+  pi.on("message_end", (event, ctx) => {
     const activeMessage = state.activeMessage;
-    if (!activeMessage) state.messageSequence += 1;
+    if (!activeMessage) {
+      state.messageSequence += 1;
+    }
     const identity = activeMessage ?? {
       id: `${state.writer?.streamId ?? "inactive"}:${state.messageSequence}`,
       sequence: state.messageSequence,
@@ -343,31 +449,65 @@ export const registerLiveEventCapture = (
       message: event.message,
     });
     state.activeMessage = undefined;
+    return updateStatus(ctx, {});
   });
   pi.on("tool_execution_start", (event) => append(event));
   pi.on("tool_execution_end", (event) => append(event));
-  pi.on("model_select", (event) =>
+  pi.on("model_select", (event, ctx) => {
+    const model = modelIdentity(event.model);
     append({
       type: event.type,
       source: event.source,
-      model: modelIdentity(event.model),
+      model,
       ...(event.previousModel ? { previousModel: modelIdentity(event.previousModel) } : {}),
-    }),
-  );
-  pi.on("thinking_level_select", (event) => append(event));
+    });
+    return updateStatus(ctx, { model });
+  });
+  pi.on("thinking_level_select", (event, ctx) => {
+    append(event);
+    return updateStatus(ctx, { thinkingLevel: event.level });
+  });
 
   return {
-    start: (event, ctx) => {
+    start: async (event, ctx) => {
       state.messageSequence = 0;
       state.activeMessage = undefined;
-      if (!options.rootDir) return;
+      if (!options.rootDir) {
+        return;
+      }
       try {
+        const sessionId = ctx.sessionManager.getSessionId();
         const sessionFile = ctx.sessionManager.getSessionFile();
+        if (!sessionFile) {
+          throw new Error("Pi session has no session file");
+        }
         assertSeparateFromSessionFile(options.rootDir, sessionFile);
         state.writer = createLiveEventWriter({
           rootDir: options.rootDir,
-          sessionId: ctx.sessionManager.getSessionId(),
+          sessionId,
           onError: options.onError,
+        });
+        const startedAt = Date.now();
+        const contextUsage = statusContextUsage(ctx);
+        const availableModelOptions = modelOptions(ctx);
+        state.statusWriter = createPiSessionStatusWriter({
+          rootDir: options.rootDir,
+          onError: options.onError,
+          status: {
+            sessionId,
+            sessionFile,
+            streamId: state.writer.streamId,
+            processInstanceId: PROCESS_INSTANCE_ID,
+            pid: process.pid,
+            hostname: hostname(),
+            ...(options.env.TMUX_PANE ? { tmuxPane: options.env.TMUX_PANE } : {}),
+            startedAt,
+            state: "idle",
+            ...(ctx.model ? { model: modelIdentity(ctx.model) } : {}),
+            ...(availableModelOptions.length ? { modelOptions: availableModelOptions } : {}),
+            thinkingLevel: ctx.thinkingLevel ?? pi.getThinkingLevel(),
+            ...(contextUsage ? { contextUsage } : {}),
+          },
         });
         append({
           ...event,
@@ -375,16 +515,20 @@ export const registerLiveEventCapture = (
           sessionFile,
           pid: process.pid,
         });
+        await state.statusWriter.update({});
       } catch (error) {
         state.writer = undefined;
+        state.statusWriter = undefined;
         reportError(options.onError, error);
       }
     },
     stop: async (event) => {
       const writer = state.writer;
+      const statusWriter = state.statusWriter;
       state.writer = undefined;
+      state.statusWriter = undefined;
       state.activeMessage = undefined;
-      await writer?.close(event);
+      await Promise.all([writer?.close(event), statusWriter?.close()]);
     },
   };
 };

@@ -13,42 +13,54 @@ export const DEFAULT_IPC_CONFIG = {
 const InspectionArgumentSchema = templatedString({
   variables: ["childSessionId"],
   missing: "keep",
-}).min(1);
+});
 
-export const IpcConfigSchema = z
+const InspectionCommandSchema = z
+  .array(InspectionArgumentSchema)
+  .min(1)
+  .refine(
+    (command) =>
+      command.reduce(
+        (count, argument) => count + argument.split("{{childSessionId}}").length - 1,
+        0,
+      ) === 1,
+    "must contain exactly one {{childSessionId}} placeholder",
+  );
+
+const InspectionTimeoutSchema = z.number().int().positive().max(60_000);
+const SupervisionPromptSchema = z.string();
+const LiveEventsDirSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(isAbsolute, "must be an absolute path")
+  .nullable();
+
+const ConfigSchema = z
   .object({
-    inspectionCommand: z
-      .array(InspectionArgumentSchema)
-      .min(1)
-      .refine(
-        (command) =>
-          command.reduce(
-            (count, argument) => count + argument.split("{{childSessionId}}").length - 1,
-            0,
-          ) === 1 &&
-          command.every((argument) => {
-            const untemplated = argument.replaceAll("{{childSessionId}}", "");
-            return !untemplated.includes("{{") && !untemplated.includes("}}");
-          }),
-        "must contain exactly one {{childSessionId}} placeholder and no other templates",
-      )
-      .default(() => [...DEFAULT_IPC_CONFIG.inspectionCommand]),
-    inspectionTimeoutMs: z
-      .number()
-      .int()
-      .positive()
-      .max(60_000)
-      .default(DEFAULT_IPC_CONFIG.inspectionTimeoutMs),
-    supervisionPrompt: z.string().default(DEFAULT_IPC_CONFIG.supervisionPrompt),
-    liveEventsDir: z
-      .string()
-      .trim()
-      .min(1)
-      .refine(isAbsolute, "must be an absolute path")
-      .nullable()
-      .default(DEFAULT_IPC_CONFIG.liveEventsDir),
+    inspectionCommand: InspectionCommandSchema,
+    inspectionTimeoutMs: InspectionTimeoutSchema.default(DEFAULT_IPC_CONFIG.inspectionTimeoutMs),
+    supervisionPrompt: SupervisionPromptSchema.default(DEFAULT_IPC_CONFIG.supervisionPrompt),
+    liveEventsDir: LiveEventsDirSchema.default(DEFAULT_IPC_CONFIG.liveEventsDir),
   })
   .strict();
+
+const DefaultConfigSchema = z
+  .object({
+    inspectionCommand: z.undefined().optional(),
+    inspectionTimeoutMs: InspectionTimeoutSchema.optional(),
+    supervisionPrompt: SupervisionPromptSchema.optional(),
+    liveEventsDir: LiveEventsDirSchema.optional(),
+  })
+  .strict()
+  .transform((config) => ({
+    inspectionCommand: [...DEFAULT_IPC_CONFIG.inspectionCommand],
+    inspectionTimeoutMs: config.inspectionTimeoutMs ?? DEFAULT_IPC_CONFIG.inspectionTimeoutMs,
+    supervisionPrompt: config.supervisionPrompt ?? DEFAULT_IPC_CONFIG.supervisionPrompt,
+    liveEventsDir: config.liveEventsDir ?? DEFAULT_IPC_CONFIG.liveEventsDir,
+  }));
+
+export const IpcConfigSchema = z.union([ConfigSchema, DefaultConfigSchema]);
 
 export type IpcConfig = z.output<typeof IpcConfigSchema>;
 export type IpcConfigInput = z.input<typeof IpcConfigSchema>;
