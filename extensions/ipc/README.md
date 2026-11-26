@@ -49,5 +49,3 @@ Optional `ipc.jsonc` in `~/.pi/agent` (or `$PI_EXTENSION_CONFIG_DIR` when set). 
 The command runs without a shell. It must contain exactly one `{{childSessionId}}` placeholder and no other template variables. The timeout must be a positive integer up to 60000 ms. Both Pis use the current user's private `/tmp/pi-ipc-<uid>` socket directory (mode `0700`).
 
 Remove `liveEventsDir` from existing `ipc.jsonc` files. This extension no longer captures live events.
-
-The receipt recovery fix was adapted from [Overmux Pi at `941f7d91`](https://github.com/richardgill/overmux/tree/941f7d91e5eee3e7478dbd10f68e1f6b5da50241/packages/ecosystem/pi) (MIT).
