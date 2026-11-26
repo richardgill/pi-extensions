@@ -121,15 +121,13 @@ pi install npm:@richardgill/pi-bits
 
 [Source and documentation](./packages/pi-bits/README.md)
 
-## Enable Codex fast mode
+## Select request speed
 
-Adds OpenAI Codex `/fast` mode.
+[pi-speed](./extensions/speed/README.md) adds `/speed` for Claude and OpenAI Responses models. The built-in config does not cover Codex OAuth models. Load it directly from this repository; it is not published on npm.
 
 ```sh
-pi install npm:@calesennett/pi-codex-fast
+pi -e ./extensions/speed/src/index.ts --speed fast
 ```
-
-[Package](https://www.npmjs.com/package/@calesennett/pi-codex-fast)
 
 ## View Codex usage
 
@@ -149,6 +147,5 @@ pi install npm:@richardgill/pi-background-bash
 pi install npm:@richardgill/pi-context-commands
 pi install npm:@richardgill/pi-project-resources
 pi install npm:@richardgill/pi-up-history
-pi install npm:@calesennett/pi-codex-fast
 pi install npm:pi-codex-status
 ```

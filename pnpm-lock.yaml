@@ -228,6 +228,24 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
 
+  extensions/speed:
+    dependencies:
+      '@earendil-works/pi-ai':
+        specifier: '*'
+        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
+      '@earendil-works/pi-coding-agent':
+        specifier: '*'
+        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
+      '@richardgill/pi-config':
+        specifier: workspace:*
+        version: link:../../packages/pi-config
+      minimatch:
+        specifier: 10.2.5
+        version: 10.2.5
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+
   extensions/sub-pi:
     dependencies:
       '@earendil-works/pi-agent-core':
