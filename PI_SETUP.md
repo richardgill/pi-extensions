@@ -123,10 +123,10 @@ pi install npm:@richardgill/pi-bits
 
 ## Select request speed
 
-[pi-speed](./extensions/speed/README.md) adds `/speed` for Claude and OpenAI Responses models. The built-in config does not cover Codex OAuth models. Load it directly from this repository; it is not published on npm.
+[pi-speed](./extensions/speed/README.md) adds `/speed` for Claude and OpenAI Responses models. The built-in config does not cover Codex OAuth models.
 
 ```sh
-pi -e ./extensions/speed/src/index.ts --speed fast
+pi install npm:@richardgill/pi-speed
 ```
 
 ## View Codex usage
@@ -147,5 +147,6 @@ pi install npm:@richardgill/pi-background-bash
 pi install npm:@richardgill/pi-context-commands
 pi install npm:@richardgill/pi-project-resources
 pi install npm:@richardgill/pi-up-history
+pi install npm:@richardgill/pi-speed
 pi install npm:pi-codex-status
 ```

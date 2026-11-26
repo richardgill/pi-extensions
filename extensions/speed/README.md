@@ -1,12 +1,16 @@
 # pi-speed
 
-Set per-request speed for matching Claude and OpenAI models. Load this private extension directly from the repo:
+Set per-request speed for matching Claude and OpenAI models.
 
 ```sh
-pi --no-extensions -e ./extensions/speed/src/index.ts --speed fast
+pi install npm:@richardgill/pi-speed
 ```
 
-Add the absolute path to `extensions/speed` to Pi's `settings.json` `packages` array to load it by default.
+To try it without saving it to your settings:
+
+```sh
+pi -e npm:@richardgill/pi-speed --speed fast
+```
 
 - `--speed off|flex|fast|ultrafast` overrides the default for every model family in this process.
 - `/speed` opens a picker with only tiers configured for the current model and not blocked for its endpoint. `/speed fast` sets an override for this process, taking precedence over the flag. It survives session changes but is never saved. `/speed status` shows the selected and applied tiers.
