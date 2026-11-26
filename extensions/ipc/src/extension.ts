@@ -2,18 +2,6 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import { IpcConfigSchema, type IpcConfig, type IpcConfigInput } from "./config";
 import {
-  compactAssistantMessageEvent,
-  createLiveEventWriter,
-  liveEventSessionDir,
-  liveEventStreamPath,
-  PROCESS_INSTANCE_ID,
-  registerLiveEventCapture,
-  type CompactAssistantMessageEvent,
-  type LiveEventPayload,
-  type LiveEventRecord,
-  type LiveEventWriter,
-} from "./live-events";
-import {
   inspectDelegate,
   MESSAGE_TYPE,
   notificationMessage,
@@ -33,13 +21,7 @@ import {
   startReceiver,
   TASK_SLUG_ENV,
   TASK_SLUG_PATTERN,
-  type AbortRequest,
-  type AbortResponse,
   type DelegateSettledEnvelope,
-  type SetModelRequest,
-  type SetModelResponse,
-  type SetThinkingLevelRequest,
-  type SetThinkingLevelResponse,
   type UserMessageRequest,
   type UserMessageResponse,
 } from "./protocol";
@@ -47,42 +29,13 @@ import {
 export { CHILD_ENV, eventKey, PARENT_SESSION_ENV, TASK_SLUG_ENV } from "./protocol";
 export { MESSAGE_TYPE, truncatePiJqOutput } from "./notification";
 export {
-  createPiSessionStatusWriter,
-  isLocalPidAlive,
-  piSessionStatusPath,
-  piSessionStatusSchema,
-  parsePiSessionStatus,
-  type PiSessionStatus,
-  type PiSessionStatusUpdate,
-  type PiSessionStatusWriter,
-} from "./session-status";
-export {
-  compactAssistantMessageEvent,
-  createLiveEventWriter,
-  liveEventSessionDir,
-  liveEventStreamPath,
-  parseLiveEventRecord,
-  PROCESS_INSTANCE_ID,
-  type CompactAssistantMessageEvent,
-  type LiveEventEnvelope,
-  type LiveEventPayload,
-  type LiveEventRecord,
-  type LiveEventWireRecord,
-  type LiveEventWriter,
-} from "./live-events";
-export {
   parseEnvelope,
-  probePiSession,
   sendEnvelope,
   sendUserMessage,
   socketPathForSession,
   startReceiver,
   parseUserMessageRequest,
   type DelegateSettledEnvelope,
-  type ProbeOptions,
-  type Receiver,
-  type ReceiverOptions,
-  type SenderOptions,
   type UserMessageInput,
   type UserMessageRequest,
   type UserMessageResponse,
@@ -95,23 +48,13 @@ export type IpcOptions = IpcConfigInput & {
   runtimeDir?: string;
   ackTimeoutMs?: number;
   retryDelaysMs?: readonly number[];
-  onLiveEventError?: (error: unknown) => void;
 };
 
-const notificationEnvelope = (details: unknown) => {
-  if (typeof details !== "object" || details === null) {
-    return undefined;
-  }
-  const value = details as Record<string, unknown>;
-  return parseEnvelope(
-    JSON.stringify({
-      childSessionId: value.childSessionId,
-      taskSlug: value.taskSlug,
-      leafId: value.leafId,
-      cwd: value.cwd,
-      timestamp: value.timestamp,
-    }),
-  );
+const notificationKey = (details: unknown) => {
+  if (typeof details !== "object" || details === null) return undefined;
+  const { childSessionId, leafId } = details as Record<string, unknown>;
+  if (typeof childSessionId !== "string" || typeof leafId !== "string") return undefined;
+  return eventKey({ childSessionId, leafId });
 };
 
 const restoreReceipts = (ctx: ExtensionContext) => {
@@ -120,15 +63,11 @@ const restoreReceipts = (ctx: ExtensionContext) => {
   ctx.sessionManager.getEntries().forEach((entry) => {
     if (entry.type === "custom" && entry.customType === RECEIPT_TYPE) {
       const envelope = parseEnvelope(JSON.stringify(entry.data));
-      if (envelope) {
-        receipts.set(eventKey(envelope), envelope);
-      }
+      if (envelope) receipts.set(eventKey(envelope), envelope);
     }
     if (entry.type === "custom_message" && entry.customType === MESSAGE_TYPE) {
-      const envelope = notificationEnvelope(entry.details);
-      if (envelope) {
-        delivered.add(eventKey(envelope));
-      }
+      const key = notificationKey(entry.details);
+      if (key) delivered.add(key);
     }
   });
   return {
@@ -144,14 +83,12 @@ const requiredTaskSlug = (taskSlug: string | undefined): string => {
   return taskSlug;
 };
 
-const rememberResponse = <Response extends { requestId: string }>(
-  responses: Map<string, Response>,
-  response: Response,
-): Response => {
+const rememberResponse = (
+  responses: Map<string, UserMessageResponse>,
+  response: UserMessageResponse,
+): UserMessageResponse => {
   responses.set(response.requestId, response);
-  if (responses.size > 128) {
-    responses.delete(responses.keys().next().value!);
-  }
+  if (responses.size > 128) responses.delete(responses.keys().next().value!);
   return response;
 };
 
@@ -162,13 +99,9 @@ const injectNotification = async (
   signal: AbortSignal,
   config: IpcConfig,
 ): Promise<void> => {
-  if (signal.aborted) {
-    return;
-  }
+  if (signal.aborted) return;
   const details = await inspectDelegate(pi, envelope, signal, config);
-  if (signal.aborted) {
-    return;
-  }
+  if (signal.aborted) return;
   pi.sendMessage(
     notificationMessage(envelope, details, config),
     ctx.isIdle() ? { triggerTurn: true } : { deliverAs: "steer" },
@@ -178,12 +111,11 @@ const injectNotification = async (
 export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
   pi.registerMessageRenderer<DelegateNotificationDetails>(MESSAGE_TYPE, notificationRenderer);
 
-  const { inspectionCommand, inspectionTimeoutMs, supervisionPrompt, liveEventsDir } = options;
+  const { inspectionCommand, inspectionTimeoutMs, supervisionPrompt } = options;
   const config = IpcConfigSchema.parse({
     inspectionCommand,
     inspectionTimeoutMs,
     supervisionPrompt,
-    liveEventsDir,
   });
   const env = options.env ?? process.env;
   const isChild = env[CHILD_ENV] === "1";
@@ -197,26 +129,14 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
   let activeSessionId: string | undefined;
   let sessionController: AbortController | undefined;
   let eventKeys = new Set<string>();
-  let abortResponses = new Map<string, AbortResponse>();
-  let modelResponses = new Map<string, SetModelResponse>();
-  let thinkingResponses = new Map<string, SetThinkingLevelResponse>();
   let userMessageResponses = new Map<string, UserMessageResponse>();
-  const liveEvents = registerLiveEventCapture(pi, {
-    rootDir: config.liveEventsDir,
-    env,
-    onError: options.onLiveEventError,
-  });
 
-  pi.on("session_start", async (event, ctx) => {
-    await liveEvents.start(event, ctx);
+  pi.on("session_start", async (_event, ctx) => {
     const previousReceiver = receiver;
     receiver = undefined;
     sessionController?.abort();
     const controller = new AbortController();
     sessionController = controller;
-    abortResponses = new Map();
-    modelResponses = new Map();
-    thinkingResponses = new Map();
     userMessageResponses = new Map();
     await previousReceiver?.close();
     const ownSessionId = ctx.sessionManager.getSessionId();
@@ -227,13 +147,9 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
     const startedReceiver = await startReceiver(
       socketPathForSession(ownSessionId, runtimeDir),
       (envelope) => {
-        if (controller.signal.aborted || sessionController !== controller) {
-          return;
-        }
+        if (controller.signal.aborted || sessionController !== controller) return;
         const key = eventKey(envelope);
-        if (eventKeys.has(key)) {
-          return;
-        }
+        if (eventKeys.has(key)) return;
         pi.appendEntry(RECEIPT_TYPE, envelope);
         eventKeys.add(key);
         void injectNotification(pi, ctx, envelope, controller.signal, config).catch(
@@ -241,122 +157,9 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
         );
       },
       {
-        onSetModel: async (request: SetModelRequest): Promise<SetModelResponse> => {
-          const previous = modelResponses.get(request.requestId);
-          if (previous) {
-            return previous;
-          }
-          if (controller.signal.aborted || sessionController !== controller) {
-            return rememberResponse(modelResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "shutting_down",
-            });
-          }
-          const model = ctx.modelRegistry.find(request.provider, request.id);
-          if (!model) {
-            return rememberResponse(modelResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "not_found",
-            });
-          }
-          try {
-            if (!(await pi.setModel(model))) {
-              return rememberResponse(modelResponses, {
-                version: 1,
-                requestId: request.requestId,
-                ok: false,
-                error: "no_key",
-              });
-            }
-            return rememberResponse(modelResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: true,
-            });
-          } catch {
-            return rememberResponse(modelResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "unavailable",
-            });
-          }
-        },
-        onSetThinkingLevel: (request: SetThinkingLevelRequest): SetThinkingLevelResponse => {
-          const previous = thinkingResponses.get(request.requestId);
-          if (previous) {
-            return previous;
-          }
-          if (controller.signal.aborted || sessionController !== controller) {
-            return rememberResponse(thinkingResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "shutting_down",
-            });
-          }
-          try {
-            pi.setThinkingLevel(request.level);
-            return rememberResponse(thinkingResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: true,
-            });
-          } catch {
-            return rememberResponse(thinkingResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "unavailable",
-            });
-          }
-        },
-        onAbort: (request: AbortRequest): AbortResponse => {
-          const previous = abortResponses.get(request.requestId);
-          if (previous) {
-            return previous;
-          }
-          if (controller.signal.aborted || sessionController !== controller) {
-            return rememberResponse(abortResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "shutting_down",
-            });
-          }
-          if (ctx.isIdle()) {
-            return rememberResponse(abortResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "unavailable",
-            });
-          }
-          try {
-            ctx.abort();
-            return rememberResponse(abortResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: true,
-            });
-          } catch {
-            return rememberResponse(abortResponses, {
-              version: 1,
-              requestId: request.requestId,
-              ok: false,
-              error: "unavailable",
-            });
-          }
-        },
         onUserMessage: (request: UserMessageRequest): UserMessageResponse => {
           const previous = userMessageResponses.get(request.requestId);
-          if (previous) {
-            return previous;
-          }
+          if (previous) return previous;
           if (controller.signal.aborted || sessionController !== controller) {
             return rememberResponse(userMessageResponses, {
               version: 1,
@@ -407,9 +210,7 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
   pi.on("agent_settled", async (_event, ctx) => {
     const childSessionId = ctx.sessionManager.getSessionId();
     const leafId = ctx.sessionManager.getLeafId();
-    if (!parentSocket || !leafId || !childTaskSlug) {
-      return;
-    }
+    if (!parentSocket || !leafId || !childTaskSlug) return;
 
     await sendEnvelope(
       parentSocket,
@@ -427,15 +228,13 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
     );
   });
 
-  pi.on("session_shutdown", async (event, ctx) => {
-    if (ctx.sessionManager.getSessionId() !== activeSessionId) {
-      return;
-    }
+  pi.on("session_shutdown", async (_event, ctx) => {
+    if (ctx.sessionManager.getSessionId() !== activeSessionId) return;
     const ownedReceiver = receiver;
     receiver = undefined;
     activeSessionId = undefined;
     sessionController?.abort();
     sessionController = undefined;
-    await Promise.all([ownedReceiver?.close(), liveEvents.stop(event)]);
+    await ownedReceiver?.close();
   });
 };

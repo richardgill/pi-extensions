@@ -41,7 +41,7 @@ The default config is `~/.pi/agent/skill-metadata-templates.jsonc`, or `$PI_EXTE
           "execution.tmux": true,
           "execution.namedWindow": true
         },
-        "environment": { "PI_DELEGATE": null }
+        "environment": { "PI_CHILD": null }
       },
       "sessionBranch": "previousTurn",
       "template": "Launch `pi --session {{runtime.sessionBranch.pathShell}} --model {{metadata.pi.model}} --thinking {{metadata.pi.thinkingLevel}} -p {{runtime.skillInvocation.shell}}`."
