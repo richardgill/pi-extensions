@@ -2,8 +2,9 @@ import { lstat, mkdir, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 
-export const PARENT_SESSION_ENV = "PI_DELEGATE_PARENT_SESSION_ID";
-export const TASK_SLUG_ENV = "PI_DELEGATE_TASK_SLUG";
+export const CHILD_ENV = "PI_CHILD";
+export const PARENT_SESSION_ENV = "PI_PARENT_SESSION_ID";
+export const TASK_SLUG_ENV = "PI_TASK_SLUG";
 
 const MAX_MESSAGE_BYTES = 4096;
 const MAX_USER_MESSAGE_BYTES = 3072;
@@ -168,7 +169,10 @@ const parseResponse = (input: string, requestId: string): UserMessageResponse | 
   }
 };
 
-export const eventKey = ({ childSessionId, leafId }: DelegateSettledEnvelope): string =>
+export const eventKey = ({
+  childSessionId,
+  leafId,
+}: Pick<DelegateSettledEnvelope, "childSessionId" | "leafId">): string =>
   `${childSessionId}\0${leafId}`;
 
 const responsePayload = (response: UserMessageResponse): string => JSON.stringify(response);

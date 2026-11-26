@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,11 +15,9 @@ import type {
 import { afterEach, describe, expect, it, test as testCases, vi } from "vitest";
 
 import {
-  compactAssistantMessageEvent,
-  createLiveEventWriter,
+  CHILD_ENV,
   eventKey,
   ipc,
-  liveEventStreamPath,
   MESSAGE_TYPE,
   PARENT_SESSION_ENV,
   parseEnvelope,
@@ -33,7 +31,6 @@ import {
   truncatePiJqOutput,
   type DelegateSettledEnvelope,
   type IpcOptions,
-  type LiveEventRecord,
   type UserMessageInput,
   type UserMessageRequest,
 } from "../src/extension";
@@ -102,13 +99,11 @@ const createContext = ({
   entries = [],
   sessionId = randomUUID(),
   leafId = randomUUID(),
-  sessionFile = "/tmp/session.jsonl",
 }: {
   idle?: boolean;
   entries?: unknown[];
   sessionId?: string;
   leafId?: string;
-  sessionFile?: string;
 } = {}): ExtensionContext =>
   ({
     cwd: "/tmp/project",
@@ -117,7 +112,6 @@ const createContext = ({
       getEntries: () => entries,
       getSessionId: () => sessionId,
       getLeafId: () => leafId,
-      getSessionFile: () => sessionFile,
     },
   }) as unknown as ExtensionContext;
 
@@ -134,20 +128,16 @@ type ParentHarnessOptions = {
   idle?: boolean;
   entries?: unknown[];
   sessionId?: string;
-  leafId?: string;
-  sessionFile?: string;
   env?: NodeJS.ProcessEnv;
   execResult?: ExecResult;
   configureFake?: (fake: FakePi) => void;
-  ipcOptions?: Omit<IpcOptions, "env" | "state" | "runtimeDir">;
+  ipcOptions?: Omit<IpcOptions, "env" | "runtimeDir">;
 };
 
 const startParentHarness = async ({
   idle,
   entries,
   sessionId = randomUUID(),
-  leafId,
-  sessionFile,
   env = {},
   execResult,
   configureFake,
@@ -156,7 +146,7 @@ const startParentHarness = async ({
   const runtimeDir = await createTempDir();
   const fake = createPi(execResult);
   configureFake?.(fake);
-  const ctx = createContext({ idle, entries, sessionId, leafId, sessionFile });
+  const ctx = createContext({ idle, entries, sessionId });
   const socketPath = socketPathForSession(sessionId, runtimeDir);
   ipc(fake.api, { env, runtimeDir, ...ipcOptions });
   await emit(fake, "session_start", ctx, { type: "session_start", reason: "startup" });
@@ -276,12 +266,6 @@ describe("ipc configuration", () => {
     expect(IpcConfigSchema.parse({})).toEqual(DEFAULT_IPC_CONFIG);
   });
 
-  it("requires an absolute live event directory when enabled", () => {
-    expect(() => IpcConfigSchema.parse({ liveEventsDir: "relative/events" })).toThrow(
-      "must be an absolute path",
-    );
-  });
-
   testCases.each([
     [[], "no placeholder"],
     [["pi-jq", "{{childSessionId}}", "{{childSessionId}}"], "two placeholders"],
@@ -289,205 +273,6 @@ describe("ipc configuration", () => {
     [["pi-jq", "{{childSessionId}}"], "a timeout above the bound", 60_001],
   ])("rejects %s", (inspectionCommand, _name, inspectionTimeoutMs?: number) => {
     expect(() => IpcConfigSchema.parse({ inspectionCommand, inspectionTimeoutMs })).toThrow();
-  });
-});
-
-describe("live event stream", () => {
-  const readRecords = async (filePath: string): Promise<LiveEventRecord[]> => {
-    const content = await readFile(filePath, "utf8");
-    expect(content.endsWith("\n")).toBe(true);
-    return content
-      .trimEnd()
-      .split("\n")
-      .map((line) => JSON.parse(line) as LiveEventRecord);
-  };
-
-  it("writes complete records in sequence and closes with the shutdown event", async () => {
-    const rootDir = await createTempDir();
-    const sessionId = randomUUID();
-    const streamId = randomUUID();
-    const writer = createLiveEventWriter({
-      rootDir,
-      sessionId,
-      streamId,
-      processInstanceId: "process-1",
-    });
-
-    writer.append({ type: "agent_start" });
-    writer.append({ type: "turn_start", turnIndex: 0, timestamp: 123 });
-    await writer.close({ type: "session_shutdown", reason: "quit" });
-    writer.append({ type: "agent_settled" });
-
-    expect(writer.filePath).toBe(liveEventStreamPath(rootDir, sessionId, streamId));
-    const records = await readRecords(writer.filePath);
-    expect(records.map((record) => record.sequence)).toEqual([1, 2, 3]);
-    expect(records.map((record) => record.event.type)).toEqual([
-      "agent_start",
-      "turn_start",
-      "session_shutdown",
-    ]);
-    expect(records).toEqual(
-      records.map((record) => ({
-        ...record,
-        version: 1,
-        sessionId,
-        processInstanceId: "process-1",
-        streamId,
-      })),
-    );
-  });
-
-  it("keeps assistant deltas but removes cumulative partial messages", () => {
-    const partial = { role: "assistant", content: [{ type: "text", text: "Hello world" }] };
-    const event = {
-      type: "text_delta",
-      contentIndex: 0,
-      delta: " world",
-      partial,
-    } as Parameters<typeof compactAssistantMessageEvent>[0];
-
-    expect(compactAssistantMessageEvent(event)).toEqual({
-      type: "text_delta",
-      contentIndex: 0,
-      delta: " world",
-    });
-    expect(
-      compactAssistantMessageEvent({
-        type: "text_end",
-        contentIndex: 0,
-        content: "Hello world",
-        partial,
-      } as Parameters<typeof compactAssistantMessageEvent>[0]),
-    ).toEqual({ type: "text_end", contentIndex: 0 });
-  });
-
-  it("captures message lifecycle across reload streams without cumulative updates", async () => {
-    const liveEventsDir = await createTempDir();
-    const harness = await startParentHarness({
-      sessionFile: "/canonical/pi-session.jsonl",
-      ipcOptions: { liveEventsDir },
-    });
-    const assistantStart = {
-      type: "message_start",
-      message: { role: "assistant", content: [], timestamp: 1 },
-    };
-    await emit(harness.fake, "message_start", harness.ctx, assistantStart);
-    await emit(harness.fake, "message_update", harness.ctx, {
-      type: "message_update",
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "Hello" }],
-        timestamp: 1,
-      },
-      assistantMessageEvent: {
-        type: "text_delta",
-        contentIndex: 0,
-        delta: "Hello",
-        partial: {
-          role: "assistant",
-          content: [{ type: "text", text: "Hello" }],
-          timestamp: 1,
-        },
-      },
-    });
-    await emit(harness.fake, "message_end", harness.ctx, {
-      type: "message_end",
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "Hello" }],
-        timestamp: 1,
-      },
-    });
-    await harness.shutdown();
-
-    const sessionId = harness.ctx.sessionManager.getSessionId();
-    const [streamFile] = await readdir(join(liveEventsDir, sessionId));
-    const records = await readRecords(join(liveEventsDir, sessionId, streamFile!));
-    const update = records.find((record) => record.event.type === "message_update");
-    expect(update?.event).toMatchObject({
-      type: "message_update",
-      assistantMessageEvent: { type: "text_delta", delta: "Hello" },
-    });
-    expect(update?.event).not.toHaveProperty("message");
-    expect(update?.event).not.toHaveProperty("assistantMessageEvent.partial");
-    expect(records.at(0)?.event).toMatchObject({ type: "session_start", reason: "startup" });
-    expect(records.at(-1)?.event).toEqual({ type: "session_shutdown", reason: "quit" });
-  });
-
-  it("segments reloads and session replacements into identifiable streams", async () => {
-    const liveEventsDir = await createTempDir();
-    const runtimeDir = await createTempDir();
-    const fake = createPi();
-    const firstSessionId = randomUUID();
-    const firstCtx = createContext({
-      sessionId: firstSessionId,
-      sessionFile: "/canonical/first.jsonl",
-    });
-    ipc(fake.api, { env: {}, runtimeDir, liveEventsDir });
-
-    await emit(fake, "session_start", firstCtx, { type: "session_start", reason: "startup" });
-    await emit(fake, "session_shutdown", firstCtx, {
-      type: "session_shutdown",
-      reason: "reload",
-    });
-    await emit(fake, "session_start", firstCtx, { type: "session_start", reason: "reload" });
-    await emit(fake, "session_shutdown", firstCtx, {
-      type: "session_shutdown",
-      reason: "resume",
-      targetSessionFile: "/canonical/second.jsonl",
-    });
-
-    const secondSessionId = randomUUID();
-    const secondCtx = createContext({
-      sessionId: secondSessionId,
-      sessionFile: "/canonical/second.jsonl",
-    });
-    await emit(fake, "session_start", secondCtx, {
-      type: "session_start",
-      reason: "resume",
-      previousSessionFile: "/canonical/first.jsonl",
-    });
-    await emit(fake, "session_shutdown", secondCtx, {
-      type: "session_shutdown",
-      reason: "quit",
-    });
-
-    const firstFiles = await readdir(join(liveEventsDir, firstSessionId));
-    const secondFiles = await readdir(join(liveEventsDir, secondSessionId));
-    expect(firstFiles).toHaveLength(2);
-    expect(secondFiles).toHaveLength(1);
-
-    const streams = await Promise.all(
-      [
-        ...firstFiles.map((file) => join(liveEventsDir, firstSessionId, file)),
-        ...secondFiles.map((file) => join(liveEventsDir, secondSessionId, file)),
-      ].map(readRecords),
-    );
-    expect(new Set(streams.map((records) => records[0]?.processInstanceId)).size).toBe(1);
-    expect(new Set(streams.map((records) => records[0]?.streamId)).size).toBe(3);
-    streams.forEach((records) => {
-      expect(records.map((record) => record.sequence)).toEqual([1, 2]);
-      expect(records[0]?.event.type).toBe("session_start");
-      expect(records[1]?.event.type).toBe("session_shutdown");
-    });
-  });
-
-  it("isolates write failures from the caller", async () => {
-    const directory = await createTempDir();
-    const rootDir = join(directory, "not-a-directory");
-    await writeFile(rootDir, "file");
-    const errors: unknown[] = [];
-    const writer = createLiveEventWriter({
-      rootDir,
-      sessionId: randomUUID(),
-      onError: (error) => errors.push(error),
-    });
-
-    writer.append({ type: "agent_start" });
-    await expect(
-      writer.close({ type: "session_shutdown", reason: "quit" }),
-    ).resolves.toBeUndefined();
-    expect(errors.length).toBeGreaterThan(0);
   });
 });
 
@@ -837,16 +622,20 @@ describe("extension lifecycle", () => {
     await expect.poll(() => harness.fake.messages).toEqual([]);
   });
 
-  it("replays a receipt that was not persisted as a model-visible message", async () => {
+  it("replays a pending receipt and deduplicates a retry", async () => {
     const value = envelope();
     const harness = await startParentHarness({
       entries: [{ type: "custom", customType: RECEIPT_TYPE, data: value }],
     });
 
+    expect(harness.fake.messages[0]?.message).toMatchObject({
+      details: { ...value, output: "task complete" },
+    });
+
+    expect(await harness.send(value)).toBe(true);
     expect(harness.fake.receipts).toEqual([]);
     expect(harness.fake.exec).toHaveBeenCalledTimes(1);
     expect(harness.fake.messages).toHaveLength(1);
-    expect(harness.fake.messages[0]?.message).toMatchObject({ details: value });
     await harness.shutdown();
   });
 
@@ -855,7 +644,11 @@ describe("extension lifecycle", () => {
     const harness = await startParentHarness({
       entries: [
         { type: "custom", customType: RECEIPT_TYPE, data: value },
-        { type: "custom_message", customType: MESSAGE_TYPE, details: value },
+        {
+          type: "custom_message",
+          customType: MESSAGE_TYPE,
+          details: { ...value, output: "task complete" },
+        },
       ],
     });
 
@@ -867,17 +660,13 @@ describe("extension lifecycle", () => {
   });
 
   testCases.each([
-    ["a non-delegated parent", {}, undefined],
+    ["a parent", {}, undefined],
+    ["a child with a valid slug", { [CHILD_ENV]: "1", [TASK_SLUG_ENV]: "child-task" }, undefined],
+    ["a child with no slug", { [CHILD_ENV]: "1" }, TASK_SLUG_ENV],
     [
-      "a delegated child with a valid slug",
-      { PI_DELEGATE: "1", [TASK_SLUG_ENV]: "child-task" },
-      undefined,
-    ],
-    ["a delegated child with no slug", { PI_DELEGATE: "1" }, "PI_DELEGATE_TASK_SLUG"],
-    [
-      "a delegated child with an invalid slug",
-      { PI_DELEGATE: "1", [TASK_SLUG_ENV]: "bad slug" },
-      "PI_DELEGATE_TASK_SLUG",
+      "a child with an invalid slug",
+      { [CHILD_ENV]: "1", [TASK_SLUG_ENV]: "bad slug" },
+      TASK_SLUG_ENV,
     ],
   ])("validates %s at extension load", (_name, env, expectedError) => {
     const fake = createPi();
@@ -896,7 +685,7 @@ describe("extension lifecycle", () => {
     const received: DelegateSettledEnvelope[] = [];
     const parent = await startReceiver(parentSocket, (message) => received.push(message));
     const env: NodeJS.ProcessEnv = {
-      PI_DELEGATE: "1",
+      [CHILD_ENV]: "1",
       [PARENT_SESSION_ENV]: parentSessionId,
       [TASK_SLUG_ENV]: "child-task",
     };
@@ -946,7 +735,7 @@ describe("extension lifecycle", () => {
     const received: DelegateSettledEnvelope[] = [];
     const parent = await startReceiver(parentSocket, (message) => received.push(message));
     const env: NodeJS.ProcessEnv = {
-      PI_DELEGATE: "1",
+      [CHILD_ENV]: "1",
       [PARENT_SESSION_ENV]: parentSessionId,
       [TASK_SLUG_ENV]: "reload-child",
     };
@@ -978,12 +767,18 @@ describe("extension lifecycle", () => {
     await parent.close();
   });
 
-  it("does not notify when PI_DELEGATE was absent at load time", async () => {
-    const harness = await startParentHarness();
+  testCases.each([
+    ["a parent ID without the child marker", (id: string) => ({ [PARENT_SESSION_ENV]: id })],
+    ["the child marker without a parent ID", () => ({ [CHILD_ENV]: "1" })],
+  ])("does not send a callback with %s", async (_name, launcherEnv) => {
+    const parent = await startParentHarness();
+    const fake = createPi();
+    const env = { [TASK_SLUG_ENV]: "child-task", ...launcherEnv(parent.sessionId) };
 
-    await emit(harness.fake, "agent_settled", harness.ctx);
-    expect(harness.fake.receipts).toEqual([]);
-    expect(harness.fake.messages).toEqual([]);
-    await harness.shutdown();
+    ipc(fake.api, { env, runtimeDir: parent.runtimeDir, retryDelaysMs: [0] });
+    await emit(fake, "agent_settled", createContext());
+
+    expect(parent.fake.receipts).toEqual([]);
+    await parent.shutdown();
   });
 });

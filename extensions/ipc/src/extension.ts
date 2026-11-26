@@ -2,18 +2,6 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import { IpcConfigSchema, type IpcConfig, type IpcConfigInput } from "./config";
 import {
-  compactAssistantMessageEvent,
-  createLiveEventWriter,
-  liveEventSessionDir,
-  liveEventStreamPath,
-  PROCESS_INSTANCE_ID,
-  registerLiveEventCapture,
-  type CompactAssistantMessageEvent,
-  type LiveEventPayload,
-  type LiveEventRecord,
-  type LiveEventWriter,
-} from "./live-events";
-import {
   inspectDelegate,
   MESSAGE_TYPE,
   notificationMessage,
@@ -21,6 +9,7 @@ import {
   type DelegateNotificationDetails,
 } from "./notification";
 import {
+  CHILD_ENV,
   DEFAULT_RUNTIME_DIR,
   ensureRuntimeDir,
   eventKey,
@@ -37,19 +26,8 @@ import {
   type UserMessageResponse,
 } from "./protocol";
 
-export { eventKey, PARENT_SESSION_ENV, TASK_SLUG_ENV } from "./protocol";
+export { CHILD_ENV, eventKey, PARENT_SESSION_ENV, TASK_SLUG_ENV } from "./protocol";
 export { MESSAGE_TYPE, truncatePiJqOutput } from "./notification";
-export {
-  compactAssistantMessageEvent,
-  createLiveEventWriter,
-  liveEventSessionDir,
-  liveEventStreamPath,
-  PROCESS_INSTANCE_ID,
-  type CompactAssistantMessageEvent,
-  type LiveEventPayload,
-  type LiveEventRecord,
-  type LiveEventWriter,
-} from "./live-events";
 export {
   parseEnvelope,
   sendEnvelope,
@@ -70,7 +48,14 @@ export type IpcOptions = IpcConfigInput & {
   runtimeDir?: string;
   ackTimeoutMs?: number;
   retryDelaysMs?: readonly number[];
-  onLiveEventError?: (error: unknown) => void;
+};
+
+// Saved notifications include inspection output, so match by ID instead of using the socket parser.
+const notificationKey = (details: unknown) => {
+  if (typeof details !== "object" || details === null) return undefined;
+  const { childSessionId, leafId } = details as Record<string, unknown>;
+  if (typeof childSessionId !== "string" || typeof leafId !== "string") return undefined;
+  return eventKey({ childSessionId, leafId });
 };
 
 const restoreReceipts = (ctx: ExtensionContext) => {
@@ -82,8 +67,8 @@ const restoreReceipts = (ctx: ExtensionContext) => {
       if (envelope) receipts.set(eventKey(envelope), envelope);
     }
     if (entry.type === "custom_message" && entry.customType === MESSAGE_TYPE) {
-      const envelope = parseEnvelope(JSON.stringify(entry.details));
-      if (envelope) delivered.add(eventKey(envelope));
+      const key = notificationKey(entry.details);
+      if (key) delivered.add(key);
     }
   });
   return {
@@ -94,7 +79,7 @@ const restoreReceipts = (ctx: ExtensionContext) => {
 
 const requiredTaskSlug = (taskSlug: string | undefined): string => {
   if (!taskSlug || !TASK_SLUG_PATTERN.test(taskSlug)) {
-    throw new Error(`Delegated Pi requires a valid ${TASK_SLUG_ENV}`);
+    throw new Error(`Child Pi requires a valid ${TASK_SLUG_ENV}`);
   }
   return taskSlug;
 };
@@ -127,17 +112,16 @@ const injectNotification = async (
 export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
   pi.registerMessageRenderer<DelegateNotificationDetails>(MESSAGE_TYPE, notificationRenderer);
 
-  const { inspectionCommand, inspectionTimeoutMs, supervisionPrompt, liveEventsDir } = options;
+  const { inspectionCommand, inspectionTimeoutMs, supervisionPrompt } = options;
   const config = IpcConfigSchema.parse({
     inspectionCommand,
     inspectionTimeoutMs,
     supervisionPrompt,
-    liveEventsDir,
   });
   const env = options.env ?? process.env;
-  const isDelegate = env.PI_DELEGATE === "1";
-  const parentSessionId = isDelegate ? env[PARENT_SESSION_ENV] : undefined;
-  const delegateTaskSlug = isDelegate ? requiredTaskSlug(env[TASK_SLUG_ENV]) : undefined;
+  const isChild = env[CHILD_ENV] === "1";
+  const parentSessionId = isChild ? env[PARENT_SESSION_ENV] : undefined;
+  const childTaskSlug = isChild ? requiredTaskSlug(env[TASK_SLUG_ENV]) : undefined;
   const runtimeDir = options.runtimeDir ?? DEFAULT_RUNTIME_DIR;
   const parentSocket = parentSessionId
     ? socketPathForSession(parentSessionId, runtimeDir)
@@ -147,13 +131,8 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
   let sessionController: AbortController | undefined;
   let eventKeys = new Set<string>();
   let userMessageResponses = new Map<string, UserMessageResponse>();
-  const liveEvents = registerLiveEventCapture(pi, {
-    rootDir: config.liveEventsDir,
-    onError: options.onLiveEventError,
-  });
 
-  pi.on("session_start", async (event, ctx) => {
-    liveEvents.start(event, ctx);
+  pi.on("session_start", async (_event, ctx) => {
     const previousReceiver = receiver;
     receiver = undefined;
     sessionController?.abort();
@@ -232,13 +211,13 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
   pi.on("agent_settled", async (_event, ctx) => {
     const childSessionId = ctx.sessionManager.getSessionId();
     const leafId = ctx.sessionManager.getLeafId();
-    if (!parentSocket || !leafId || !delegateTaskSlug) return;
+    if (!parentSocket || !leafId || !childTaskSlug) return;
 
     await sendEnvelope(
       parentSocket,
       {
         childSessionId,
-        taskSlug: delegateTaskSlug,
+        taskSlug: childTaskSlug,
         leafId,
         cwd: ctx.cwd,
         timestamp: Date.now(),
@@ -250,13 +229,13 @@ export const ipc = (pi: ExtensionAPI, options: IpcOptions = {}): void => {
     );
   });
 
-  pi.on("session_shutdown", async (event, ctx) => {
+  pi.on("session_shutdown", async (_event, ctx) => {
     if (ctx.sessionManager.getSessionId() !== activeSessionId) return;
     const ownedReceiver = receiver;
     receiver = undefined;
     activeSessionId = undefined;
     sessionController?.abort();
     sessionController = undefined;
-    await Promise.all([ownedReceiver?.close(), liveEvents.stop(event)]);
+    await ownedReceiver?.close();
   });
 };
