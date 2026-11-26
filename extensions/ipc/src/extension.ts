@@ -50,6 +50,7 @@ export type IpcOptions = IpcConfigInput & {
   retryDelaysMs?: readonly number[];
 };
 
+// Saved notifications include inspection output, so match by ID instead of using the socket parser.
 const notificationKey = (details: unknown) => {
   if (typeof details !== "object" || details === null) return undefined;
   const { childSessionId, leafId } = details as Record<string, unknown>;
