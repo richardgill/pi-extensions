@@ -1,51 +1,62 @@
 # pi-ipc
 
-Private Pi extension for two local workflows: notify a parent Pi when its child settles, and send a user message to a running Pi by session ID. It uses a private Unix socket and registers no tools or commands.
+Lightweight extension that automatically starts or steers a parent model turn when a delegated child finishes. It uses a private Unix socket. It registers no tools or commands.
 
-From this checkout with workspace dependencies installed, load the extension in each Pi you want to reach:
+## Integration
 
-```bash
-pi --no-extensions -e ./extensions/ipc
-```
+Load `extensions/ipc` in every parent and child Pi through the global Pi `settings.json`. A launcher starts a delegated child with `PI_CHILD=1`, `PI_PARENT_SESSION_ID="$PI_SESSION_ID"`, and `PI_TASK_SLUG=<task-slug>`. `PI_TASK_SLUG` is required whenever `PI_CHILD=1`; it must match `[a-z0-9](?:[a-z0-9-]{0,11}[a-z0-9])?`. Omit `PI_PARENT_SESSION_ID` to disable callbacks. Parent Pi processes do not need a task slug. The extension captures the inherited parent ID and task slug at load time. It derives the parent's short Unix socket path from the ID; no socket path is passed through the environment.
 
-To load it by default, add the absolute path to `extensions/ipc` to the `packages` list in Pi's `settings.json`.
-
-## Send a user message
-
-Get the target's `PI_SESSION_ID` from a command run by its `bash` tool, or read the `id` from the first line of its session JSONL file. From the checkout:
-
-```bash
-pnpm --silent --filter pi-ipc pi-ipc-send "$session_id" --after-turn 'Review the changes.'
-printf 'Summarize the result.\n' | pnpm --silent --filter pi-ipc pi-ipc-send "$session_id" --follow-up
-```
-
-If the local package is linked, run `pi-ipc-send <session-id> [--after-turn|--follow-up] [message]` directly. Omit the message argument to read piped stdin. An idle Pi receives the message immediately. A busy Pi receives it after its current assistant turn and tools (`--after-turn`, the default), or after the current agent run (`--follow-up`). Success prints JSON to stdout; rejection or unavailable delivery prints to stderr and exits nonzero.
-
-## Notify a parent when a child settles
-
-Start the parent with the extension loaded, then launch a child from the checkout with the parent's session ID:
-
-```bash
-PI_CHILD=1 PI_TASK_SLUG=review PI_PARENT_SESSION_ID="$parent_session_id" \
-  pi --no-extensions -e ./extensions/ipc -p 'Review the changes and report findings.'
-```
-
-If launched from the parent's `bash` tool, use `PI_PARENT_SESSION_ID="$PI_SESSION_ID"`. `PI_CHILD=1` requires a task slug of 1-13 lowercase letters, digits, or interior hyphens. Omit (or unset) `PI_PARENT_SESSION_ID` to disable callbacks. Keep the child's session persisted so the parent can inspect it. These variables replace the old `PI_DELEGATE*` names, which are no longer read.
-
-The parent records a receipt and sends `[review finished]` with the inspection output to its model. It starts a turn if idle or steers after the current assistant turn and tools if busy. Retries for the same child session and settled leaf are deduplicated. Receipts without a persisted notification replay when the parent reloads or resumes.
+Because the tmux server is an environment boundary, launchers must pass these values explicitly when creating the child. Supervision should react to the model-visible `pi-ipc.delegate-settled` message. Pi runs the configured inspection command, renders its output under `[<task-slug> finished]`, and includes it in model context.
 
 ## Configure
 
-Optional `ipc.jsonc` in `~/.pi/agent` (or `$PI_EXTENSION_CONFIG_DIR` when set). These are the defaults; `pi-jq` must be on the parent's `PATH` to use the default report:
+Create `ipc.jsonc` in `~/.pi/agent`, or in `$PI_EXTENSION_CONFIG_DIR` when set:
 
 ```jsonc
 {
   "inspectionCommand": ["pi-jq", "{{childSessionId}}", "--messages", "3", "--role", "assistant"],
   "inspectionTimeoutMs": 5000,
-  "supervisionPrompt": "Continue supervision."
+  "supervisionPrompt": "Continue supervision.",
 }
 ```
 
-The command runs without a shell. It must contain exactly one `{{childSessionId}}` placeholder and no other template variables. The timeout must be a positive integer up to 60000 ms. Both Pis use the current user's private `/tmp/pi-ipc-<uid>` socket directory (mode `0700`).
+`inspectionCommand` is executed directly with `pi.exec`, never through a shell. It must contain exactly one `{{childSessionId}}` placeholder. `inspectionTimeoutMs` must be a positive integer no greater than 60000.
 
-Remove `liveEventsDir` from existing `ipc.jsonc` files. This extension no longer captures live events.
+When upgrading, remove `liveEventsDir` from `ipc.jsonc` and replace any `PI_DELEGATE*` launcher variables with the ones above.
+
+## Inbound user messages
+
+The per-session private socket also accepts versioned `user_message` requests. `requestId` is required and bounded; retries with the same ID return the original response without delivering twice. Requests have non-empty `message`, `deliverAs: "steer" | "followUp"`, and optional `expandPromptTemplates`, which defaults to `true`.
+
+With the private package installed or linked, send from the command line:
+
+```sh
+pi-ipc-send <sessionId> [--after-turn|--follow-up] <message>
+printf 'Review the changes.' | pi-ipc-send <sessionId>
+```
+
+`--after-turn` is the default and sends a `steer`; `--follow-up` queues until the current agent run finishes. It prints the JSON response and exits nonzero when delivery is unavailable.
+
+Use the exported sender API rather than deriving socket paths:
+
+```ts
+import { sendUserMessage } from "./extensions/ipc/src/extension";
+
+const response = await sendUserMessage(sessionId, {
+  requestId: crypto.randomUUID(),
+  message: "Review the changes.",
+  deliverAs: "steer",
+});
+```
+
+Successful responses include `delivery: "immediate" | "steer" | "followUp"`. Idle sessions deliver immediately; busy sessions use `steer` after the current assistant turn and tools, or `followUp` after the current agent run. Malformed or oversized frames are disconnected without a response. Delegate notifications retain their existing `ACK` response.
+
+## Manual smoke test
+
+From the repository root, load only this extension:
+
+```bash
+pi --no-extensions -e ./extensions/ipc/src/index.ts
+```
+
+Launch delegated children through tmux with the parent's current Pi session ID, for example `tmux new-session -e PI_CHILD=1 -e PI_PARENT_SESSION_ID="$PI_SESSION_ID" -e PI_TASK_SLUG=review ...`. A delegated child launching a grandchild passes its own `PI_SESSION_ID` the same way. The extension sends a bounded, acknowledged notification once per settled child leaf, deduplicating receipts by the child session ID and leaf ID; a later leaf produces a new notification.
