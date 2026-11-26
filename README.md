@@ -21,14 +21,14 @@
 
 ### Private extension workspaces
 
-These workspaces are not published individually. Footer and trust-all-projects are distributed through [`@richardgill/pi-bits`](./packages/pi-bits/README.md); thinking-toggle remains local-only.
+These workspaces are not published individually. Footer and trust-all-projects are distributed through [`@richardgill/pi-bits`](./packages/pi-bits/README.md); thinking-toggle and speed remain local-only.
 
 - [`pi-footer`](./extensions/footer/README.md) - Replaces the footer with model, thinking, context, and extension status information.
 - [`pi-trust-all-projects`](./extensions/trust-all-projects/README.md) - Automatically trusts every project.
 - [`pi-thinking-toggle`](./extensions/thinking-toggle/README.md) - Cycles medium, high, and xhigh thinking levels.
+- [`pi-speed`](./extensions/speed/README.md) - Selects request speed for Claude and OpenAI.
 
 ### 3rd party (not mine)
-- [`npm:@calesennett/pi-codex-fast`](https://www.npmjs.com/package/@calesennett/pi-codex-fast) - Adds OpenAI Codex `/fast` mode.
 - [`npm:pi-codex-status`](https://github.com/lhl/pi-codex-status) - `/codex:status` shows OpenAI Codex usage info.
 
 ## Packages
