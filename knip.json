@@ -50,6 +50,10 @@
     },
     "packages/pi-config": {
       "project": ["src/**/*.ts"]
+    },
+    "packages/pi-ui": {
+      "entry": ["tests/**/*.unit.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
     }
   },
   "ignore": ["overlay/**"],
