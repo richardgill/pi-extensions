@@ -33,10 +33,28 @@ Create `speed.jsonc` in `PI_EXTENSION_CONFIG_DIR`, or in Pi's agent directory (n
     },
     "gpt": {
       "api": "openai-responses",
-      "models": ["gpt-6.2-*", "gpt-6.1-sol*", "gpt-6.1-terra*"],
+      "models": ["gpt-6.2-{astra,sol}{,-20??-??-??}"],
       "default": "fast",
       "speeds": [
         { "name": "ultrafast", "patch": { "service_tier": "ultrafast" }, "costMultiplier": 6 },
+        { "name": "fast", "patch": { "service_tier": "priority" } },
+      ],
+    },
+    "gpt61Sol": {
+      "api": "openai-responses",
+      "models": ["gpt-6.1-sol{,-20??-??-??}"],
+      "default": "fast",
+      "speeds": [
+        { "name": "ultrafast", "patch": { "service_tier": "ultrafast" }, "costMultiplier": 6 },
+        { "name": "fast", "patch": { "service_tier": "priority" } },
+        { "name": "flex", "patch": { "service_tier": "flex" } },
+      ],
+    },
+    "gpt61Terra": {
+      "api": "openai-responses",
+      "models": ["gpt-6.1-terra{,-20??-??-??}"],
+      "default": "fast",
+      "speeds": [
         { "name": "fast", "patch": { "service_tier": "priority" } },
         { "name": "flex", "patch": { "service_tier": "flex" } },
       ],

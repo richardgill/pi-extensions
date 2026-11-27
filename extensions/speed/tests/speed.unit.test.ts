@@ -19,6 +19,7 @@ const claude = {
   baseUrl: `https://${gateway}/v1`,
 };
 const gpt = { ...claude, api: "openai-responses", id: "gpt-6.2-sol", provider: "openai" };
+const sol61 = { ...gpt, id: "gpt-6.1-sol" };
 const defaults = configSchema.parse({});
 const gatewayConfig = configSchema.parse({ unavailable: { [gateway]: ["ultrafast"] } });
 const allBlocked = configSchema.parse({
@@ -37,10 +38,10 @@ const precedenceCases = [
     source: "/speed",
   },
   {
-    label: "CLI overrides model default",
+    label: "CLI off overrides the model default",
     model: gpt,
-    flag: "flex",
-    requested: "flex",
+    flag: "off",
+    requested: "off",
     source: "--speed",
   },
   { label: "Claude default", model: claude, requested: "off", source: undefined },
@@ -108,10 +109,10 @@ const tierCases = [
   },
   {
     label: "never steps up to ultrafast",
-    model: gpt,
+    model: sol61,
     config: fastBlocked,
     live: "fast",
-    family: "gpt",
+    family: "gpt61Sol",
     applied: "flex",
     patch: { service_tier: "flex" },
     multiplier: 1,
@@ -180,13 +181,13 @@ describe("speed picker", () => {
       label: "no ultrafast on the gateway",
       model: gpt,
       config: gatewayConfig,
-      expected: ["off", "flex", "fast"],
+      expected: ["off", "fast"],
     },
     {
       label: "includes ultrafast on a direct endpoint",
       model: direct,
       config: gatewayConfig,
-      expected: ["off", "flex", "fast", "ultrafast"],
+      expected: ["off", "fast", "ultrafast"],
     },
     {
       label: "only off when all tiers are blocked",
@@ -197,6 +198,41 @@ describe("speed picker", () => {
     { label: "only off without a model", model: undefined, config: defaults, expected: ["off"] },
   ])("$label", ({ model, config, expected }) => {
     expect(pickerSpeedNames(config, model)).toEqual(expected);
+  });
+});
+
+describe("built-in OpenAI tiers", () => {
+  testCases.each([
+    { id: "gpt-6.2-astra", flex: false, ultrafast: true },
+    { id: "gpt-6.2-sol", flex: false, ultrafast: true },
+    { id: "gpt-6.2-sol-2026-11-26", flex: false, ultrafast: true },
+    { id: "gpt-6.1-sol", flex: true, ultrafast: true },
+    { id: "gpt-6.1-terra", flex: true, ultrafast: false },
+  ])("$id only offers supported tiers", ({ id, flex, ultrafast }) => {
+    const model = { ...direct, id };
+    expect(pickerSpeedNames(defaults, model)).toEqual([
+      "off",
+      ...(flex ? ["flex"] : []),
+      "fast",
+      ...(ultrafast ? ["ultrafast"] : []),
+    ]);
+    for (const [live, supported] of [
+      ["flex", flex],
+      ["ultrafast", ultrafast],
+    ] as const) {
+      const speed = resolveSpeed({ config: defaults, model, live });
+      expect(speed.unsupported).toBe(!supported);
+      expect(speed.tier?.patch).toEqual(supported ? { service_tier: live } : undefined);
+    }
+    for (const flag of [undefined, "fast", "off"] as const) {
+      const speed = resolveSpeed({ config: defaults, model, flag });
+      expect(speed.tier?.patch).toEqual(flag === "off" ? undefined : { service_tier: "priority" });
+    }
+  });
+
+  it("does not assume other GPT-6.2 variants support these tiers", () => {
+    const model = { ...direct, id: "gpt-6.2-sol-healthcare" };
+    expect(pickerSpeedNames(defaults, model)).toEqual(["off"]);
   });
 });
 
