@@ -22,18 +22,23 @@
   },
   "dependencies": {
     "@richardgill/pi-config": "workspace:*",
+    "@richardgill/pi-ui": "workspace:*",
     "minimatch": "10.2.5",
     "zod": "4.3.6"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {
       "optional": true
     },
     "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
       "optional": true
     }
   },
