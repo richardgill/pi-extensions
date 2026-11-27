@@ -26,6 +26,7 @@ const allBlocked = configSchema.parse({
 });
 const fastBlocked = configSchema.parse({ unavailable: { [gateway]: ["fast"] } });
 const direct = { ...gpt, baseUrl: "https://api.openai.com/v1" };
+const claudeFast = configSchema.parse({ defaults: { "claude-5": "fast" } });
 
 const precedenceCases = [
   {
@@ -44,8 +45,15 @@ const precedenceCases = [
     source: "--speed",
   },
   { label: "Claude default", model: claude, requested: "off", source: undefined },
-  { label: "GPT default", model: gpt, requested: "fast", source: undefined },
+  { label: "GPT default", model: gpt, requested: "off", source: undefined },
   { label: "no model defaults to off", requested: "off", source: undefined },
+  {
+    label: "defaults override the family default",
+    model: claude,
+    config: claudeFast,
+    requested: "fast",
+    source: undefined,
+  },
 ];
 
 const tierCases = [
@@ -53,7 +61,7 @@ const tierCases = [
     label: "Claude fast and dated ID",
     model: claude,
     live: "fast",
-    family: "claude",
+    family: "claude-5",
     applied: "fast",
     patch: { speed: "fast" },
     multiplier: 2,
@@ -62,8 +70,19 @@ const tierCases = [
     label: "unsupported tier does not fall back",
     model: claude,
     live: "ultrafast",
-    family: "claude",
+    family: "claude-5",
     unsupported: true,
+  },
+  {
+    label: "future Claude 5 model",
+    model: { ...claude, id: "claude-fable-5-9" },
+    family: "claude-5",
+  },
+  {
+    label: "future GPT 6 model",
+    model: { ...gpt, id: "gpt-6.3-sol" },
+    live: "off",
+    family: "gpt-6",
   },
   {
     label: "correct API required",
@@ -81,7 +100,7 @@ const tierCases = [
     label: "priority has no extra multiplier",
     model: gpt,
     live: "fast",
-    family: "gpt",
+    family: "gpt-6",
     applied: "fast",
     patch: { service_tier: "priority" },
     multiplier: 1,
@@ -91,7 +110,7 @@ const tierCases = [
     model: gpt,
     config: gatewayConfig,
     live: "ultrafast",
-    family: "gpt",
+    family: "gpt-6",
     applied: "fast",
     patch: { service_tier: "priority" },
     multiplier: 1,
@@ -101,7 +120,7 @@ const tierCases = [
     label: "direct ultrafast",
     model: direct,
     live: "ultrafast",
-    family: "gpt",
+    family: "gpt-6",
     applied: "ultrafast",
     patch: { service_tier: "ultrafast" },
     multiplier: 6,
@@ -111,7 +130,7 @@ const tierCases = [
     model: gpt,
     config: fastBlocked,
     live: "fast",
-    family: "gpt",
+    family: "gpt-6",
     applied: "flex",
     patch: { service_tier: "flex" },
     multiplier: 1,
@@ -122,18 +141,21 @@ const tierCases = [
     model: gpt,
     config: allBlocked,
     live: "ultrafast",
-    family: "gpt",
+    family: "gpt-6",
     blockedHost: gateway,
   },
 ];
 
 describe("speed resolution", () => {
-  testCases.each(precedenceCases)("$label", ({ model, live, flag, requested, source }) => {
-    expect(resolveSpeed({ config: defaults, model, live, flag })).toMatchObject({
-      requested,
-      source,
-    });
-  });
+  testCases.each(precedenceCases)(
+    "$label",
+    ({ config = defaults, model, live, flag, requested, source }) => {
+      expect(resolveSpeed({ config, model, live, flag })).toMatchObject({
+        requested,
+        source,
+      });
+    },
+  );
 
   testCases.each(tierCases)(
     "$label",
@@ -159,11 +181,11 @@ describe("speed resolution", () => {
     const config = configSchema.parse({
       modelFamilies: {
         ...defaults.modelFamilies,
-        sol: { ...defaults.modelFamilies.gpt, models: ["gpt-6.2-{sol,astra}*"] },
+        sol: { ...defaults.modelFamilies["gpt-6"], models: ["gpt-6.2-{sol,astra}*"] },
       },
     });
     expect(() => findFamily(config, gpt)).toThrow(
-      'openai/gpt-6.2-sol matches multiple families: "gpt", "sol"',
+      'openai/gpt-6.2-sol matches multiple families: "gpt-6", "sol"',
     );
   });
 });
@@ -258,11 +280,27 @@ const configCases = [
     },
     error: "Reserved speed name",
   },
+  {
+    label: "defaults for an unknown family",
+    config: { defaults: { claude: "fast" } },
+    error: "Default must name a family in modelFamilies",
+  },
+  {
+    label: "defaults speed outside the family",
+    config: { defaults: { "claude-5": "ultrafast" } },
+    error: "Default must be off or a speed in this family",
+  },
 ];
 
 describe("speed config", () => {
   testCases.each(configCases)("rejects $label", ({ config, error }) => {
     expect(() => configSchema.parse(config)).toThrow(error);
+  });
+
+  it("has no default speed icon or separator except built-in flex", () => {
+    const { speeds } = defaults.modelFamilies["gpt-6"];
+    expect(speeds.map(({ icon }) => icon)).toEqual(["", "", "🐢"]);
+    expect(defaults.iconSeparator).toBe("");
   });
 
   it("has no built-in endpoint restrictions", () => {
