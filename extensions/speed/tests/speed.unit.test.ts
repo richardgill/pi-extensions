@@ -45,7 +45,7 @@ const precedenceCases = [
     source: "--speed",
   },
   { label: "Claude default", model: claude, requested: "off", source: undefined },
-  { label: "GPT default", model: gpt, requested: "fast", source: undefined },
+  { label: "GPT default", model: gpt, requested: "off", source: undefined },
   { label: "no model defaults to off", requested: "off", source: undefined },
   {
     label: "defaults override the family default",
@@ -297,9 +297,9 @@ describe("speed config", () => {
     expect(() => configSchema.parse(config)).toThrow(error);
   });
 
-  it("defaults speed icons to lightning except built-in flex", () => {
+  it("has no default speed icon except built-in flex", () => {
     const { speeds } = defaults.modelFamilies["gpt-6"];
-    expect(speeds.map(({ icon }) => icon)).toEqual(["⚡", "⚡", "🐢"]);
+    expect(speeds.map(({ icon }) => icon)).toEqual(["", "", "🐢"]);
   });
 
   it("has no built-in endpoint restrictions", () => {

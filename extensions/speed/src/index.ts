@@ -2,7 +2,7 @@ import { writeSync } from "node:fs";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { defaultIcon, loadSpeedConfig } from "./config";
+import { loadSpeedConfig } from "./config";
 import { findFamily, pickerSpeedNames, resolveSpeed, servedOtherTier, speedNames } from "./speed";
 
 type Resolution = ReturnType<typeof resolveSpeed>;
@@ -21,7 +21,7 @@ const processState = globalThis as typeof globalThis & { [liveKey]?: string };
 const footer = (speed: Resolution) => {
   if (speed.requested === "off") return undefined;
   // No space after the icon: terminals reserve two cells for emoji, which already reads as a gap.
-  const icon = speed.tier?.icon ?? defaultIcon;
+  const icon = speed.tier?.icon ?? "";
   if (speed.blockedHost) return `${icon}${speed.requested}→${speed.applied}`;
   if (speed.unsupported) return `${icon}${speed.requested} n/a`;
   return `${icon}${speed.applied}`;

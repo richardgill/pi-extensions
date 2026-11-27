@@ -14,7 +14,7 @@ pi -e npm:@richardgill/pi-speed --speed fast
 
 - `--speed off|flex|fast|ultrafast` overrides the default for every model family in this process.
 - `/speed` opens a picker with only tiers configured for the current model and not blocked for its endpoint. `/speed fast` sets an override for this process, taking precedence over the flag. It survives session changes but is never saved. `/speed status` shows the selected and applied tiers.
-- The footer shows the applied tier, a fallback (e.g. `⚡ultrafast→fast`), or `n/a` if the model family doesn't offer the requested tier. No footer entry means `off`.
+- The footer shows the applied tier, a fallback (e.g. `ultrafast→fast`), or `n/a` if the model family doesn't offer the requested tier. No footer entry means `off`.
 
 ## Configuration
 
@@ -34,7 +34,7 @@ Create `speed.jsonc` in `PI_EXTENSION_CONFIG_DIR`, or in Pi's agent directory (n
     "gpt-6": {
       "api": "openai-responses",
       "models": ["gpt-6.*"],
-      "default": "fast",
+      "default": "off",
       "speeds": [
         { "name": "ultrafast", "patch": { "service_tier": "ultrafast" }, "costMultiplier": 6 },
         { "name": "fast", "patch": { "service_tier": "priority" } },
@@ -51,4 +51,4 @@ Each top-level setting replaces its built-in value wholesale when supplied. A fa
 
 `"defaults": { "claude-5": "fast" }` overrides a family's `default` without copying the family; the value must be `off` or one of that family's speeds. Precedence: `/speed` > `--speed` > `defaults` > family `default`.
 
-`icon` is the footer prefix (default `⚡`). `patch` replaces top-level request fields only. `costMultiplier` defaults to 1 and covers only surcharges Pi doesn't already apply. For example, Pi already prices OpenAI priority and flex. Compaction and summaries use standard speed; cache-warming requests can use the selected tier but do not receive the extension's cost correction.
+`icon` is an optional footer prefix, e.g. `"⚡"`. `patch` replaces top-level request fields only. `costMultiplier` defaults to 1 and covers only surcharges Pi doesn't already apply. For example, Pi already prices OpenAI priority and flex. Compaction and summaries use standard speed; cache-warming requests can use the selected tier but do not receive the extension's cost correction.

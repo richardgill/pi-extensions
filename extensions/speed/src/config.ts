@@ -6,10 +6,9 @@ const host = z
   .string()
   .min(1)
   .refine((value) => value === value.trim().toLowerCase(), "Use a lowercase host");
-export const defaultIcon = "⚡";
 const speedEntry = z.strictObject({
   name: nonEmpty.refine((speed) => speed !== "off" && speed !== "status", "Reserved speed name"),
-  icon: nonEmpty.default(defaultIcon),
+  icon: z.string().default(""),
   patch: z.record(z.string(), z.unknown()),
   costMultiplier: z.number().positive().default(1),
 });
@@ -43,7 +42,7 @@ export const configSchema = z
       "gpt-6": {
         api: "openai-responses",
         models: ["gpt-6.*"],
-        default: "fast",
+        default: "off",
         speeds: [
           { name: "ultrafast", patch: { service_tier: "ultrafast" }, costMultiplier: 6 },
           { name: "fast", patch: { service_tier: "priority" } },
