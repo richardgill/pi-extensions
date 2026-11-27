@@ -1,5 +1,11 @@
 # @richardgill/pi-speed
 
+## 0.1.1
+
+### Patch Changes
+
+- [`a1d2e88`](https://github.com/richardgill/pi-extensions/commit/a1d2e88eff30adb17947332b7d8915ebc203e157) Thanks [@richardgill](https://github.com/richardgill)! - Show built-in footer icons for `⚡` fast (Claude 5 and GPT 6) and `🚀` ultrafast (GPT 6), alongside the existing `🐢` flex.
+
 ## 0.1.0
 
 ### Minor Changes
