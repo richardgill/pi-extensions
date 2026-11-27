@@ -1,5 +1,5 @@
 ---
-"@richardgill/pi-ui": minor
+"@richardgill/pi-ui": patch
 "@richardgill/pi-speed": patch
 "@richardgill/pi-preset": patch
 ---
