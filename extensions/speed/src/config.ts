@@ -37,15 +37,20 @@ export const configSchema = z
         api: "anthropic-messages",
         models: ["claude-opus-5-*", "claude-fable-5-*"],
         default: "off",
-        speeds: [{ name: "fast", patch: { speed: "fast" }, costMultiplier: 2 }],
+        speeds: [{ name: "fast", icon: "⚡", patch: { speed: "fast" }, costMultiplier: 2 }],
       },
       "gpt-6": {
         api: "openai-responses",
         models: ["gpt-6.*"],
         default: "off",
         speeds: [
-          { name: "ultrafast", patch: { service_tier: "ultrafast" }, costMultiplier: 6 },
-          { name: "fast", patch: { service_tier: "priority" } },
+          {
+            name: "ultrafast",
+            icon: "🚀",
+            patch: { service_tier: "ultrafast" },
+            costMultiplier: 6,
+          },
+          { name: "fast", icon: "⚡", patch: { service_tier: "priority" } },
           { name: "flex", icon: "🐢", patch: { service_tier: "flex" } },
         ],
       },

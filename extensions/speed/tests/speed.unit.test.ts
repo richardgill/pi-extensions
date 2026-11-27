@@ -297,9 +297,11 @@ describe("speed config", () => {
     expect(() => configSchema.parse(config)).toThrow(error);
   });
 
-  it("has no default speed icon or separator except built-in flex", () => {
-    const { speeds } = defaults.modelFamilies["gpt-6"];
-    expect(speeds.map(({ icon }) => icon)).toEqual(["", "", "🐢"]);
+  it("has built-in speed icons and no separator", () => {
+    const icons = Object.values(defaults.modelFamilies).map(({ speeds }) =>
+      speeds.map(({ icon }) => icon),
+    );
+    expect(icons).toEqual([["⚡"], ["🚀", "⚡", "🐢"]]);
     expect(defaults.iconSeparator).toBe("");
   });
 

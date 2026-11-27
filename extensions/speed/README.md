@@ -28,7 +28,7 @@ Create `speed.jsonc` in `PI_EXTENSION_CONFIG_DIR`, or in Pi's agent directory (n
       "models": ["claude-opus-5-*", "claude-fable-5-*"],
       "default": "off",
       "speeds": [
-        { "name": "fast", "patch": { "speed": "fast" }, "costMultiplier": 2 },
+        { "name": "fast", "icon": "⚡", "patch": { "speed": "fast" }, "costMultiplier": 2 },
       ],
     },
     "gpt-6": {
@@ -36,8 +36,8 @@ Create `speed.jsonc` in `PI_EXTENSION_CONFIG_DIR`, or in Pi's agent directory (n
       "models": ["gpt-6.*"],
       "default": "off",
       "speeds": [
-        { "name": "ultrafast", "patch": { "service_tier": "ultrafast" }, "costMultiplier": 6 },
-        { "name": "fast", "patch": { "service_tier": "priority" } },
+        { "name": "ultrafast", "icon": "🚀", "patch": { "service_tier": "ultrafast" }, "costMultiplier": 6 },
+        { "name": "fast", "icon": "⚡", "patch": { "service_tier": "priority" } },
         { "name": "flex", "icon": "🐢", "patch": { "service_tier": "flex" } },
       ],
     },
@@ -52,4 +52,4 @@ Each top-level setting replaces its built-in value wholesale when supplied. A fa
 
 `"defaults": { "claude-5": "fast" }` overrides a family's `default` without copying the family; the value must be `off` or one of that family's speeds. Precedence: `/speed` > `--speed` > `defaults` > family `default`.
 
-`icon` is an optional footer prefix, e.g. `"⚡"`; top-level `iconSeparator` goes between it and the tier name (default `""`, since terminals give emoji two cells). `patch` replaces top-level request fields only. `costMultiplier` defaults to 1 and covers only surcharges Pi doesn't already apply. For example, Pi already prices OpenAI priority and flex. Compaction and summaries use standard speed; cache-warming requests can use the selected tier but do not receive the extension's cost correction.
+`icon` is an optional footer prefix (default `""`); top-level `iconSeparator` goes between it and the tier name (default `""`, since terminals give emoji two cells). `patch` replaces top-level request fields only. `costMultiplier` defaults to 1 and covers only surcharges Pi doesn't already apply. For example, Pi already prices OpenAI priority and flex. Compaction and summaries use standard speed; cache-warming requests can use the selected tier but do not receive the extension's cost correction.
