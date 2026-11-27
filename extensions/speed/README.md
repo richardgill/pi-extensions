@@ -44,6 +44,7 @@ Create `speed.jsonc` in `PI_EXTENSION_CONFIG_DIR`, or in Pi's agent directory (n
   },
   "unavailable": {},
   "defaults": {},
+  "iconSeparator": "",
 }
 ```
 
@@ -51,4 +52,4 @@ Each top-level setting replaces its built-in value wholesale when supplied. A fa
 
 `"defaults": { "claude-5": "fast" }` overrides a family's `default` without copying the family; the value must be `off` or one of that family's speeds. Precedence: `/speed` > `--speed` > `defaults` > family `default`.
 
-`icon` is an optional footer prefix, e.g. `"⚡"`. `patch` replaces top-level request fields only. `costMultiplier` defaults to 1 and covers only surcharges Pi doesn't already apply. For example, Pi already prices OpenAI priority and flex. Compaction and summaries use standard speed; cache-warming requests can use the selected tier but do not receive the extension's cost correction.
+`icon` is an optional footer prefix, e.g. `"⚡"`; top-level `iconSeparator` goes between it and the tier name (default `""`, since terminals give emoji two cells). `patch` replaces top-level request fields only. `costMultiplier` defaults to 1 and covers only surcharges Pi doesn't already apply. For example, Pi already prices OpenAI priority and flex. Compaction and summaries use standard speed; cache-warming requests can use the selected tier but do not receive the extension's cost correction.

@@ -18,10 +18,9 @@ type SpeedExtensionAPI = ExtensionAPI & {
 const liveKey = Symbol.for("@richardgill/pi-speed/live");
 const processState = globalThis as typeof globalThis & { [liveKey]?: string };
 
-const footer = (speed: Resolution) => {
+const footer = (speed: Resolution, iconSeparator: string) => {
   if (speed.requested === "off") return undefined;
-  // No space after the icon: terminals reserve two cells for emoji, which already reads as a gap.
-  const icon = speed.tier?.icon ?? "";
+  const icon = speed.tier?.icon ? `${speed.tier.icon}${iconSeparator}` : "";
   if (speed.blockedHost) return `${icon}${speed.requested}→${speed.applied}`;
   if (speed.unsupported) return `${icon}${speed.requested} n/a`;
   return `${icon}${speed.applied}`;
@@ -101,7 +100,7 @@ export default (pi: SpeedExtensionAPI) => {
     });
   };
   const refreshFooter = (ctx: ExtensionContext) =>
-    ctx.ui.setStatus("pi-speed", footer(current(ctx)));
+    ctx.ui.setStatus("pi-speed", footer(current(ctx), config.iconSeparator));
 
   pi.registerFlag("speed", { type: "string", description: `Set request speed. ${choices}` });
   pi.on("session_start", (_event, ctx) => {
@@ -138,7 +137,7 @@ export default (pi: SpeedExtensionAPI) => {
 
       processState[liveKey] = selected;
       const speed = current(ctx);
-      ctx.ui.setStatus("pi-speed", footer(speed));
+      ctx.ui.setStatus("pi-speed", footer(speed, config.iconSeparator));
       ctx.ui.notify(status(speed, ctx.model), "info");
     },
   });

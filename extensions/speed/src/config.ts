@@ -52,6 +52,7 @@ export const configSchema = z
     }),
     unavailable: z.record(host, z.array(nonEmpty)).default({}),
     defaults: z.record(nonEmpty, nonEmpty).default({}),
+    iconSeparator: z.string().default(""),
   })
   .superRefine(({ modelFamilies, defaults }, ctx) => {
     for (const [name, speed] of Object.entries(defaults)) {
