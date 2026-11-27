@@ -6,11 +6,17 @@ const host = z
   .string()
   .min(1)
   .refine((value) => value === value.trim().toLowerCase(), "Use a lowercase host");
+export const defaultIcon = "⚡";
 const speedEntry = z.strictObject({
   name: nonEmpty.refine((speed) => speed !== "off" && speed !== "status", "Reserved speed name"),
+  icon: nonEmpty.default(defaultIcon),
   patch: z.record(z.string(), z.unknown()),
   costMultiplier: z.number().positive().default(1),
 });
+
+const offers = (family: { speeds: { name: string }[] }, speed: string) =>
+  speed === "off" || family.speeds.some(({ name }) => name === speed);
+const badDefault = "Default must be off or a speed in this family";
 
 const modelFamily = z
   .strictObject({
@@ -23,33 +29,50 @@ const modelFamily = z
     path: ["speeds"],
     message: "Duplicate speed names",
   })
-  .refine(
-    (family) =>
-      family.default === "off" || family.speeds.some(({ name }) => name === family.default),
-    { path: ["default"], message: "Default must be off or a speed in this family" },
-  );
+  .refine((family) => offers(family, family.default), { path: ["default"], message: badDefault });
 
-export const configSchema = z.strictObject({
-  modelFamilies: z.record(z.string().min(1), modelFamily).prefault({
-    claude: {
-      api: "anthropic-messages",
-      models: ["claude-opus-5-5*", "claude-fable-5-2*"],
-      default: "off",
-      speeds: [{ name: "fast", patch: { speed: "fast" }, costMultiplier: 2 }],
-    },
-    gpt: {
-      api: "openai-responses",
-      models: ["gpt-6.2-*", "gpt-6.1-sol*", "gpt-6.1-terra*"],
-      default: "fast",
-      speeds: [
-        { name: "ultrafast", patch: { service_tier: "ultrafast" }, costMultiplier: 6 },
-        { name: "fast", patch: { service_tier: "priority" } },
-        { name: "flex", patch: { service_tier: "flex" } },
-      ],
-    },
-  }),
-  unavailable: z.record(host, z.array(nonEmpty)).default({}),
-});
+export const configSchema = z
+  .strictObject({
+    modelFamilies: z.record(z.string().min(1), modelFamily).prefault({
+      "claude-5": {
+        api: "anthropic-messages",
+        models: ["claude-opus-5-*", "claude-fable-5-*"],
+        default: "off",
+        speeds: [{ name: "fast", patch: { speed: "fast" }, costMultiplier: 2 }],
+      },
+      "gpt-6": {
+        api: "openai-responses",
+        models: ["gpt-6.*"],
+        default: "fast",
+        speeds: [
+          { name: "ultrafast", patch: { service_tier: "ultrafast" }, costMultiplier: 6 },
+          { name: "fast", patch: { service_tier: "priority" } },
+          { name: "flex", icon: "🐢", patch: { service_tier: "flex" } },
+        ],
+      },
+    }),
+    unavailable: z.record(host, z.array(nonEmpty)).default({}),
+    defaults: z.record(nonEmpty, nonEmpty).default({}),
+  })
+  .superRefine(({ modelFamilies, defaults }, ctx) => {
+    for (const [name, speed] of Object.entries(defaults)) {
+      const family = Object.hasOwn(modelFamilies, name) ? modelFamilies[name] : undefined;
+      const message = family ? badDefault : "Default must name a family in modelFamilies";
+      if (!family || !offers(family, speed)) {
+        ctx.addIssue({ code: "custom", path: ["defaults", name], message });
+      }
+    }
+  })
+  // Fold overrides into each family so the rest of the extension reads a single default.
+  .transform(({ defaults, modelFamilies, ...config }) => ({
+    ...config,
+    modelFamilies: Object.fromEntries(
+      Object.entries(modelFamilies).map(([name, family]) => [
+        name,
+        { ...family, default: Object.hasOwn(defaults, name) ? defaults[name] : family.default },
+      ]),
+    ),
+  }));
 
 export type SpeedConfig = z.infer<typeof configSchema>;
 

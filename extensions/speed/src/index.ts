@@ -2,7 +2,7 @@ import { writeSync } from "node:fs";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { loadSpeedConfig } from "./config";
+import { defaultIcon, loadSpeedConfig } from "./config";
 import { findFamily, pickerSpeedNames, resolveSpeed, servedOtherTier, speedNames } from "./speed";
 
 type Resolution = ReturnType<typeof resolveSpeed>;
@@ -20,9 +20,11 @@ const processState = globalThis as typeof globalThis & { [liveKey]?: string };
 
 const footer = (speed: Resolution) => {
   if (speed.requested === "off") return undefined;
-  if (speed.blockedHost) return `⚡ ${speed.requested}→${speed.applied}`;
-  if (speed.unsupported) return `⚡ ${speed.requested} n/a`;
-  return speed.applied === "flex" ? "🐢 flex" : `⚡ ${speed.applied}`;
+  // No space after the icon: terminals reserve two cells for emoji, which already reads as a gap.
+  const icon = speed.tier?.icon ?? defaultIcon;
+  if (speed.blockedHost) return `${icon}${speed.requested}→${speed.applied}`;
+  if (speed.unsupported) return `${icon}${speed.requested} n/a`;
+  return `${icon}${speed.applied}`;
 };
 
 const status = (speed: Resolution, model: ExtensionContext["model"]) => {
