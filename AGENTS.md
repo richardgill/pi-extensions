@@ -36,3 +36,13 @@ Clean up:
 ```bash
 tmux kill-session -t pi-ext-test
 ```
+
+# npm publishing
+
+After a new public package's first manual publish is visible on npm, set up trusted publishing for future releases. For example:
+
+```bash
+npm trust github @richardgill/pi-ui \
+  --repo richardgill/pi-extensions \
+  --file release.yml
+```
