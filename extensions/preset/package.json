@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@richardgill/pi-config": "workspace:*",
+    "@richardgill/pi-ui": "workspace:*",
     "zod": "4.3.6"
   },
   "peerDependencies": {

@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
+import { selectCurrent } from "@richardgill/pi-ui";
 import { z } from "zod";
 
 type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
@@ -193,12 +194,11 @@ const selectPresetName = async (
     notifyNoPresets(ctx);
     return undefined;
   }
-  const choices = [
-    "(none)",
-    ...names.map((name) => (name === state.activeName ? `${name} (active)` : name)),
-  ];
-  const result = await ctx.ui.select("Select preset", choices);
-  return result?.replace(/ \(active\)$/, "");
+  return selectCurrent(ctx, {
+    title: "Select preset",
+    options: ["(none)", ...names],
+    current: state.activeName ?? "(none)",
+  });
 };
 
 const activatePreset = async (

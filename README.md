@@ -34,6 +34,7 @@ These workspaces are not published individually. Footer and trust-all-projects a
 ## Packages
 
 - [`pi-config`](./packages/pi-config) - Loads JSONC config files with Zod defaults and templated strings.
+- [`pi-ui`](./packages/pi-ui) - Shared UI helpers, including a picker that opens on the current option.
 - [`pi-zod-tool-call`](./packages/pi-zod-tool-call) - Defines Pi tool calls from Zod schemas with provider-compatible TypeBox parameters.
 
 --- 

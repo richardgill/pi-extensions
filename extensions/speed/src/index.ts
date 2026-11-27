@@ -1,6 +1,7 @@
 import { writeSync } from "node:fs";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { selectCurrent } from "@richardgill/pi-ui";
 
 import { loadSpeedConfig } from "./config";
 import { findFamily, pickerSpeedNames, resolveSpeed, servedOtherTier, speedNames } from "./speed";
@@ -101,6 +102,18 @@ export default (pi: SpeedExtensionAPI) => {
   };
   const refreshFooter = (ctx: ExtensionContext) =>
     ctx.ui.setStatus("pi-speed", footer(current(ctx), config.iconSeparator));
+  const pickSpeed = (ctx: ExtensionContext) => {
+    const { requested, applied } = current(ctx);
+    const title =
+      applied === requested
+        ? "Speed for this process"
+        : `Speed for this process (${requested} n/a here)`;
+    return selectCurrent(ctx, {
+      title,
+      options: pickerSpeedNames(config, ctx.model),
+      current: requested,
+    });
+  };
 
   pi.registerFlag("speed", { type: "string", description: `Set request speed. ${choices}` });
   pi.on("session_start", (_event, ctx) => {
@@ -127,8 +140,7 @@ export default (pi: SpeedExtensionAPI) => {
         return;
       }
 
-      const selected =
-        arg || (await ctx.ui.select("Speed for this process", pickerSpeedNames(config, ctx.model)));
+      const selected = arg || (await pickSpeed(ctx));
       if (selected === undefined) return;
       if (!names.includes(selected)) {
         ctx.ui.notify(`Invalid speed ${JSON.stringify(selected)}. ${choices}`, "error");
